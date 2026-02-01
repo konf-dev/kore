@@ -12,6 +12,7 @@ members = [
     "crates/kore-flow",
     "crates/kore-registry",
     "crates/kore-workflow",
+    "crates/kore-agent",
 ]
 
 [workspace.package]
@@ -35,6 +36,7 @@ kore-resolve = { path = "crates/kore-resolve" }
 kore-flow = { path = "crates/kore-flow" }
 kore-registry = { path = "crates/kore-registry" }
 kore-workflow = { path = "crates/kore-workflow" }
+kore-agent = { path = "crates/kore-agent" }
 
 # External
 async-trait = "0.1"

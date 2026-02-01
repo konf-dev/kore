@@ -1157,6 +1157,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kore-agent"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "kore",
+ "kore-workflow",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kore-ai"
 version = "0.1.0"
 dependencies = [
