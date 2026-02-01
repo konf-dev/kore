@@ -1,0 +1,20 @@
+[package]
+name = "kore-workflow"
+version.workspace = true
+edition.workspace = true
+description = "Concurrent workflow primitives for kore - spawn, await, messaging"
+license.workspace = true
+
+[dependencies]
+kore.workspace = true
+async-trait.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+uuid.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+indexmap.workspace = true
+once_cell = "1.19"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

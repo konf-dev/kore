@@ -76,4 +76,4 @@ pub use executor::{execute, ExecFuture};
 pub use op::Op;
 pub use stack::Stack;
 pub use tool::Tool;
-pub use value::Value;
+pub use value::{Value, Handle, HandleKind, ErrorValue};
