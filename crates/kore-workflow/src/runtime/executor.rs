@@ -3,7 +3,7 @@
 use crate::error::WorkflowError as WfError;
 use crate::error::Result;
 use crate::types::{WorkflowHandle, WorkflowStatus};
-use crate::types::status::WorkflowError as StatusError;
+use crate::types::status::FailureInfo;
 use crate::runtime::state::WorkflowState;
 use kore::{Op, Value, execute};
 use std::time::Duration;
@@ -64,7 +64,7 @@ pub async fn execute_workflow(state: &mut WorkflowState) -> Result<ExecutionResu
                 // Check if we're tracking this child
                 if state.children.contains(&child_handle) {
                     state.op_index += i;
-                    state.status = WorkflowStatus::WaitingForChild(child_handle.clone());
+                    state.status = WorkflowStatus::WaitingForChild(child_handle);
                     return Ok(ExecutionResult::WaitingForChild(child_handle));
                 } else {
                     return Err(WfError::ExecutionFailed(
@@ -86,7 +86,7 @@ pub async fn execute_workflow(state: &mut WorkflowState) -> Result<ExecutionResu
                         state.op_index += i + 1;
                     }
                     Err(e) => {
-                        let err = StatusError {
+                        let err = FailureInfo {
                             code: "EXECUTION_ERROR".to_string(),
                             message: e.to_string(),
                             context: None,

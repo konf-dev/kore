@@ -54,7 +54,7 @@ impl WorkflowDef {
 
     /// Create an anonymous workflow (for inline spawns)
     pub fn anonymous(body: Vec<Op>) -> Self {
-        Self::from_quote(format!("anon-{}", uuid::Uuid::new_v4().to_string()[..8].to_string()), body)
+        Self::from_quote(format!("anon-{}", &uuid::Uuid::new_v4().to_string()[..8]), body)
     }
 }
 

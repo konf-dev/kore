@@ -92,7 +92,7 @@ impl WorkflowState {
 
     /// Fail the workflow with an error
     pub fn fail(&mut self, error: impl Into<String>) {
-        self.status = WorkflowStatus::Failed(crate::types::WorkflowStatusError {
+        self.status = WorkflowStatus::Failed(crate::types::FailureInfo {
             code: "execution_error".into(),
             message: error.into(),
             context: None,

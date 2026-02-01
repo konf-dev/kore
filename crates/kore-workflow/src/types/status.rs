@@ -19,7 +19,7 @@ pub enum WorkflowStatus {
     Complete(Value),
     
     /// Workflow failed with an error
-    Failed(WorkflowError),
+    Failed(FailureInfo),
     
     /// Workflow was cancelled
     Cancelled,
@@ -27,7 +27,7 @@ pub enum WorkflowStatus {
 
 /// Error information for failed workflows
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowError {
+pub struct FailureInfo {
     pub code: String,
     pub message: String,
     pub context: Option<String>,
@@ -66,7 +66,7 @@ impl WorkflowStatus {
     }
 
     /// Get the error if failed
-    pub fn error(&self) -> Option<&WorkflowError> {
+    pub fn error(&self) -> Option<&FailureInfo> {
         match self {
             WorkflowStatus::Failed(e) => Some(e),
             _ => None,
@@ -110,9 +110,9 @@ impl From<WorkflowStatus> for Value {
     }
 }
 
-impl From<kore::Error> for WorkflowError {
+impl From<kore::Error> for FailureInfo {
     fn from(e: kore::Error) -> Self {
-        WorkflowError {
+        FailureInfo {
             code: "kore_error".into(),
             message: e.to_string(),
             context: None,

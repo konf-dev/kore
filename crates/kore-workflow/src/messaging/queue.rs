@@ -141,6 +141,12 @@ impl AsyncMessageQueue {
         let queue = self.inner.lock().await;
         queue.len()
     }
+
+    /// Check if queue is empty
+    pub async fn is_empty(&self) -> bool {
+        let queue = self.inner.lock().await;
+        queue.is_empty()
+    }
 }
 
 impl Default for AsyncMessageQueue {

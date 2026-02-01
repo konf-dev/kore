@@ -6,8 +6,8 @@
 
 mod state;
 mod executor;
-mod runtime;
+mod manager;
 
 pub use state::WorkflowState;
 pub use executor::{execute_workflow, ExecutionResult};
-pub use runtime::WorkflowRuntime;
+pub use manager::WorkflowRuntime;

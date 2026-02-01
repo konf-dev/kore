@@ -12,5 +12,5 @@ mod definition;
 
 pub use handle::WorkflowHandle;
 pub use message::Message;
-pub use status::{WorkflowStatus, WorkflowError as WorkflowStatusError};
+pub use status::{WorkflowStatus, FailureInfo};
 pub use definition::WorkflowDef;
