@@ -1,0 +1,15 @@
+[package]
+name = "kore-introspect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Introspection tools for Kore: inspect tools, quotes, and stack"
+
+[dependencies]
+kore.workspace = true
+async-trait.workspace = true
+glob.workspace = true
+indexmap.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

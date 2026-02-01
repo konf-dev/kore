@@ -1,0 +1,23 @@
+[package]
+name = "kore-crypto"
+description = "Cryptographic tools for Kore: hashing, encryption, signing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kore.workspace = true
+kore-std.workspace = true
+sha2.workspace = true
+blake3.workspace = true
+aes-gcm.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+hex = "0.4"
+base64 = "0.21"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

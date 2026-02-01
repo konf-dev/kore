@@ -365,7 +365,7 @@ async fn tools_can_be_composed() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Int(a + b));
+            stack.push(Value::Int(a + b))?;
             Ok((stack, ctx))
         })
     });
@@ -386,7 +386,7 @@ async fn recursive_tool_works() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Int(a - b));
+            stack.push(Value::Int(a - b))?;
             Ok((stack, ctx))
         })
     });
@@ -395,7 +395,7 @@ async fn recursive_tool_works() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Int(a * b));
+            stack.push(Value::Int(a * b))?;
             Ok((stack, ctx))
         })
     });
@@ -404,7 +404,7 @@ async fn recursive_tool_works() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Bool(a <= b));
+            stack.push(Value::Bool(a <= b))?;
             Ok((stack, ctx))
         })
     });
@@ -447,7 +447,7 @@ async fn looping_via_recursion() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Int(a - b));
+            stack.push(Value::Int(a - b))?;
             Ok((stack, ctx))
         })
     });
@@ -456,7 +456,7 @@ async fn looping_via_recursion() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Int(a + b));
+            stack.push(Value::Int(a + b))?;
             Ok((stack, ctx))
         })
     });
@@ -465,7 +465,7 @@ async fn looping_via_recursion() {
         Box::pin(async move {
             let b = stack.pop()?.as_int()?;
             let a = stack.pop()?.as_int()?;
-            stack.push(Value::Bool(a <= b));
+            stack.push(Value::Bool(a <= b))?;
             Ok((stack, ctx))
         })
     });

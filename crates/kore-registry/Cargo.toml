@@ -1,0 +1,21 @@
+[package]
+name = "kore-registry"
+description = "Package registry for Kore: publish, search, install packages"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kore.workspace = true
+kore-std.workspace = true
+kore-net.workspace = true
+kore-crypto.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+serial_test = "3"

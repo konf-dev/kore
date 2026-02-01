@@ -1,9 +1,67 @@
-[package]
-name = "kore"
+[workspace]
+members = [
+    "crates/kore-std",
+    "crates/kore-introspect",
+    "crates/kore-trace",
+    "crates/kore-net",
+    "crates/kore-crypto",
+    "crates/kore-db",
+    "crates/kore-ai",
+    "crates/kore-mcp",
+    "crates/kore-resolve",
+    "crates/kore-flow",
+    "crates/kore-registry",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "The fundamental runtime - a stack-based execution engine"
 license = "MIT"
+repository = "https://github.com/konf-dev/kore"
+
+[workspace.dependencies]
+# Internal
+kore = { path = "." }
+kore-std = { path = "crates/kore-std" }
+kore-introspect = { path = "crates/kore-introspect" }
+kore-trace = { path = "crates/kore-trace" }
+kore-net = { path = "crates/kore-net" }
+kore-crypto = { path = "crates/kore-crypto" }
+kore-db = { path = "crates/kore-db" }
+kore-ai = { path = "crates/kore-ai" }
+kore-mcp = { path = "crates/kore-mcp" }
+kore-resolve = { path = "crates/kore-resolve" }
+kore-flow = { path = "crates/kore-flow" }
+kore-registry = { path = "crates/kore-registry" }
+
+# External
+async-trait = "0.1"
+indexmap = { version = "2.0", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
+tokio-tungstenite = "0.21"
+sha2 = "0.10"
+blake3 = "1.5"
+aes-gcm = "0.10"
+ed25519-dalek = "2"
+rand = "0.8"
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "postgres"] }
+jsonschema = "0.18"
+glob = "0.3"
+futures = "0.3"
+
+[package]
+name = "kore"
+version.workspace = true
+edition.workspace = true
+description = "The fundamental runtime - a stack-based execution engine"
+license.workspace = true
 
 [dependencies]
 async-trait = "0.1"
