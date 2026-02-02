@@ -139,16 +139,16 @@
 [ 3 list ] "triple" def
 
 # first: get first element (list -- elem)
-[ 0 swap list-get ] "first" def
+[ 0 list-get ] "first" def
 
 # second: get second element (list -- elem)
-[ 1 swap list-get ] "second" def
+[ 1 list-get ] "second" def
 
 # third: get third element (list -- elem)
-[ 2 swap list-get ] "third" def
+[ 2 list-get ] "third" def
 
 # last: get last element (list -- elem)
-[ dup list-len 1 sub swap list-get ] "last" def
+[ dup list-len 1 sub list-get ] "last" def
 
 # ============================================================
 # MAP BASICS (composed from core)
@@ -169,33 +169,3 @@
 
 # assert: fail if condition is false (cond msg -- )
 [ swap not [ fail ] when drop ] "assert" def
-
-# ============================================================
-# EXPORTS (what gets loaded by default)
-# ============================================================
-
-[
-    # Stack
-    "dupd" "nip2" "2dup" "2drop" "2swap" "dip" "keep" "bi" "tri"
-    
-    # Boolean
-    "true" "false" "bool"
-    
-    # Arithmetic
-    "inc" "dec" "zero?" "pos?" "neg?" "even?" "odd?" "square" "cube"
-    
-    # Comparison
-    "between?" "clamp"
-    
-    # Control
-    "when" "unless" "times" "while"
-    
-    # List
-    "empty?" "singleton" "pair" "triple" "first" "second" "third" "last"
-    
-    # Map
-    "has-key?"
-    
-    # Error
-    "error?" "ok?" "assert"
-] export

@@ -272,30 +272,3 @@
     ]
     if
 ] "sort" def
-
-# ============================================================
-# EXPORTS
-# ============================================================
-
-[
-    # Construction
-    "range" "repeat"
-    
-    # Access
-    "len" "nth" "head" "tail" "init" "take" "drop-n"
-    
-    # Predicates
-    "null?" "elem?"
-    
-    # Transformation
-    "reverse" "concat" "flatten"
-    
-    # Higher order
-    "map" "filter" "fold" "reduce" "any-with" "all-with"
-    
-    # Searching
-    "find" "position"
-    
-    # Sorting
-    "sort"
-] export
