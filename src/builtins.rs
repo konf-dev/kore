@@ -2514,7 +2514,7 @@ mod tests {
         // 5 [dup] call -> 5 5
         let ops = vec![
             Op::push(5),
-            Op::Quote(vec![Op::call("dup")]),
+            Op::quote(vec![Op::call("dup")]),
             Op::call("call"),
         ];
 
@@ -2531,7 +2531,7 @@ mod tests {
 
         // [5] try -> 5
         let ops = vec![
-            Op::Quote(vec![Op::push(5)]),
+            Op::quote(vec![Op::push(5)]),
             Op::call("try"),
         ];
 
@@ -2547,7 +2547,7 @@ mod tests {
 
         // [drop] try -> Error (stack underflow)
         let ops = vec![
-            Op::Quote(vec![Op::call("drop")]),
+            Op::quote(vec![Op::call("drop")]),
             Op::call("try"),
         ];
 
@@ -2569,7 +2569,7 @@ mod tests {
         // [drop] try is-error -> true
         let stack = Stack::new();
         let ops = vec![
-            Op::Quote(vec![Op::call("drop")]),
+            Op::quote(vec![Op::call("drop")]),
             Op::call("try"),
             Op::call("is-error"),
         ];
@@ -2595,7 +2595,7 @@ mod tests {
 
         // [drop] try unwrap -> stops with error
         let ops = vec![
-            Op::Quote(vec![Op::call("drop")]),
+            Op::quote(vec![Op::call("drop")]),
             Op::call("try"),
             Op::call("unwrap"),
         ];
@@ -2697,7 +2697,7 @@ mod tests {
         // First define a composed tool
         let ops = vec![
             Op::Push(Value::Text("square".into())),
-            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::quote(vec![Op::call("dup"), Op::call("mul")]),
             Op::call("def"),
             // Now get its dependencies
             Op::Push(Value::Text("square".into())),
@@ -2719,7 +2719,7 @@ mod tests {
         // Define a composed tool
         let ops = vec![
             Op::Push(Value::Text("square".into())),
-            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::quote(vec![Op::call("dup"), Op::call("mul")]),
             Op::call("def"),
             // Get call graph
             Op::Push(Value::Text("square".into())),
@@ -2740,7 +2740,7 @@ mod tests {
         // Define a tool
         let ops = vec![
             Op::Push(Value::Text("square".into())),
-            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::quote(vec![Op::call("dup"), Op::call("mul")]),
             Op::call("def"),
             // Add a tag
             Op::Push(Value::Text("square".into())),
@@ -2794,7 +2794,7 @@ mod tests {
         // Define a tool
         let ops = vec![
             Op::Push(Value::Text("square".into())),
-            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::quote(vec![Op::call("dup"), Op::call("mul")]),
             Op::call("def"),
             // Set doc
             Op::Push(Value::Text("square".into())),
@@ -2821,7 +2821,7 @@ mod tests {
         // Register a tool (def + persist)
         let ops = vec![
             Op::Push(Value::Text("double".into())),
-            Op::Quote(vec![Op::push(2), Op::call("mul")]),
+            Op::quote(vec![Op::push(2), Op::call("mul")]),
             Op::call("register"),
             // Call it
             Op::push(5),

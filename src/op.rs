@@ -1,9 +1,17 @@
-//! Op - The 4 operation types
+//! Op - The Two Operations
+//!
+//! Following Postulate 1 (Everything is a Tool), there are only two operations:
+//! - Push: Put a value on the stack
+//! - Call: Execute a tool by name
+//!
+//! Everything else (conditionals, loops, etc.) is implemented as tools.
 
 use crate::value::Value;
 use serde::{Deserialize, Serialize};
 
-/// The 4 operation types
+/// The two fundamental operations.
+/// 
+/// This is the irreducible core. Everything else is built from tools.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Op {
     /// Push a literal value onto the stack
@@ -11,15 +19,6 @@ pub enum Op {
 
     /// Call a tool by name
     Call(String),
-
-    /// Push a quote (deferred program) onto the stack
-    Quote(Vec<Op>),
-
-    /// Conditional execution
-    If {
-        then_ops: Vec<Op>,
-        else_ops: Vec<Op>,
-    },
 }
 
 impl Op {
@@ -33,24 +32,28 @@ impl Op {
         Op::Call(name.into())
     }
 
-    /// Create a Quote operation
+    /// Create a Quote push (convenience for pushing a program as a value)
+    /// This is just Push(Value::Quote(...)), not a special operation.
     pub fn quote(ops: Vec<Op>) -> Self {
-        Op::Quote(ops)
+        Op::Push(Value::Quote(ops))
     }
 
-    /// Create an If operation
-    pub fn if_then_else(then_ops: Vec<Op>, else_ops: Vec<Op>) -> Self {
-        Op::If { then_ops, else_ops }
-    }
-
-    /// Simple parser for testing - not for production use
-    /// Supports: integers, floats, "strings", 'strings', true/false/null, quotes, tool-names
+    /// Parse a string into a sequence of operations.
+    /// 
+    /// Syntax:
+    /// - Integers: `42`, `-7`
+    /// - Floats: `3.14`, `-0.5`
+    /// - Booleans: `true`, `false`
+    /// - Null: `null`
+    /// - Text: `"hello"` or `'hello'`
+    /// - Quotes: `[ ... ]`
+    /// - Tool calls: any other word
+    /// - Comments: `# ...` until end of line
     pub fn parse(input: &str) -> crate::error::Result<Vec<Op>> {
         let tokens = Self::tokenize(input);
         Self::parse_tokens(&tokens)
     }
 
-    
     fn parse_tokens(tokens: &[String]) -> crate::error::Result<Vec<Op>> {
         let mut ops = Vec::new();
         let mut i = 0;
@@ -58,9 +61,8 @@ impl Op {
         while i < tokens.len() {
             let token = &tokens[i];
 
-            // Quote start
+            // Quote start - this becomes Push(Value::Quote(...))
             if token == "[" {
-                // Find matching ]
                 let mut depth = 1;
                 let mut end = i + 1;
                 while end < tokens.len() && depth > 0 {
@@ -73,9 +75,8 @@ impl Op {
                         end += 1;
                     }
                 }
-                // Parse the inner tokens as a quote
                 let inner_ops = Self::parse_tokens(&tokens[i + 1..end])?;
-                ops.push(Op::quote(inner_ops));
+                ops.push(Op::quote(inner_ops));  // Uses Push(Value::Quote(...))
                 i = end + 1;
                 continue;
             }
@@ -84,11 +85,11 @@ impl Op {
                 i += 1;
                 continue;
             }
-            // Try to parse as integer
+            // Integer
             else if let Ok(n) = token.parse::<i64>() {
                 ops.push(Op::push(n));
             }
-            // Try to parse as float
+            // Float (must come after integer check)
             else if let Ok(f) = token.parse::<f64>() {
                 ops.push(Op::push(f));
             }
@@ -104,11 +105,10 @@ impl Op {
             else if token == "null" {
                 ops.push(Op::Push(Value::Null));
             }
-            // String literal (double or single quotes)
+            // String literal
             else if (token.starts_with('"') && token.ends_with('"') && token.len() >= 2)
                  || (token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2) {
                 let s = &token[1..token.len() - 1];
-                // Handle escape sequences
                 let s = unescape(s);
                 ops.push(Op::push(s));
             }
@@ -123,7 +123,6 @@ impl Op {
         Ok(ops)
     }
 
-    /// Simple tokenizer that respects quoted strings and brackets
     fn tokenize(input: &str) -> Vec<String> {
         let mut tokens = Vec::new();
         let mut chars = input.chars().peekable();
@@ -131,32 +130,31 @@ impl Op {
 
         while let Some(c) = chars.next() {
             match c {
-                // Comment - skip until end of line
+                // Comment
                 '#' => {
                     if !current.is_empty() {
                         tokens.push(std::mem::take(&mut current));
                     }
-                    // Skip until newline
                     for c2 in chars.by_ref() {
                         if c2 == '\n' {
                             break;
                         }
                     }
                 }
-                // Whitespace - end current token
+                // Whitespace
                 ' ' | '\t' | '\n' | '\r' => {
                     if !current.is_empty() {
                         tokens.push(std::mem::take(&mut current));
                     }
                 }
-                // Brackets - separate tokens
+                // Brackets
                 '[' | ']' => {
                     if !current.is_empty() {
                         tokens.push(std::mem::take(&mut current));
                     }
                     tokens.push(c.to_string());
                 }
-                // Single quote - read until closing quote
+                // Single-quoted string
                 '\'' => {
                     current.push(c);
                     for c2 in chars.by_ref() {
@@ -166,13 +164,12 @@ impl Op {
                         }
                     }
                 }
-                // Double quote - read until closing quote (handle escaped quotes)
+                // Double-quoted string with escapes
                 '"' => {
                     current.push(c);
                     while let Some(c2) = chars.next() {
                         current.push(c2);
                         if c2 == '\\' {
-                            // Escape sequence - consume next char
                             if let Some(c3) = chars.next() {
                                 current.push(c3);
                             }
@@ -181,7 +178,7 @@ impl Op {
                         }
                     }
                 }
-                // Any other character
+                // Other characters
                 _ => {
                     current.push(c);
                 }
@@ -196,7 +193,7 @@ impl Op {
     }
 }
 
-/// Unescape string escape sequences like \n, \t, \\
+/// Unescape string escape sequences
 fn unescape(s: &str) -> String {
     let mut result = String::new();
     let mut chars = s.chars().peekable();
@@ -224,22 +221,57 @@ fn unescape(s: &str) -> String {
     result
 }
 
+impl std::fmt::Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Push(v) => write!(f, "push({})", v),
+            Op::Call(name) => write!(f, "{}", name),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Value;
-    
 
     #[test]
-    fn test_op_creation() {
-        let push = Op::push(42);
-        assert!(matches!(push, Op::Push(Value::Int(42))));
+    fn test_push() {
+        let op = Op::push(42);
+        assert!(matches!(op, Op::Push(Value::Int(42))));
+    }
 
-        let call = Op::call("add");
-        assert!(matches!(call, Op::Call(name) if name == "add"));
+    #[test]
+    fn test_call() {
+        let op = Op::call("add");
+        assert!(matches!(op, Op::Call(name) if name == "add"));
+    }
 
-        let quote = Op::quote(vec![Op::call("dup"), Op::call("add")]);
-        assert!(matches!(quote, Op::Quote(ops) if ops.len() == 2));
+    #[test]
+    fn test_quote_is_push() {
+        let op = Op::quote(vec![Op::call("dup")]);
+        // Quote is just Push(Value::Quote(...)), not a special variant
+        assert!(matches!(op, Op::Push(Value::Quote(_))));
+    }
+
+    #[test]
+    fn test_parse_simple() {
+        let ops = Op::parse("1 2 add").unwrap();
+        assert_eq!(ops.len(), 3);
+        assert!(matches!(&ops[0], Op::Push(Value::Int(1))));
+        assert!(matches!(&ops[1], Op::Push(Value::Int(2))));
+        assert!(matches!(&ops[2], Op::Call(name) if name == "add"));
+    }
+
+    #[test]
+    fn test_parse_quote() {
+        let ops = Op::parse("[ dup add ]").unwrap();
+        assert_eq!(ops.len(), 1);
+        // Quote becomes Push(Value::Quote(...))
+        match &ops[0] {
+            Op::Push(Value::Quote(inner)) => {
+                assert_eq!(inner.len(), 2);
+            }
+            _ => panic!("Expected Push(Quote)"),
+        }
     }
 }

@@ -1,6 +1,13 @@
 //! Executor - The ~10 line core execution loop
 //!
 //! This is the heart of the system. Everything else is just tools.
+//!
+//! Following Postulate 1: Everything is a Tool.
+//! There are only two operations:
+//! - Push: Put a value on the stack
+//! - Call: Execute a tool by name
+//!
+//! Conditionals, loops, and everything else are implemented as tools.
 
 use crate::context::Context;
 use crate::error::Result;
@@ -15,7 +22,10 @@ use std::time::Instant;
 /// The future type returned by execute
 pub type ExecFuture<'a> = Pin<Box<dyn Future<Output = Result<(Stack, Context)>> + Send + 'a>>;
 
-/// Execute a program (list of ops) with given stack and context
+/// Execute a program (list of ops) with given stack and context.
+/// 
+/// This is the entire execution model: iterate through ops,
+/// pushing values or calling tools. Nothing else.
 pub fn execute(ops: &[Op], mut stack: Stack, ctx: Context) -> ExecFuture<'_> {
     Box::pin(async move {
         for op in ops {
@@ -25,10 +35,12 @@ pub fn execute(ops: &[Op], mut stack: Stack, ctx: Context) -> ExecFuture<'_> {
     })
 }
 
-/// Execute a single operation
+/// Execute a single operation.
+/// 
+/// This is the irreducible core - two cases only.
 async fn execute_op(op: &Op, mut stack: Stack, ctx: Context) -> Result<(Stack, Context)> {
     match op {
-        // Push a literal value
+        // Push a literal value onto the stack
         Op::Push(value) => {
             stack.push(value.clone())?;
             Ok((stack, ctx))
@@ -63,23 +75,6 @@ async fn execute_op(op: &Op, mut stack: Stack, ctx: Context) -> Result<(Stack, C
             }
 
             result
-        }
-
-        // Push a quote (deferred program)
-        Op::Quote(ops) => {
-            stack.push(Value::Quote(ops.clone()))?;
-            Ok((stack, ctx))
-        }
-
-        // Conditional execution
-        Op::If { then_ops, else_ops } => {
-            let condition = stack.pop()?;
-            let ops = if condition.is_truthy() {
-                then_ops
-            } else {
-                else_ops
-            };
-            execute(ops, stack, ctx).await
         }
     }
 }
@@ -179,6 +174,23 @@ mod tests {
             Box::pin(async move { catch_error(stack, ctx).await })
         }));
 
+        // if: conditional execution (this is a TOOL, not a primitive!)
+        // (condition then_quote else_quote -- result)
+        dict.register(Tool::native("if", "", |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let else_quote = stack.pop()?.into_quote()?;
+                let then_quote = stack.pop()?.into_quote()?;
+                let condition = stack.pop()?;
+                
+                let ops = if condition.is_truthy() {
+                    then_quote
+                } else {
+                    else_quote
+                };
+                execute(&ops, stack, ctx).await
+            })
+        }));
+
         drop(dict);
         ctx
     }
@@ -214,13 +226,12 @@ mod tests {
         let ctx = setup_ctx().await;
         let stack = Stack::new();
 
-        // true if: then [1] else [2] = 1
+        // true [1] [2] if = 1 (using if as a TOOL)
         let ops = vec![
             Op::push(true),
-            Op::If {
-                then_ops: vec![Op::push(1)],
-                else_ops: vec![Op::push(2)],
-            },
+            Op::quote(vec![Op::push(1)]),  // then quote
+            Op::quote(vec![Op::push(2)]),  // else quote
+            Op::call("if"),
         ];
 
         let (result, _) = execute(&ops, stack, ctx).await.unwrap();
@@ -232,13 +243,12 @@ mod tests {
         let ctx = setup_ctx().await;
         let stack = Stack::new();
 
-        // false if: then [1] else [2] = 2
+        // false [1] [2] if = 2 (using if as a TOOL)
         let ops = vec![
             Op::push(false),
-            Op::If {
-                then_ops: vec![Op::push(1)],
-                else_ops: vec![Op::push(2)],
-            },
+            Op::quote(vec![Op::push(1)]),  // then quote
+            Op::quote(vec![Op::push(2)]),  // else quote
+            Op::call("if"),
         ];
 
         let (result, _) = execute(&ops, stack, ctx).await.unwrap();
@@ -251,9 +261,10 @@ mod tests {
         let stack = Stack::new();
 
         // 5 [dup add] call = 10
+        // Note: Op::quote creates Push(Value::Quote(...))
         let ops = vec![
             Op::push(5),
-            Op::Quote(vec![Op::call("dup"), Op::call("add")]),
+            Op::quote(vec![Op::call("dup"), Op::call("add")]),
             Op::call("call"),
         ];
 
@@ -289,8 +300,8 @@ mod tests {
 
         // [5] [drop 0] catch = 5 (no error, try succeeds)
         let ops = vec![
-            Op::Quote(vec![Op::push(5)]),
-            Op::Quote(vec![Op::call("drop"), Op::push(0)]),
+            Op::quote(vec![Op::push(5)]),
+            Op::quote(vec![Op::call("drop"), Op::push(0)]),
             Op::call("catch"),
         ];
 
@@ -305,8 +316,8 @@ mod tests {
 
         // [1 0 div] [drop 999] catch = 999 (div by zero caught)
         let ops = vec![
-            Op::Quote(vec![Op::push(1), Op::push(0), Op::call("div")]),
-            Op::Quote(vec![Op::call("drop"), Op::push(999)]),
+            Op::quote(vec![Op::push(1), Op::push(0), Op::call("div")]),
+            Op::quote(vec![Op::call("drop"), Op::push(999)]),
             Op::call("catch"),
         ];
 

@@ -504,7 +504,7 @@ async fn is_list() {
 
 #[tokio::test]
 async fn is_quote() {
-    let result = run(vec![Op::Quote(vec![Op::push(1)]), Op::call("is-quote")]).await;
+    let result = run(vec![Op::quote(vec![Op::push(1)]), Op::call("is-quote")]).await;
     assert_eq!(result, vec![Value::Bool(true)]);
 }
 
@@ -552,7 +552,7 @@ async fn to_list_wrap() {
 async fn map_combinator() {
     let result = run(vec![
         Op::Push(Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)])),
-        Op::Quote(vec![Op::push(10), Op::call("mul")]),
+        Op::quote(vec![Op::push(10), Op::call("mul")]),
         Op::call("map"),
     ]).await;
     assert_eq!(result, vec![Value::List(vec![
@@ -564,7 +564,7 @@ async fn map_combinator() {
 async fn filter_combinator() {
     let result = run(vec![
         Op::Push(Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)])),
-        Op::Quote(vec![Op::push(2), Op::call("mod"), Op::push(0), Op::call("eq")]),
+        Op::quote(vec![Op::push(2), Op::call("mod"), Op::push(0), Op::call("eq")]),
         Op::call("filter"),
     ]).await;
     assert_eq!(result, vec![Value::List(vec![Value::Int(2), Value::Int(4)])]);
@@ -575,7 +575,7 @@ async fn fold_sum() {
     let result = run(vec![
         Op::Push(Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4)])),
         Op::push(0),
-        Op::Quote(vec![Op::call("add")]),
+        Op::quote(vec![Op::call("add")]),
         Op::call("fold"),
     ]).await;
     assert_eq!(result, vec![Value::Int(10)]);
@@ -585,7 +585,7 @@ async fn fold_sum() {
 async fn times_combinator() {
     let result = run(vec![
         Op::push(3),
-        Op::Quote(vec![Op::push(1), Op::call("add")]), // Push i, add 1
+        Op::quote(vec![Op::push(1), Op::call("add")]), // Push i, add 1
         Op::call("times"),
     ]).await;
     // times pushes 0, runs quote (0+1=1), pushes 1, runs (1+1=2), pushes 2, runs (2+1=3)
@@ -597,7 +597,7 @@ async fn each_combinator() {
     // each doesn't leave results on stack
     let result = run(vec![
         Op::Push(Value::List(vec![Value::Int(1), Value::Int(2)])),
-        Op::Quote(vec![Op::call("drop")]),
+        Op::quote(vec![Op::call("drop")]),
         Op::call("each"),
     ]).await;
     assert_eq!(result, vec![]);
@@ -608,8 +608,8 @@ async fn while_combinator() {
     // Count down from 3 to 0
     let result = run(vec![
         Op::push(3), // Start with 3
-        Op::Quote(vec![Op::call("dup"), Op::push(0), Op::call("gt")]), // while > 0
-        Op::Quote(vec![Op::push(1), Op::call("sub")]), // subtract 1
+        Op::quote(vec![Op::call("dup"), Op::push(0), Op::call("gt")]), // while > 0
+        Op::quote(vec![Op::push(1), Op::call("sub")]), // subtract 1
         Op::call("while"),
     ]).await;
     assert_eq!(result, vec![Value::Int(0)]);

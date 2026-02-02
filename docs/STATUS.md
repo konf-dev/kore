@@ -1,180 +1,110 @@
-# Kore OS Status
+# Kore Status
 
-> **Current Version**: v0.2.0
-> **Last Updated**: Session 5
+> **Branch:** `proof-based-refactor`
+> **Version:** v0.3.0 (in progress)
+> **Philosophy:** Proof-based, not trust-based
 
-## Summary
+## The Three Postulates
 
-Kore is a feature-complete OS for LLM agents with **143 primitives**.
+1. **Everything is a Tool** - No special constructs
+2. **Tools Transform Stacks** - Stack in → Stack out
+3. **Composition is Concatenation** - P; Q = run P then Q
 
-### Architecture (Cleaned Up)
+## Architecture
 
-**Single Source of Truth**: Every Tool has exactly 3 fields:
-- `name: String` - the tool's identifier
-- `body: ToolBody` - Native(fn) or Ops(vec)
-- `meta: Meta` - all metadata (sig, doc, stats, health, tags)
+### Two Operations
 
-No duplication. No legacy. Everything is a Thing with value + metadata.
+```rust
+enum Op {
+    Push(Value),    // Put value on stack
+    Call(String),   // Execute a tool
+}
+```
 
-## Primitives by Category (143 total)
+That's it. Everything else is a tool.
 
-### Execution (7)
-- `call`, `try`, `if`, `loop`, `def`, `words`, `describe`
+### Ten Value Types
 
-### Error Handling (4)
-- `is-error`, `unwrap`, `assert`, `panic`
+```
+Null, Bool, Int, Float, Text, List, Map, Quote, Handle, Error
+```
 
-### Stack Manipulation (6)
-- `dup`, `drop`, `swap`, `over`, `rot`, `depth`
+### Essential Tools (~40)
 
-### Arithmetic (6)
-- `add`, `sub`, `mul`, `div`, `mod`, `neg`
+| Category | Tools |
+|----------|-------|
+| **Core** | `call`, `try`, `if`, `def` |
+| **Stack** | `dup`, `drop`, `swap`, `over`, `rot`, `depth` |
+| **Math** | `add`, `sub`, `mul`, `div`, `mod`, `neg` |
+| **Compare** | `eq`, `neq`, `lt`, `gt`, `le`, `ge` |
+| **Logic** | `and`, `or`, `not` |
+| **List** | `list-empty`, `list-len`, `list-get`, `list-push`, `list-concat`, `collect` |
+| **Map** | `map-empty`, `map-get`, `map-set`, `map-has`, `map-keys` |
+| **Text** | `str-len`, `str-concat`, `str-split`, `str-join` |
+| **Type** | `type-of`, `is-error`, `unwrap` |
+| **Introspection** | `words`, `describe`, `meta` |
+| **Capability** | `cap-has`, `cap-list`, `cap-leq`, `cap-attenuate` |
+| **Resource** | `res-status`, `res-check`, `res-consume`, `res-split` |
+| **Spawn** | `spawn`, `await`, `channel`, `send`, `recv` |
+| **Trace** | `trace-start`, `trace-stop`, `trace-hash` |
+| **I/O** | `print`, `fs-read`, `fs-write`, `http-get`, `exec` |
 
-### Comparison (6)
-- `eq`, `neq`, `lt`, `gt`, `le`, `ge`
+## Safety Model
 
-### Logic (3)
-- `and`, `or`, `not`
+### Capabilities (Lattice)
 
-### String (13)
-- `str-len`, `str-get`, `str-slice`, `str-split`, `str-join`
-- `str-concat`, `str-trim`, `str-find`, `str-starts`, `str-ends`
-- `str-replace`, `char-code`, `code-char`
+```
+spawn attenuates: child_caps ⊆ parent_caps
+```
 
-### List (10)
-- `list-len`, `list-get`, `list-set`, `list-push`, `list-pop`
-- `list-slice`, `list-concat`, `list-reverse`, `list-empty`, `collect`
+Cannot give what you don't have. Mathematically enforced.
 
-### Map (7)
-- `map-get`, `map-set`, `map-has`, `map-del`, `map-keys`, `map-vals`, `map-empty`
+### Resources (Monoid)
 
-### Type Checking (9)
-- `type-of`, `is-null`, `is-bool`, `is-int`, `is-float`
-- `is-text`, `is-list`, `is-map`, `is-quote`
+```
+spawn splits: child_res + parent_remaining = parent_original
+```
 
-### Conversion (5)
-- `to-int`, `to-float`, `to-text`, `to-bool`, `to-list`
+Conservation law. Resources transfer, never created.
 
-### Combinators (6)
-- `map`, `filter`, `fold`, `each`, `times`, `while`
+### Traces (Proof Objects)
 
-### OS: File System (7)
-- `fs-read`, `fs-write`, `fs-append`, `fs-exists`, `fs-list`, `fs-rm`, `fs-mkdir`
+```
+same input + deterministic tools = same trace fingerprint
+```
 
-### OS: Process (1)
-- `exec`
+Execution is provable.
 
-### OS: I/O (4)
-- `print`, `println`, `read-line`, `log`
+## Refactor Progress
 
-### OS: Time (2)
-- `now`, `sleep`
+- [x] Create proof-based-refactor branch
+- [x] Document postulates
+- [x] Document formal foundations
+- [x] Plan refactor
+- [x] Remove dead weight docs
+- [ ] Simplify Op to Push/Call only
+- [ ] Implement `if` as tool
+- [ ] Implement capability lattice
+- [ ] Implement resource algebra
+- [ ] Implement trace system
+- [ ] Implement spawn with safety
+- [ ] Reduce builtins from 143 to ~40
+- [ ] Validate with tests
 
-### OS: Misc (2)
-- `uuid`, `random`
+## Core Documents
 
-### OS: System Info (5)
-- `pid`, `cwd`, `args`, `exit`, `version`
+| Document | Purpose |
+|----------|---------|
+| [POSTULATES.md](POSTULATES.md) | The three inviolable axioms |
+| [PHILOSOPHY.md](PHILOSOPHY.md) | The five design principles |
+| [FORMAL_FOUNDATIONS.md](FORMAL_FOUNDATIONS.md) | Mathematical treatment |
+| [REFACTOR_PLAN.md](REFACTOR_PLAN.md) | Implementation roadmap |
+| [PRIMITIVES.md](PRIMITIVES.md) | Tool reference (to be updated) |
 
-### OS: Module Loading (1)
-- `load`
+## Design Principle
 
-### OS: Environment (2)
-- `env-get`, `env-set`
+> **Security is not a feature. It's the absence of tools.**
 
-### OS: HTTP (3)
-- `http-get`, `http-post`, `http-request`
-
-### Data: JSON (2)
-- `json-parse`, `json-encode`
-
-### Resources (5)
-- `res-mem`, `res-rom`, `res-compute`, `res-net`, `res-all`
-
-### Capabilities (4)
-- `cap-has`, `cap-list`, `cap-fs`, `cap-net`
-
-### Session Memory (5)
-- `mem-set`, `mem-get`, `mem-del`, `mem-has`, `mem-keys`
-
-### Persistent Storage (5)
-- `rom-set`, `rom-get`, `rom-del`, `rom-has`, `rom-keys`
-
-### Introspection (8) - NEW
-- `meta` - get all metadata for a tool
-- `meta!` - set metadata field
-- `calls` - get immediate dependencies
-- `graph` - get full call tree
-- `tag` - add tag to tool
-- `find-tag` - find tools by tag
-- `health` - get unhealthy tools
-- `stats` - get call statistics
-
-### Persistence (5) - NEW
-- `persist` - save tool to ROM only
-- `register` - define AND persist tool
-- `load-tools` - load from ROM into dictionary
-- `unregister` - remove from dictionary and ROM
-- `list-persisted` - list persisted tool names
-
-## Source Files
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| builtins.rs | 2805 | All 143 primitives |
-| value.rs | 389 | 10 value types |
-| meta.rs | 357 | Metadata structure |
-| capabilities.rs | 369 | Permission system |
-| effect.rs | 331 | Type signatures (optional) |
-| storage.rs | 325 | Persistent ROM |
-| executor.rs | 299 | Execution loop |
-| memory.rs | 274 | Session storage |
-| op.rs | 245 | 4 operation types |
-| resources.rs | 243 | Quota tracking |
-| stack.rs | 212 | LIFO data structure |
-| context.rs | 220 | Execution environment |
-| tool.rs | 180 | Tool definition |
-| error.rs | 120 | Error types |
-| lib.rs | 89 | Public API |
-
-**Total**: ~5,458 lines of Rust
-
-## Tests
-
-- **67** unit tests (lib)
-- **62** integration tests
-- **34** language semantics tests
-- **68** primitives tests
-- **231 total** - all passing
-
-## What Was Cleaned Up (Session 5)
-
-1. **Removed duplication in Tool**:
-   - `doc: Option<String>` → use `meta.doc`
-   - `effect: Option<Effect>` → use `meta.sig`
-
-2. **Removed legacy APIs**:
-   - `Context::has_capability()` → use `ctx.caps.has()`
-   - `Context::with_capability()` → use `ctx.with_caps()`
-   - `Tool::native_opt()` → use `Tool::native()`
-
-3. **Simplified Tool API**:
-   - `Tool::composed(name, sig, ops)` - sig is now `Option<&str>`
-   - `tool.sig()` / `tool.doc()` - accessor methods
-   - Single source of truth: `tool.meta`
-
-## What's Next
-
-### Phase 5: Network Layer (from ARCHITECTURE_V02.md)
-- External communication (HTTP client already done)
-- Agent-to-agent messaging (spawn, join, select, cancel)
-
-### Phase 6: Self-Hosting
-- Parser in Kore
-- Executor in Kore
-- Standard library in Kore
-
-### Long-term: Emergent Collective Intelligence
-- See `docs/EMERGENT_COLLECTIVE_INTELLIGENCE.md`
-- Multiple agents sharing RAM/ROM
-- Workflow evolution and learning
+Want sandboxing? Don't include `fs-write` or `exec`.
+Want unlimited compute? Set resources to unlimited.
+Different configs, same rules.
