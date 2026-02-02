@@ -1,0 +1,11 @@
+# Kore OS Banner - displays system information
+# Run with: kore examples/banner.kore
+
+"Kore OS " version str-concat " - Stack-based OS for Agents" str-concat println
+"" println
+
+"PID:      " pid to-text str-concat println
+"CWD:      " cwd str-concat println
+"Tools:    " words list-len to-text str-concat " primitives + prelude" str-concat println
+"" println
+"Ready." println

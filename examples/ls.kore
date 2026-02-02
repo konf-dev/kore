@@ -1,0 +1,17 @@
+# Kore OS ls - list directory contents
+# Run with: kore examples/ls.kore
+# Or:       kore examples/ls.kore /some/path
+
+# Get path from args or use current directory
+args list-len 2 gt
+[args 2 list-get]  # Use provided path
+[cwd]              # Use current directory
+if
+
+# Store path and list it
+dup "Listing: " swap str-concat println
+"" println
+fs-list
+
+# Print each item
+[println] each

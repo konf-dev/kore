@@ -1,0 +1,18 @@
+# Kore OS cat - display file contents
+# Run with: kore examples/cat.kore <file>
+
+# Check if path provided
+args list-len 3 lt
+[
+    "Usage: kore examples/cat.kore <file>" println
+    1 exit
+]
+[]
+if
+
+# Read and print file
+args 2 list-get
+dup fs-exists
+[fs-read println]
+["File not found: " swap str-concat println 1 exit]
+if

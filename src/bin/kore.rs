@@ -25,8 +25,13 @@ async fn main() {
         2 if args[1] == "--help" || args[1] == "-h" => {
             show_help();
         }
-        2 => {
-            // Single arg - it's a file
+        _ if args[1] == "-e" && args.len() >= 3 => {
+            // -e '<code>' - inline execution
+            run_script(&args[2]).await;
+        }
+        _ if !args[1].starts_with('-') => {
+            // First arg is a file, remaining are script arguments
+            // (accessible via 'args' primitive)
             let path = &args[1];
             match fs::read_to_string(path) {
                 Ok(source) => run_script(&source).await,
@@ -35,10 +40,6 @@ async fn main() {
                     std::process::exit(1);
                 }
             }
-        }
-        3 if args[1] == "-e" => {
-            // -e '<code>' - inline execution
-            run_script(&args[2]).await;
         }
         _ => {
             eprintln!("Unknown arguments. Use: kore --help");
@@ -51,15 +52,15 @@ fn show_help() {
     eprintln!("kore - Kore OS runtime");
     eprintln!();
     eprintln!("Usage:");
-    eprintln!("  kore                 Start REPL (interactive mode)");
-    eprintln!("  kore <file.kore>     Run a script file");
-    eprintln!("  kore -e '<code>'     Run inline code");
+    eprintln!("  kore                      Start REPL (interactive mode)");
+    eprintln!("  kore <file.kore> [args]   Run a script with arguments");
+    eprintln!("  kore -e '<code>'          Run inline code");
     eprintln!();
     eprintln!("Examples:");
-    eprintln!("  kore                          # Start REPL");
-    eprintln!("  kore -e '5 3 add'             # => 8");
-    eprintln!("  kore -e '[1 2 3] [10 mul] map' # => [10 20 30]");
-    eprintln!("  kore examples/hello.kore      # Run a script");
+    eprintln!("  kore                           # Start REPL");
+    eprintln!("  kore -e '5 3 add'              # => 8");
+    eprintln!("  kore examples/ls.kore /tmp     # List /tmp directory");
+    eprintln!("  kore examples/cat.kore file    # Display file contents");
 }
 
 async fn repl() {
