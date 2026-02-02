@@ -56,6 +56,11 @@ impl Dictionary {
         names
     }
 
+    /// Iterate over tool names
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.tools.keys().map(|s| s.as_str())
+    }
+
     /// Check if a tool exists
     pub fn contains(&self, name: &str) -> bool {
         self.tools.contains_key(name)

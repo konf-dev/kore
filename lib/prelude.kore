@@ -76,3 +76,17 @@
 # product: (l -- n) - product of list
 "product" [1 [mul] fold] def
 
+# -- Logging --
+
+# log-debug: (msg -- ) - debug log
+"log-debug" ["debug" swap log] def
+
+# log-info: (msg -- ) - info log
+"log-info" ["info" swap log] def
+
+# log-warn: (msg -- ) - warning log
+"log-warn" ["warn" swap log] def
+
+# log-error: (msg -- ) - error log
+"log-error" ["error" swap log] def
+

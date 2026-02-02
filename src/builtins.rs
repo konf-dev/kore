@@ -3,23 +3,25 @@
 //! These are language primitives, not library functions.
 //! Each tool does exactly one thing. LLMs are first-class citizens.
 //!
-//! ## Execution (5)
+//! ## Execution (6)
 //! - `call`: Run a quote
 //! - `try`: Run a quote, capture errors as Error values
 //! - `if`: Conditional execution
 //! - `loop`: Repeat until false on stack
 //! - `def`: Define a new tool from a quote
+//! - `words`: List all tool names
 //!
 //! ## Error inspection (2)
 //! - `is-error`: Check if a value is an Error
 //! - `unwrap`: Extract value, or stop if Error
 //!
-//! ## Stack manipulation (5)
+//! ## Stack manipulation (6)
 //! - `dup`: Duplicate top value
 //! - `drop`: Remove top value
 //! - `swap`: Swap top two values
 //! - `over`: Copy second value to top
 //! - `rot`: Rotate top three values
+//! - `depth`: Get stack depth
 //!
 //! ## Arithmetic (6)
 //! - `add`, `sub`, `mul`, `div`, `mod`, `neg`
@@ -59,8 +61,8 @@
 //! ## OS: Process (1)
 //! - `exec`: Run shell command
 //!
-//! ## OS: I/O (3)
-//! - `print`, `println`, `read-line`
+//! ## OS: I/O (4)
+//! - `print`, `println`, `read-line`, `log`
 //!
 //! ## OS: Time (2)
 //! - `now`, `sleep`
@@ -68,6 +70,9 @@
 //! ## OS: Misc (2)
 //! - `uuid`: Generate UUID v4
 //! - `random`: Random float 0.0-1.0
+//!
+//! ## OS: System Info (3)
+//! - `pid`, `cwd`, `args`
 //!
 //! ## OS: Module Loading (1)
 //! - `load`: Execute a .kore file
@@ -81,7 +86,7 @@
 //! ## Data: JSON (2)
 //! - `json-parse`, `json-encode`
 //!
-//! **Total: 100 primitives**
+//! **Total: 106 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -207,6 +212,15 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // depth: ( -- n) - get current stack depth
+    dict.register(Tool::native("depth", "( -- n:Int)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let d = stack.depth() as i64;
+            stack.push(Value::Int(d))?;
+            Ok((stack, ctx))
+        })
+    }));
+
     // === Control Flow ===
 
     // if: (condition then-quote else-quote -- ...) - conditional execution
@@ -258,6 +272,19 @@ pub async fn register_builtins(ctx: &mut Context) {
             dict.register(tool);
             drop(dict);
             
+            Ok((stack, ctx))
+        })
+    }));
+
+    // words: ( -- list) - list all defined tool names
+    dict.register(Tool::native("words", "( -- names:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let dict = ctx.dict.read().await;
+            let names: Vec<Value> = dict.names()
+                .map(|s| Value::Text(s.to_string()))
+                .collect();
+            drop(dict);
+            stack.push(Value::List(names))?;
             Ok((stack, ctx))
         })
     }));
@@ -1244,6 +1271,27 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // log: (level message -- ) - write log to stderr with timestamp
+    // level is one of: "debug", "info", "warn", "error"
+    dict.register(Tool::native("log", "(level:Text message:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let message = stack.pop()?.into_text()?;
+            let level = stack.pop()?.into_text()?;
+            
+            // Get current time as ISO-8601
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            
+            // Format: [LEVEL] timestamp message
+            let level_upper = level.to_uppercase();
+            eprintln!("[{}] {} {}", level_upper, now, message);
+            
+            Ok((stack, ctx))
+        })
+    }));
+
     // === OS: Time (2) ===
 
     // now: ( -- ms) - current unix timestamp in milliseconds
@@ -1290,6 +1338,38 @@ pub async fn register_builtins(ctx: &mut Context) {
             let raw = u64::from_le_bytes(arr);
             let normalized = (raw as f64) / (u64::MAX as f64);
             stack.push(Value::Float(normalized))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: System Info (3) ===
+
+    // pid: ( -- id) - get current process ID
+    dict.register(Tool::native("pid", "( -- id:Int)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let pid = std::process::id() as i64;
+            stack.push(Value::Int(pid))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // cwd: ( -- path) - get current working directory
+    dict.register(Tool::native("cwd", "( -- path:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let cwd = std::env::current_dir()
+                .map_err(|e| crate::error::Error::io(format!("cwd: {}", e)))?;
+            stack.push(Value::Text(cwd.to_string_lossy().to_string()))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // args: ( -- list) - get command line arguments
+    dict.register(Tool::native("args", "( -- args:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let args: Vec<Value> = std::env::args()
+                .map(Value::Text)
+                .collect();
+            stack.push(Value::List(args))?;
             Ok((stack, ctx))
         })
     }));
