@@ -3,7 +3,10 @@
 > **STATUS: VISION DOCUMENT**
 > 
 > This describes the full vision. Current implementation:
-> - ✅ kore-lang: Stack-based language runtime
+> - ✅ kore-lang: Stack-based language runtime (100 primitives)
+> - ✅ Self-hosted compiler (tokenizer, parser, codegen in Kore)
+> - ✅ REPL mode with prelude auto-loading
+> - ✅ OS primitives: file, process, HTTP, JSON, env, time, uuid
 > - ✅ kore-agent: Autonomous agent with LLM, file, shell tools
 > - ⬜ kore-workflow: Concurrent workflow system (planned)
 > - ⬜ kore-genesis: Self-evolution (planned)
