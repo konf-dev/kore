@@ -1,27 +1,32 @@
 # Kore OS Status
 
 > **Current Version**: v0.1.0 (stable-v0.1-agent-working branch)
-> **Last Updated**: Session 2
+> **Last Updated**: Session 3
 
 ## Summary
 
-Kore is now a feature-complete OS for LLM agents with **100 primitives**.
+Kore is now a feature-complete OS for LLM agents with **111 primitives**.
 
 ## Primitives by Category
 
-### Execution (5)
+### Execution (7)
 - `call` - Run a quote
 - `try` - Run quote, capture errors
 - `if` - Conditional execution (three-branch: cond, true, false)
 - `loop` - Repeat until false
 - `def` - Define new tool from quote
+- `words` - List all tool names
+- `describe` - Get tool signature
 
-### Error Handling (2)
+### Error Handling (4)
 - `is-error` - Check if value is Error
 - `unwrap` - Extract or stop if Error
+- `assert` - Fail with message if condition is false
+- `panic` - Intentionally fail with message
 
-### Stack Manipulation (5)
+### Stack Manipulation (6)
 - `dup`, `drop`, `swap`, `over`, `rot`
+- `depth` - Get stack depth
 
 ### Arithmetic (6)
 - `add`, `sub`, `mul`, `div`, `mod`, `neg`
@@ -61,8 +66,9 @@ Kore is now a feature-complete OS for LLM agents with **100 primitives**.
 ### OS: Process (1)
 - `exec` - Run shell command
 
-### OS: I/O (3)
+### OS: I/O (4)
 - `print`, `println`, `read-line`
+- `log` - Timestamped log to stderr
 
 ### OS: Time (2)
 - `now`, `sleep`
@@ -70,6 +76,13 @@ Kore is now a feature-complete OS for LLM agents with **100 primitives**.
 ### OS: Misc (2)
 - `uuid` - Generate UUID v4
 - `random` - Random float 0.0-1.0
+
+### OS: System Info (5)
+- `pid` - Current process ID
+- `cwd` - Current working directory
+- `args` - Command line arguments
+- `exit` - Exit with code
+- `version` - Kore version string
 
 ### OS: Module Loading (1)
 - `load` - Execute a .kore file
@@ -125,11 +138,14 @@ Features:
 
 Standard library loaded at boot:
 
-**Stack**: `nip`, `tuck`, `2dup`, `2drop`
+**Stack**: `nip`, `tuck`, `2dup`, `2drop`, `len`
 **List**: `list1`, `list2`, `first`, `last`, `rest`
 **Arithmetic**: `inc`, `dec`, `square`, `abs`, `max`, `min`
 **Higher-order**: `sum`, `product`
 **Predicates**: `empty-str?`, `empty-list?`
+**Logging**: `log-debug`, `log-info`, `log-warn`, `log-error`
+**Assertions**: `assert-eq`, `assert-neq`, `assert-not-null`
+**System**: `sys-info` - Returns map with version, pid, cwd, tool-count
 
 ## OS Libraries (lib/os/)
 
@@ -151,7 +167,7 @@ kore/
 │   ├── context.rs       # Execution context
 │   ├── executor.rs      # Execute ops
 │   ├── tool.rs          # Tool abstraction
-│   ├── builtins.rs      # 100 primitives
+│   ├── builtins.rs      # 111 primitives
 │   ├── error.rs         # Error types
 │   └── bin/kore.rs      # CLI binary
 ├── lib/
@@ -160,6 +176,10 @@ kore/
 │   └── os/              # OS utilities
 ├── tests/
 │   └── integration.kore # Integration tests
+├── examples/
+│   ├── banner.kore      # Display system info
+│   ├── ls.kore          # List directory
+│   └── cat.kore         # Display file
 ├── docs/
 │   ├── PHILOSOPHY.md    # 5 principles
 │   ├── ARCHITECTURE.md  # System design
@@ -182,3 +202,24 @@ kore/
 2. **HTTP server mode** - `kore --serve :8080`
 3. **Agent integration** - Connect to LLM for autonomous operation
 4. **Self-modification** - Agent can define new primitives
+
+## Session 3 Changelog
+
+Added **11 new primitives**:
+- **Introspection**: `words`, `describe`, `depth`
+- **Assertions**: `assert`, `panic`
+- **System Info**: `pid`, `cwd`, `args`, `exit`, `version`
+- **Logging**: `log`
+
+Added **prelude helpers**:
+- Logging: `log-debug`, `log-info`, `log-warn`, `log-error`
+- Assertions: `assert-eq`, `assert-neq`, `assert-not-null`
+- System: `sys-info` composite tool
+
+Added **example scripts**:
+- `banner.kore` - Display system info banner
+- `ls.kore` - List directory contents with args support
+- `cat.kore` - Display file contents
+
+Improved **CLI**:
+- Now accepts script arguments: `kore script.kore arg1 arg2`
