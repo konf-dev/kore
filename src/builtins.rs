@@ -11,9 +11,11 @@
 //! - `def`: Define a new tool from a quote
 //! - `words`: List all tool names
 //!
-//! ## Error inspection (2)
+//! ## Error inspection (4)
 //! - `is-error`: Check if a value is an Error
 //! - `unwrap`: Extract value, or stop if Error
+//! - `assert`: Fail with message if condition is false
+//! - `panic`: Intentionally fail with message
 //!
 //! ## Stack manipulation (6)
 //! - `dup`: Duplicate top value
@@ -86,7 +88,7 @@
 //! ## Data: JSON (2)
 //! - `json-parse`, `json-encode`
 //!
-//! **Total: 106 primitives**
+//! **Total: 108 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -153,6 +155,26 @@ pub async fn register_builtins(ctx: &mut Context) {
                     Ok((stack, ctx))
                 }
             }
+        })
+    }));
+
+    // assert: (condition message -- ) - fail with message if condition is false
+    dict.register(Tool::native("assert", "(cond:Bool msg:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let message = stack.pop()?.into_text()?;
+            let condition = stack.pop()?;
+            if !condition.is_truthy() {
+                return Err(crate::error::Error::Runtime(format!("Assertion failed: {}", message)));
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // panic: (message -- ) - intentionally fail with message
+    dict.register(Tool::native("panic", "(msg:Text -- )", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let message = stack.pop()?.into_text()?;
+            Err(crate::error::Error::Runtime(format!("Panic: {}", message)))
         })
     }));
 

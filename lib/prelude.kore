@@ -90,3 +90,14 @@
 # log-error: (msg -- ) - error log
 "log-error" ["error" swap log] def
 
+# -- Assertions --
+
+# assert-eq: (a b msg -- ) - assert two values are equal
+"assert-eq" [rot rot eq swap assert] def
+
+# assert-neq: (a b msg -- ) - assert two values are not equal
+"assert-neq" [rot rot neq swap assert] def
+
+# assert-not-null: (v msg -- ) - assert value is not null
+"assert-not-null" [swap is-null not swap assert] def
+
