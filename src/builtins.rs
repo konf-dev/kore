@@ -1488,11 +1488,11 @@ pub async fn register_builtins(ctx: &mut Context) {
             let message = stack.pop()?.into_text()?;
             let level = stack.pop()?.into_text()?;
             
-            // Get current time as ISO-8601
+            // Get current time (0 if system clock is invalid)
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             
             // Format: [LEVEL] timestamp message
             let level_upper = level.to_uppercase();
@@ -1509,8 +1509,8 @@ pub async fn register_builtins(ctx: &mut Context) {
         Box::pin(async move {
             let ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64;
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
             stack.push(Value::Int(ms))?;
             Ok((stack, ctx))
         })

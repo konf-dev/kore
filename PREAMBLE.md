@@ -150,10 +150,45 @@ These are guidelines, not proofs:
 - Fail explicitly with Error, not silently.
 
 ### For Rust Code
-- Small functions.
-- Explicit types.
-- Return Result, not panic.
-- Test everything.
+
+**R1: No unwrap() in production code.**
+```rust
+// Wrong
+.unwrap()
+
+// Right
+.map_err(|e| Error::Runtime(e.to_string()))?
+
+// Acceptable: fallback for non-critical
+.unwrap_or(default)
+```
+
+**R2: Explicit error handling.**
+```rust
+// Wrong: panic on failure
+let value = stack.pop().unwrap();
+
+// Right: propagate error
+let value = stack.pop()?;
+```
+
+**R3: Small functions.**
+If a function does two things, split it into two functions.
+
+**R4: No macros that hide logic.**
+Macros are acceptable only for repetitive boilerplate, not for logic.
+
+**R5: Async only where necessary.**
+Async adds hidden state machines. Use sync code when possible.
+
+**R6: Explicit types in public APIs.**
+```rust
+// Wrong
+fn process(x: impl Iterator) -> impl Iterator
+
+// Right  
+fn process(x: Vec<Value>) -> Vec<Value>
+```
 
 ---
 
