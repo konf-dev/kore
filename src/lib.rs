@@ -64,6 +64,7 @@ pub mod effect;
 pub mod error;
 pub mod executor;
 pub mod memory;
+pub mod meta;
 pub mod op;
 pub mod resources;
 pub mod stack;

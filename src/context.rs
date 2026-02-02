@@ -67,6 +67,21 @@ impl Dictionary {
         self.tools.remove(name)
     }
 
+    /// Update a tool's stats (for recording calls/failures)
+    pub fn update_stats<F>(&mut self, name: &str, f: F)
+    where
+        F: FnOnce(&mut crate::tool::Tool),
+    {
+        if let Some(tool) = self.tools.get_mut(name) {
+            f(tool);
+        }
+    }
+
+    /// Get a mutable reference to a tool (for updating meta)
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Tool> {
+        self.tools.get_mut(name)
+    }
+
     /// List all tool names
     pub fn list(&self) -> Vec<String> {
         let mut names: Vec<_> = self.tools.keys().cloned().collect();
@@ -156,23 +171,6 @@ impl Context {
         self.storage = Some(Arc::new(storage));
         self
     }
-
-    /// Check if context has a capability (legacy API)
-    pub fn has_capability(&self, cap: &str) -> bool {
-        self.caps.has(cap)
-    }
-
-    /// Add a capability (legacy API for compatibility)
-    pub fn with_capability(self, cap: impl Into<String>) -> Self {
-        // For backwards compatibility, parse the string
-        let cap_str = cap.into();
-        let mut new_caps = (*self.caps).clone();
-        new_caps.add(&cap_str);
-        Self {
-            caps: Arc::new(new_caps),
-            ..self
-        }
-    }
 }
 
 impl Default for Context {
@@ -204,13 +202,13 @@ mod tests {
 
     #[test]
     fn test_context_capabilities() {
-        let ctx = Context::new()
-            .with_capability("exec")
-            .with_capability("fs:read:/tmp");
+        let caps = Capabilities::none()
+            .with_exec()
+            .with_fs_read("/tmp");
+        let ctx = Context::new().with_caps(caps);
 
-        assert!(ctx.has_capability("exec"));
-        assert!(ctx.has_capability("fs:read:/tmp"));
-        assert!(!ctx.has_capability("shell"));
+        assert!(ctx.caps.can_exec());
+        assert!(ctx.caps.can_read_path(std::path::Path::new("/tmp")));
     }
 
     #[test]

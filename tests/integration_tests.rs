@@ -7,7 +7,7 @@
 //! 4. Error propagation works
 //! 5. Type matching for tool composition
 
-use kore::{execute, register_builtins, Context, Effect, Op, Stack, Tool, Value};
+use kore::{execute, register_builtins, Context, Op, Stack, Tool, Value};
 use indexmap::IndexMap;
 
 // =============================================================================
@@ -61,8 +61,8 @@ async fn run_should_fail(code: &str) -> String {
     }
 }
 
-fn effect(s: &str) -> Option<Effect> {
-    Effect::parse(s).ok()
+fn sig(s: &str) -> Option<&str> {
+    Some(s)
 }
 
 // =============================================================================
@@ -503,7 +503,7 @@ mod composition {
         // double = dup add
         let double = Tool::composed(
             "double",
-            effect("(n:Int -- doubled:Int)"),
+            sig("(n:Int -- doubled:Int)"),
             vec![Op::call("dup"), Op::call("add")],
         );
 
@@ -519,13 +519,13 @@ mod composition {
         // quadruple = double double
         let double = Tool::composed(
             "double",
-            effect("(n:Int -- doubled:Int)"),
+            sig("(n:Int -- doubled:Int)"),
             vec![Op::call("dup"), Op::call("add")],
         );
 
         let quadruple = Tool::composed(
             "quadruple",
-            effect("(n:Int -- quadrupled:Int)"),
+            sig("(n:Int -- quadrupled:Int)"),
             vec![Op::call("double"), Op::call("double")],
         );
 
@@ -576,7 +576,7 @@ mod composition {
 
         let abs = Tool::composed(
             "abs",
-            effect("(n:Int -- absolute:Int)"),
+            sig("(n:Int -- absolute:Int)"),
             vec![
                 Op::call("dup"),
                 Op::push(0),
@@ -637,7 +637,7 @@ mod recursion {
         // factorial = dup 1 <= (drop 1) (dup 1 - factorial *) if
         let factorial = Tool::composed(
             "factorial",
-            effect("(n:Int -- result:Int)"),
+            sig("(n:Int -- result:Int)"),
             vec![
                 Op::call("dup"),
                 Op::push(1),
@@ -689,7 +689,7 @@ mod recursion {
                 }),
                 Tool::composed(
                     "factorial",
-                    effect("(n:Int -- result:Int)"),
+                    sig("(n:Int -- result:Int)"),
                     vec![
                         Op::call("dup"),
                         Op::push(1),
@@ -743,7 +743,7 @@ mod recursion {
         // fib = dup 1 <= () (dup 1 - fib swap 2 - fib +) if
         let fib = Tool::composed(
             "fib",
-            effect("(n:Int -- result:Int)"),
+            sig("(n:Int -- result:Int)"),
             vec![
                 Op::call("dup"),
                 Op::push(1),
@@ -803,7 +803,7 @@ mod recursion {
         // sum-to = dup 0 <= (drop 0) (dup 1 - sum-to +) if
         let sum_to = Tool::composed(
             "sum-to",
-            effect("(n:Int -- sum:Int)"),
+            sig("(n:Int -- sum:Int)"),
             vec![
                 Op::call("dup"),
                 Op::push(0),

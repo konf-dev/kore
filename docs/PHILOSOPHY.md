@@ -409,3 +409,89 @@ These five principles, consistently applied, lead to:
 - **Maintainable** code
 - **Reliable** execution
 - **Elegant** solutions
+---
+
+## Design Decisions: Why Kore Doesn't Have Streaming
+
+### The Question
+
+When processing large datasets (big files, paginated APIs, infinite streams), why doesn't Kore support streaming or chunked processing?
+
+### The Formal Answer
+
+Kore's formal model defines tool semantics as **complete stack transformations**:
+
+```
+⟦P⟧ : Stack → Stack
+```
+
+Every tool takes a complete stack state and produces a complete stack state. There is no concept of partial values, lazy evaluation, or suspended computation.
+
+### Why Not Add Chunked Primitives?
+
+We considered adding primitives like:
+- `fs-lines`: Read file line by line with callback
+- `str-chunks`: Process text in chunks with callback  
+- `list-batch`: Process list in batches with callback
+
+**These were rejected because they violate the philosophy:**
+
+| Primitive | Does ONE thing? | Minimal? | Composable? |
+|-----------|-----------------|----------|-------------|
+| `fs-lines` | ❌ iterates AND calls | ❌ complex | ❌ callback pattern |
+| `str-chunks` | ❌ chunks AND calls | ❌ complex | ❌ callback pattern |
+| `list-batch` | ❌ batches AND calls | ❌ complex | ❌ callback pattern |
+
+They bundle two responsibilities (iteration AND application) and use a callback pattern that doesn't compose with stack semantics.
+
+### The Right Approaches
+
+**1. Pre-process externally:**
+```
+# Use external tools for streaming
+"cat large.csv | head -100 > sample.csv" exec
+"sample.csv" fs-read
+```
+
+**2. Paginate at the source:**
+```
+# Use API pagination
+"/api/items?page=1&size=100" http-get
+```
+
+**3. Reduce in Kore:**
+```
+# Process in memory after loading
+data json-parse
+{ "relevant" filter } call
+```
+
+**4. Accept the trade-off:**
+
+Kore prioritizes **simplicity** and **formal correctness** over handling arbitrarily large data. For truly streaming workloads, use a streaming-native tool (Unix pipes, Kafka, Flink) and integrate via `exec`.
+
+### The Composable Alternative
+
+If you need chunked processing, build it from primitives:
+
+```
+# Manual pagination loop
+{ page:Int -- items:List }
+page 100 *               # offset
+100                      # limit  
+"/api?offset=" swap "+" swap "&limit=" swap "+" swap
+http-get json-parse      # fetch page
+;
+
+# Compose: fetch page, process, next page
+1 { 
+  dup fetch-page         # fetch
+  process-items          # process
+  1 +                    # next page
+  dup max-pages <        # continue?
+} while
+```
+
+This keeps each tool doing ONE thing while achieving the same result.
+
+---

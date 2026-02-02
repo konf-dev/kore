@@ -10,6 +10,7 @@ use crate::tool::ToolBody;
 use crate::value::{ErrorValue, Value};
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Instant;
 
 /// The future type returned by execute
 pub type ExecFuture<'a> = Pin<Box<dyn Future<Output = Result<(Stack, Context)>> + Send + 'a>>;
@@ -39,16 +40,29 @@ async fn execute_op(op: &Op, mut stack: Stack, ctx: Context) -> Result<(Stack, C
             let tool = dict.get(name)?;
             drop(dict); // Release lock before executing
 
-            // Validate inputs if tool has an effect
-            if let Some(effect) = &tool.effect {
-                effect.validate_inputs(stack.values())?;
-            }
+            // Track execution time
+            let start = Instant::now();
 
             // Execute based on tool body
-            match &tool.body {
-                ToolBody::Native(native_fn) => native_fn.call(stack, ctx).await,
-                ToolBody::Ops(ops) => execute(ops, stack, ctx).await,
+            let result = match &tool.body {
+                ToolBody::Native(native_fn) => native_fn.call(stack, ctx.clone()).await,
+                ToolBody::Ops(ops) => execute(ops, stack, ctx.clone()).await,
+            };
+
+            // Update stats
+            let duration = start.elapsed();
+            {
+                let mut dict = ctx.dict.write().await;
+                if let Some(t) = dict.get_mut(name) {
+                    if result.is_ok() {
+                        t.meta.record_call(duration);
+                    } else {
+                        t.meta.record_failure();
+                    }
+                }
             }
+
+            result
         }
 
         // Push a quote (deferred program)
@@ -106,7 +120,6 @@ pub async fn catch_error(mut stack: Stack, ctx: Context) -> Result<(Stack, Conte
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effect::Effect;
     use crate::tool::Tool;
 
     /// Register minimal tools needed for executor tests
@@ -257,7 +270,7 @@ mod tests {
             let mut dict = ctx.dict.write().await;
             dict.register(Tool::composed(
                 "math/double",
-                Some(Effect::parse("(n:Num -- result:Num)").unwrap()),
+                Some("(n:Num -- result:Num)"),
                 vec![Op::call("dup"), Op::call("add")],
             ));
         }

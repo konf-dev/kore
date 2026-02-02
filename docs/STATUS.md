@@ -1,39 +1,31 @@
 # Kore OS Status
 
-> **Current Version**: v0.1.0+ (stable-v0.1-agent-working branch)
-> **Last Updated**: Session 4
+> **Current Version**: v0.2.0
+> **Last Updated**: Session 5
 
 ## Summary
 
-Kore is now a feature-complete OS for LLM agents with **130 primitives**.
+Kore is a feature-complete OS for LLM agents with **143 primitives**.
 
-### v0.2 Foundation (NEW)
-- **Resources**: Abstract quota system (mem, rom, compute, net)
-- **Capabilities**: Permission system for all operations
-- **Session Memory**: Volatile key-value storage with quota enforcement
-- **Persistent Storage**: ROM that survives restarts
-- **Security**: All I/O operations check capabilities before executing
+### Architecture (Cleaned Up)
 
-## Primitives by Category
+**Single Source of Truth**: Every Tool has exactly 3 fields:
+- `name: String` - the tool's identifier
+- `body: ToolBody` - Native(fn) or Ops(vec)
+- `meta: Meta` - all metadata (sig, doc, stats, health, tags)
+
+No duplication. No legacy. Everything is a Thing with value + metadata.
+
+## Primitives by Category (143 total)
 
 ### Execution (7)
-- `call` - Run a quote
-- `try` - Run quote, capture errors
-- `if` - Conditional execution (three-branch: cond, true, false)
-- `loop` - Repeat until false
-- `def` - Define new tool from quote
-- `words` - List all tool names
-- `describe` - Get tool signature
+- `call`, `try`, `if`, `loop`, `def`, `words`, `describe`
 
 ### Error Handling (4)
-- `is-error` - Check if value is Error
-- `unwrap` - Extract or stop if Error
-- `assert` - Fail with message if condition is false
-- `panic` - Intentionally fail with message
+- `is-error`, `unwrap`, `assert`, `panic`
 
 ### Stack Manipulation (6)
-- `dup`, `drop`, `swap`, `over`, `rot`
-- `depth` - Get stack depth
+- `dup`, `drop`, `swap`, `over`, `rot`, `depth`
 
 ### Arithmetic (6)
 - `add`, `sub`, `mul`, `div`, `mod`, `neg`
@@ -54,8 +46,7 @@ Kore is now a feature-complete OS for LLM agents with **130 primitives**.
 - `list-slice`, `list-concat`, `list-reverse`, `list-empty`, `collect`
 
 ### Map (7)
-- `map-get`, `map-set`, `map-has`, `map-del`
-- `map-keys`, `map-vals`, `map-empty`
+- `map-get`, `map-set`, `map-has`, `map-del`, `map-keys`, `map-vals`, `map-empty`
 
 ### Type Checking (9)
 - `type-of`, `is-null`, `is-bool`, `is-int`, `is-float`
@@ -67,185 +58,123 @@ Kore is now a feature-complete OS for LLM agents with **130 primitives**.
 ### Combinators (6)
 - `map`, `filter`, `fold`, `each`, `times`, `while`
 
-### OS: File System (7) - requires `fs:read` or `fs:write` capability
+### OS: File System (7)
 - `fs-read`, `fs-write`, `fs-append`, `fs-exists`, `fs-list`, `fs-rm`, `fs-mkdir`
 
-### OS: Process (1) - requires `exec` capability
-- `exec` - Run shell command
+### OS: Process (1)
+- `exec`
 
 ### OS: I/O (4)
-- `print`, `println`, `read-line`
-- `log` - Timestamped log to stderr
+- `print`, `println`, `read-line`, `log`
 
 ### OS: Time (2)
 - `now`, `sleep`
 
 ### OS: Misc (2)
-- `uuid` - Generate UUID v4
-- `random` - Random float 0.0-1.0
+- `uuid`, `random`
 
 ### OS: System Info (5)
-- `pid` - Current process ID
-- `cwd` - Current working directory
-- `args` - Command line arguments
-- `exit` - Exit with code
-- `version` - Kore version string
+- `pid`, `cwd`, `args`, `exit`, `version`
 
 ### OS: Module Loading (1)
-- `load` - Execute a .kore file
+- `load`
 
-### OS: Environment (2) - requires `env:read` or `env:write` capability
+### OS: Environment (2)
 - `env-get`, `env-set`
 
 ### OS: HTTP (3)
-- `http-get` - GET request
-- `http-post` - POST with body and headers
-- `http-request` - Generic HTTP method
+- `http-get`, `http-post`, `http-request`
 
 ### Data: JSON (2)
-- `json-parse` - JSON text to value
-- `json-encode` - Value to JSON text
+- `json-parse`, `json-encode`
 
-### Resources (5) - NEW
-- `res-mem` - Get memory quota info
-- `res-rom` - Get storage quota info
-- `res-compute` - Get compute quota info
-- `res-net` - Get network quota info
-- `res-all` - Get all quotas
+### Resources (5)
+- `res-mem`, `res-rom`, `res-compute`, `res-net`, `res-all`
 
-### Capabilities (4) - NEW
-- `cap-has` - Check if capability granted
-- `cap-list` - List all capabilities
-- `cap-fs` - Check fs capability
-- `cap-net` - Check net capability
+### Capabilities (4)
+- `cap-has`, `cap-list`, `cap-fs`, `cap-net`
 
-### Session Memory (5) - NEW
+### Session Memory (5)
 - `mem-set`, `mem-get`, `mem-del`, `mem-has`, `mem-keys`
 
-### Persistent Storage (5) - NEW
+### Persistent Storage (5)
 - `rom-set`, `rom-get`, `rom-del`, `rom-has`, `rom-keys`
 
-## Self-Hosted Compiler
+### Introspection (8) - NEW
+- `meta` - get all metadata for a tool
+- `meta!` - set metadata field
+- `calls` - get immediate dependencies
+- `graph` - get full call tree
+- `tag` - add tag to tool
+- `find-tag` - find tools by tag
+- `health` - get unhealthy tools
+- `stats` - get call statistics
 
-The Kore compiler is written in Kore itself:
+### Persistence (5) - NEW
+- `persist` - save tool to ROM only
+- `register` - define AND persist tool
+- `load-tools` - load from ROM into dictionary
+- `unregister` - remove from dictionary and ROM
+- `list-persisted` - list persisted tool names
 
-- **lib/compiler/tokenizer.kore** - Source → Tokens
-- **lib/compiler/parser.kore** - Tokens → AST  
-- **lib/compiler/codegen.kore** - AST → Kore code
+## Source Files
 
-Usage:
-```
-"5 3 add" tokenize parse codegen
-# => "5 3 add"
-```
+| File | Lines | Purpose |
+|------|-------|---------|
+| builtins.rs | 2805 | All 143 primitives |
+| value.rs | 389 | 10 value types |
+| meta.rs | 357 | Metadata structure |
+| capabilities.rs | 369 | Permission system |
+| effect.rs | 331 | Type signatures (optional) |
+| storage.rs | 325 | Persistent ROM |
+| executor.rs | 299 | Execution loop |
+| memory.rs | 274 | Session storage |
+| op.rs | 245 | 4 operation types |
+| resources.rs | 243 | Quota tracking |
+| stack.rs | 212 | LIFO data structure |
+| context.rs | 220 | Execution environment |
+| tool.rs | 180 | Tool definition |
+| error.rs | 120 | Error types |
+| lib.rs | 89 | Public API |
 
-## REPL Mode
+**Total**: ~5,458 lines of Rust
 
-Run `kore` with no arguments for interactive mode:
+## Tests
 
-```
-$ kore
-Kore OS v0.1.0
-Type 'exit' to quit, 'help' for commands.
+- **67** unit tests (lib)
+- **62** integration tests
+- **34** language semantics tests
+- **68** primitives tests
+- **231 total** - all passing
 
-Loaded prelude.
-> 5 3 add
-8
-> [1] > 
-```
+## What Was Cleaned Up (Session 5)
 
-Features:
-- Persistent stack across lines
-- Stack depth shown in prompt
-- Commands: help, clear, stack, .s, exit
-- Auto-loads lib/prelude.kore
+1. **Removed duplication in Tool**:
+   - `doc: Option<String>` → use `meta.doc`
+   - `effect: Option<Effect>` → use `meta.sig`
 
-## Prelude (lib/prelude.kore)
+2. **Removed legacy APIs**:
+   - `Context::has_capability()` → use `ctx.caps.has()`
+   - `Context::with_capability()` → use `ctx.with_caps()`
+   - `Tool::native_opt()` → use `Tool::native()`
 
-Standard library loaded at boot:
+3. **Simplified Tool API**:
+   - `Tool::composed(name, sig, ops)` - sig is now `Option<&str>`
+   - `tool.sig()` / `tool.doc()` - accessor methods
+   - Single source of truth: `tool.meta`
 
-**Stack**: `nip`, `tuck`, `2dup`, `2drop`, `len`
-**List**: `list1`, `list2`, `first`, `last`, `rest`
-**Arithmetic**: `inc`, `dec`, `square`, `abs`, `max`, `min`
-**Higher-order**: `sum`, `product`
-**Predicates**: `empty-str?`, `empty-list?`
-**Logging**: `log-debug`, `log-info`, `log-warn`, `log-error`
-**Assertions**: `assert-eq`, `assert-neq`, `assert-not-null`
-**System**: `sys-info` - Returns map with version, pid, cwd, tool-count
+## What's Next
 
-## OS Libraries (lib/os/)
+### Phase 5: Network Layer (from ARCHITECTURE_V02.md)
+- External communication (HTTP client already done)
+- Agent-to-agent messaging (spawn, join, select, cancel)
 
-- **fs.kore** - File system utilities
-- **shell.kore** - Shell command helpers
-- **io.kore** - I/O utilities
-- **time.kore** - Time utilities
-- **module.kore** - Module loading helpers
+### Phase 6: Self-Hosting
+- Parser in Kore
+- Executor in Kore
+- Standard library in Kore
 
-## Directory Structure
-
-```
-kore/
-├── src/
-│   ├── lib.rs           # Library root
-│   ├── value.rs         # 10 value types
-│   ├── op.rs            # Operations
-│   ├── stack.rs         # Stack implementation
-│   ├── context.rs       # Execution context
-│   ├── executor.rs      # Execute ops
-│   ├── tool.rs          # Tool abstraction
-│   ├── builtins.rs      # 111 primitives
-│   ├── error.rs         # Error types
-│   └── bin/kore.rs      # CLI binary
-├── lib/
-│   ├── prelude.kore     # Standard library
-│   ├── compiler/        # Self-hosted compiler
-│   └── os/              # OS utilities
-├── tests/
-│   └── integration.kore # Integration tests
-├── examples/
-│   ├── banner.kore      # Display system info
-│   ├── ls.kore          # List directory
-│   └── cat.kore         # Display file
-├── docs/
-│   ├── PHILOSOPHY.md    # 5 principles
-│   ├── ARCHITECTURE.md  # System design
-│   └── STATUS.md        # This file
-└── examples/
-    └── *.kore           # Example programs
-```
-
-## Philosophy (docs/PHILOSOPHY.md)
-
-1. **Divide**: Break complex tools into simpler ones
-2. **Single Purpose**: Each primitive does ONE thing
-3. **Explicit**: No magic, clear inputs/outputs
-4. **Reuse**: Compose, don't create new primitives
-5. **Verify**: Test everything that can fail
-
-## Next Steps
-
-1. **Port concept** - Uniform I/O sources (stdin, HTTP, file-watch)
-2. **HTTP server mode** - `kore --serve :8080`
-3. **Agent integration** - Connect to LLM for autonomous operation
-4. **Self-modification** - Agent can define new primitives
-
-## Session 3 Changelog
-
-Added **11 new primitives**:
-- **Introspection**: `words`, `describe`, `depth`
-- **Assertions**: `assert`, `panic`
-- **System Info**: `pid`, `cwd`, `args`, `exit`, `version`
-- **Logging**: `log`
-
-Added **prelude helpers**:
-- Logging: `log-debug`, `log-info`, `log-warn`, `log-error`
-- Assertions: `assert-eq`, `assert-neq`, `assert-not-null`
-- System: `sys-info` composite tool
-
-Added **example scripts**:
-- `banner.kore` - Display system info banner
-- `ls.kore` - List directory contents with args support
-- `cat.kore` - Display file contents
-
-Improved **CLI**:
-- Now accepts script arguments: `kore script.kore arg1 arg2`
+### Long-term: Emergent Collective Intelligence
+- See `docs/EMERGENT_COLLECTIVE_INTELLIGENCE.md`
+- Multiple agents sharing RAM/ROM
+- Workflow evolution and learning

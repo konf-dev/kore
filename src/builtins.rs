@@ -101,7 +101,24 @@
 //! ## Persistent Storage (5)
 //! - `rom-set`, `rom-get`, `rom-del`, `rom-has`, `rom-keys`
 //!
-//! **Total: 130 primitives**
+//! ## Introspection (8)
+//! - `meta`: Get metadata for any tool
+//! - `meta!`: Set metadata field
+//! - `calls`: Get immediate dependencies
+//! - `graph`: Get full call tree
+//! - `tag`: Add tag to a tool
+//! - `find-tag`: Find tools by tag
+//! - `health`: Get tools with warnings/errors
+//! - `stats`: Get call statistics
+//!
+//! ## Persistence (5)
+//! - `persist`: Save tool to ROM only
+//! - `register`: Define AND persist a tool
+//! - `load-tools`: Load persisted tools into dictionary
+//! - `unregister`: Remove from dictionary and ROM
+//! - `list-persisted`: List persisted tool names
+//!
+//! **Total: 143 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -332,8 +349,8 @@ pub async fn register_builtins(ctx: &mut Context) {
             let tool = dict.get(&name)?;
             drop(dict);
             
-            let sig = match &tool.effect {
-                Some(effect) => format!("{} {}", name, effect),
+            let sig = match tool.sig() {
+                Some(s) => format!("{} {}", name, s),
                 None => format!("{} (unknown signature)", name),
             };
             stack.push(Value::Text(sig))?;
@@ -1178,7 +1195,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_read_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-read '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:read:{}", path), 
+                    tool: "fs-read".to_string() 
+                });
             }
             match tokio::fs::read_to_string(&path).await {
                 Ok(contents) => stack.push(Value::Text(contents))?,
@@ -1195,7 +1215,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-write '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:write:{}", path), 
+                    tool: "fs-write".to_string() 
+                });
             }
             match tokio::fs::write(&path, &contents).await {
                 Ok(_) => {},
@@ -1212,7 +1235,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-append '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:write:{}", path), 
+                    tool: "fs-append".to_string() 
+                });
             }
             use tokio::io::AsyncWriteExt;
             let mut file = match tokio::fs::OpenOptions::new()
@@ -1237,7 +1263,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability (need read to check existence)
             if !ctx.caps.can_read_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-exists '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:read:{}", path), 
+                    tool: "fs-exists".to_string() 
+                });
             }
             let exists = tokio::fs::metadata(&path).await.is_ok();
             stack.push(Value::Bool(exists))?;
@@ -1251,7 +1280,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_read_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-list '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:read:{}", path), 
+                    tool: "fs-list".to_string() 
+                });
             }
             let mut entries = Vec::new();
             let mut dir = match tokio::fs::read_dir(&path).await {
@@ -1276,7 +1308,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability (need write to delete)
             if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-rm '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:write:{}", path), 
+                    tool: "fs-rm".to_string() 
+                });
             }
             // Try as file first, then as directory
             if tokio::fs::remove_file(&path).await.is_err() {
@@ -1294,7 +1329,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let path = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
-                return Err(crate::error::Error::Runtime(format!("fs-mkdir '{}': capability denied", path)));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: format!("fs:write:{}", path), 
+                    tool: "fs-mkdir".to_string() 
+                });
             }
             match tokio::fs::create_dir_all(&path).await {
                 Ok(_) => {},
@@ -1312,7 +1350,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let cmd = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_exec() {
-                return Err(crate::error::Error::Runtime("exec: capability denied".to_string()));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: "exec".to_string(), 
+                    tool: "exec".to_string() 
+                });
             }
             let output = tokio::process::Command::new("sh")
                 .arg("-c")
@@ -1496,7 +1537,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let name = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_env_read() {
-                return Err(crate::error::Error::Runtime("env-get: capability denied".to_string()));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: "env:read".to_string(), 
+                    tool: "env-get".to_string() 
+                });
             }
             match std::env::var(&name) {
                 Ok(val) => stack.push(Value::Text(val))?,
@@ -1513,7 +1557,10 @@ pub async fn register_builtins(ctx: &mut Context) {
             let name = stack.pop()?.into_text()?;
             // Check capability
             if !ctx.caps.can_env_write() {
-                return Err(crate::error::Error::Runtime("env-set: capability denied".to_string()));
+                return Err(crate::error::Error::CapabilityDenied { 
+                    capability: "env:write".to_string(), 
+                    tool: "env-set".to_string() 
+                });
             }
             std::env::set_var(&name, &value);
             Ok((stack, ctx))
@@ -2005,6 +2052,15 @@ pub async fn register_builtins(ctx: &mut Context) {
             Ok((stack, ctx))
         })
     }));
+
+    // Release lock before calling other registration functions
+    drop(dict);
+
+    // Register introspection tools
+    register_introspection(ctx).await;
+
+    // Register persistence tools  
+    register_persistence(ctx).await;
 }
 
 // Helper: Convert serde_json::Value to kore Value
@@ -2061,6 +2117,382 @@ fn value_to_json(value: &Value) -> serde_json::Value {
         Value::Handle(h) => serde_json::Value::String(format!("<handle:{:?}>", h)),
         Value::Error(e) => serde_json::Value::String(format!("<error:{}>", e.message)),
     }
+}
+
+/// Register introspection tools
+/// Everything is introspectable. Same interface for all.
+pub async fn register_introspection(ctx: &mut Context) {
+    let mut dict = ctx.dict.write().await;
+
+    // meta: (name -- map) - get metadata for a tool
+    dict.register(Tool::native("meta", "(name:Text -- meta:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            let dict = ctx.dict.read().await;
+            let tool = dict.get(&name)?;
+            drop(dict);
+            
+            stack.push(tool.meta.to_value())?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Get metadata for any tool. Returns map with name, sig, doc, status, stats, etc."));
+
+    // meta!: (name key value -- ) - set metadata field on a tool
+    dict.register(Tool::native("meta!", "(name:Text key:Text val:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let value = stack.pop()?.into_text()?;
+            let key = stack.pop()?.into_text()?;
+            let name = stack.pop()?.into_text()?;
+            
+            let mut dict = ctx.dict.write().await;
+            if let Ok(mut tool) = dict.get(&name) {
+                match key.as_str() {
+                    "doc" => tool.meta = tool.meta.clone().with_doc(&value),
+                    "status" => tool.meta.status = value,
+                    _ => tool.meta.set(&key, &value),
+                }
+                dict.register(tool);
+            }
+            drop(dict);
+            
+            Ok((stack, ctx))
+        })
+    }).with_doc("Set a metadata field on a tool. Supported keys: doc, status, or any custom field."));
+
+    // calls: (name -- list) - get immediate dependencies of a tool
+    dict.register(Tool::native("calls", "(name:Text -- deps:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            let dict = ctx.dict.read().await;
+            let tool = dict.get(&name)?;
+            drop(dict);
+            
+            let deps: Vec<Value> = tool.calls().into_iter()
+                .map(Value::Text)
+                .collect();
+            
+            stack.push(Value::List(deps))?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Get immediate dependencies (tools called) by a composed tool."));
+
+    // graph: (name -- tree) - get full call tree
+    dict.register(Tool::native("graph", "(name:Text -- tree:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            let dict = ctx.dict.read().await;
+            let tree = build_call_tree(&name, &dict, 10)?;
+            drop(dict);
+            
+            stack.push(tree)?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Get full call tree for a tool (recursive dependencies)."));
+
+    // tag: (name tag -- ) - add a tag to a tool
+    dict.register(Tool::native("tag", "(name:Text tag:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let tag = stack.pop()?.into_text()?;
+            let name = stack.pop()?.into_text()?;
+            
+            let mut dict = ctx.dict.write().await;
+            if let Ok(mut tool) = dict.get(&name) {
+                tool.meta.tags.push(tag);
+                dict.register(tool);
+            }
+            drop(dict);
+            
+            Ok((stack, ctx))
+        })
+    }).with_doc("Add a tag to a tool for discovery."));
+
+    // find-tag: (tag -- list) - find all tools with a tag
+    dict.register(Tool::native("find-tag", "(tag:Text -- names:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let tag = stack.pop()?.into_text()?;
+            let dict = ctx.dict.read().await;
+            
+            let matches: Vec<Value> = dict.names()
+                .filter(|name| {
+                    if let Ok(tool) = dict.get(name) {
+                        tool.meta.tags.contains(&tag)
+                    } else {
+                        false
+                    }
+                })
+                .map(|s| Value::Text(s.to_string()))
+                .collect();
+            drop(dict);
+            
+            stack.push(Value::List(matches))?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Find all tools with a specific tag."));
+
+    // health: ( -- list) - get tools with warnings or errors
+    dict.register(Tool::native("health", "( -- report:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let dict = ctx.dict.read().await;
+            
+            let unhealthy: Vec<Value> = dict.names()
+                .filter_map(|name| {
+                    if let Ok(tool) = dict.get(name) {
+                        if tool.meta.status != "ok" {
+                            let mut map = indexmap::IndexMap::new();
+                            map.insert("name".to_string(), Value::Text(name.to_string()));
+                            map.insert("status".to_string(), Value::Text(tool.meta.status.clone()));
+                            if !tool.meta.warnings.is_empty() {
+                                map.insert("warnings".to_string(), Value::List(
+                                    tool.meta.warnings.iter().map(|w: &String| Value::Text(w.clone())).collect()
+                                ));
+                            }
+                            if !tool.meta.errors.is_empty() {
+                                map.insert("errors".to_string(), Value::List(
+                                    tool.meta.errors.iter().map(|e: &String| Value::Text(e.clone())).collect()
+                                ));
+                            }
+                            Some(Value::Map(map))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            drop(dict);
+            
+            stack.push(Value::List(unhealthy))?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Get all tools with warnings or errors. Returns list of {name, status, warnings, errors}."));
+
+    // stats: (name -- map) - get just the stats for a tool
+    dict.register(Tool::native("stats", "(name:Text -- stats:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            let dict = ctx.dict.read().await;
+            let tool = dict.get(&name)?;
+            drop(dict);
+            
+            let mut map = indexmap::IndexMap::new();
+            map.insert("calls".to_string(), Value::Int(tool.meta.stats.calls as i64));
+            map.insert("failures".to_string(), Value::Int(tool.meta.stats.failures as i64));
+            map.insert("time_ms".to_string(), Value::Int(tool.meta.stats.time_ms as i64));
+            if let Some(last) = tool.meta.stats.last_call {
+                map.insert("last_call".to_string(), Value::Int(last as i64));
+            }
+            
+            stack.push(Value::Map(map))?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Get call statistics for a tool."));
+}
+
+/// Helper: Build call tree recursively
+fn build_call_tree(name: &str, dict: &crate::context::Dictionary, max_depth: usize) -> crate::error::Result<Value> {
+    use crate::context::Dictionary;
+    
+    fn build_tree_inner(name: &str, dict: &Dictionary, depth: usize, max_depth: usize, visited: &mut std::collections::HashSet<String>) -> Value {
+        if depth > max_depth || visited.contains(name) {
+            return Value::Text(format!("{}...", name));
+        }
+        visited.insert(name.to_string());
+        
+        let mut map = indexmap::IndexMap::new();
+        map.insert("name".to_string(), Value::Text(name.to_string()));
+        
+        if let Ok(tool) = dict.get(name) {
+            let calls = tool.calls();
+            if !calls.is_empty() {
+                let children: Vec<Value> = calls.iter()
+                    .map(|child| build_tree_inner(child, dict, depth + 1, max_depth, visited))
+                    .collect();
+                map.insert("calls".to_string(), Value::List(children));
+            }
+        }
+        
+        Value::Map(map)
+    }
+    
+    let mut visited = std::collections::HashSet::new();
+    Ok(build_tree_inner(name, dict, 0, max_depth, &mut visited))
+}
+
+/// Register persistence tools
+/// Tools can be saved to ROM and loaded back.
+pub async fn register_persistence(ctx: &mut Context) {
+    let mut dict = ctx.dict.write().await;
+
+    // persist: (name quote -- ) - save a tool to ROM only (not dictionary)
+    dict.register(Tool::native("persist", "(name:Text body:Quote -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let body = stack.pop()?.into_quote()?;
+            let name = stack.pop()?.into_text()?;
+            
+            // Check if storage is available
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("No storage available".into()))?;
+            
+            // Create a serializable representation
+            let tool = Tool::composed(&name, None, body);
+            let tool_value = serialize_tool(&tool);
+            
+            // Save to ROM under "tools/" prefix
+            let key = format!("tools/{}", name);
+            {
+                let mut resources = ctx.resources.write().await;
+                storage.set(&key, &tool_value, &mut resources.rom)
+                    .map_err(|e| crate::error::Error::Runtime(e.to_string()))?;
+            }
+            
+            Ok((stack, ctx))
+        })
+    }).with_doc("Save a tool to persistent storage (ROM only, not loaded into dictionary)."));
+
+    // register: (name quote -- ) - define AND persist a tool
+    dict.register(Tool::native("register", "(name:Text body:Quote -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let body = stack.pop()?.into_quote()?;
+            let name = stack.pop()?.into_text()?;
+            
+            // Create tool
+            let tool = Tool::composed(&name, None, body.clone());
+            
+            // Register in dictionary
+            {
+                let mut dict = ctx.dict.write().await;
+                dict.register(tool.clone());
+            }
+            
+            // Persist to ROM if storage available
+            if let Some(ref storage) = ctx.storage {
+                let tool_value = serialize_tool(&tool);
+                let key = format!("tools/{}", name);
+                let mut resources = ctx.resources.write().await;
+                let _ = storage.set(&key, &tool_value, &mut resources.rom);
+                drop(resources);
+            }
+            
+            Ok((stack, ctx))
+        })
+    }).with_doc("Define a tool AND save it to persistent storage."));
+
+    // load-tools: ( -- n) - load all persisted tools into dictionary
+    dict.register(Tool::native("load-tools", "( -- count:Int)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("No storage available".into()))?;
+            
+            let keys = storage.keys()
+                .map_err(|e| crate::error::Error::Runtime(e.to_string()))?;
+            
+            let mut count = 0;
+            for key in keys {
+                if key.starts_with("tools/") {
+                    // Load tool
+                    if let Ok(Some(value)) = storage.get(&key) {
+                        if let Some(tool) = deserialize_tool(&value) {
+                            let mut dict = ctx.dict.write().await;
+                            dict.register(tool);
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            
+            stack.push(Value::Int(count))?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("Load all persisted tools from ROM into the dictionary."));
+
+    // unregister: (name -- ) - remove from dictionary AND ROM
+    dict.register(Tool::native("unregister", "(name:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            
+            // Remove from dictionary
+            {
+                let mut dict = ctx.dict.write().await;
+                dict.remove(&name);
+            }
+            
+            // Remove from ROM if storage available
+            if let Some(ref storage) = ctx.storage {
+                let key = format!("tools/{}", name);
+                let mut resources = ctx.resources.write().await;
+                let _ = storage.del(&key, &mut resources.rom);
+            }
+            
+            Ok((stack, ctx))
+        })
+    }).with_doc("Remove a tool from dictionary and persistent storage."));
+
+    // list-persisted: ( -- list) - list all persisted tool names
+    dict.register(Tool::native("list-persisted", "( -- names:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("No storage available".into()))?;
+            
+            let keys = storage.keys()
+                .map_err(|e| crate::error::Error::Runtime(e.to_string()))?;
+            
+            let names: Vec<Value> = keys.into_iter()
+                .filter_map(|key| {
+                    if key.starts_with("tools/") {
+                        Some(Value::Text(key.strip_prefix("tools/")?.to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            
+            stack.push(Value::List(names))?;
+            Ok((stack, ctx))
+        })
+    }).with_doc("List all tool names saved in persistent storage."));
+}
+
+/// Serialize a tool to a Value for storage
+fn serialize_tool(tool: &Tool) -> Value {
+    let mut map = indexmap::IndexMap::new();
+    map.insert("name".to_string(), Value::Text(tool.name.clone()));
+    
+    if let Some(doc) = tool.doc() {
+        map.insert("doc".to_string(), Value::Text(doc.to_string()));
+    }
+    
+    if let Some(sig) = tool.sig() {
+        map.insert("sig".to_string(), Value::Text(sig.to_string()));
+    }
+    
+    // Serialize the body (ops)
+    if let crate::tool::ToolBody::Ops(ref ops) = tool.body {
+        map.insert("body".to_string(), Value::Quote(ops.clone()));
+    }
+    
+    // Serialize meta
+    map.insert("meta".to_string(), tool.meta.to_value());
+    
+    Value::Map(map)
+}
+
+/// Deserialize a tool from a Value
+fn deserialize_tool(value: &Value) -> Option<Tool> {
+    let map = value.as_map().ok()?;
+    
+    let name = map.get("name")?.as_text().ok()?;
+    let body = map.get("body")?.as_quote().ok()?;
+    
+    let mut tool = Tool::composed(name, None, body.clone());
+    
+    if let Some(doc) = map.get("doc").and_then(|v| v.text_opt()) {
+        tool = tool.with_doc(doc);
+    }
+    
+    // TODO: Restore full meta from stored value
+    
+    Some(tool)
 }
 
 #[cfg(test)]
@@ -2234,5 +2666,196 @@ mod tests {
         assert_eq!(result.values()[0].as_int().unwrap(), 2);
         assert_eq!(result.values()[1].as_int().unwrap(), 3);
         assert_eq!(result.values()[2].as_int().unwrap(), 1);
+    }
+
+    // === Introspection Tests ===
+
+    #[tokio::test]
+    async fn test_meta() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Get metadata for "dup"
+        let ops = vec![
+            Op::Push(Value::Text("dup".into())),
+            Op::call("meta"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        // Should return a map with name, sig, etc
+        let meta = result.values()[0].as_map().unwrap();
+        assert_eq!(meta.get("name").unwrap().as_text().unwrap(), "dup");
+        assert!(meta.contains_key("sig"));
+        assert!(meta.contains_key("stats"));
+    }
+
+    #[tokio::test]
+    async fn test_calls() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // First define a composed tool
+        let ops = vec![
+            Op::Push(Value::Text("square".into())),
+            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::call("def"),
+            // Now get its dependencies
+            Op::Push(Value::Text("square".into())),
+            Op::call("calls"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        let deps = result.values()[0].as_list().unwrap();
+        assert_eq!(deps.len(), 2);
+        assert_eq!(deps[0].as_text().unwrap(), "dup");
+        assert_eq!(deps[1].as_text().unwrap(), "mul");
+    }
+
+    #[tokio::test]
+    async fn test_graph() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Define a composed tool
+        let ops = vec![
+            Op::Push(Value::Text("square".into())),
+            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::call("def"),
+            // Get call graph
+            Op::Push(Value::Text("square".into())),
+            Op::call("graph"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        let tree = result.values()[0].as_map().unwrap();
+        assert_eq!(tree.get("name").unwrap().as_text().unwrap(), "square");
+        assert!(tree.contains_key("calls"));
+    }
+
+    #[tokio::test]
+    async fn test_tag_and_find_tag() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Define a tool
+        let ops = vec![
+            Op::Push(Value::Text("square".into())),
+            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::call("def"),
+            // Add a tag
+            Op::Push(Value::Text("square".into())),
+            Op::Push(Value::Text("math".into())),
+            Op::call("tag"),
+            // Find by tag
+            Op::Push(Value::Text("math".into())),
+            Op::call("find-tag"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        let matches = result.values()[0].as_list().unwrap();
+        assert!(matches.iter().any(|v| v.as_text().unwrap() == "square"));
+    }
+
+    #[tokio::test]
+    async fn test_health() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Health should return list (possibly empty)
+        let ops = vec![Op::call("health")];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        assert!(result.values()[0].as_list().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_stats() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Get stats for "dup"
+        let ops = vec![
+            Op::Push(Value::Text("dup".into())),
+            Op::call("stats"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        let stats = result.values()[0].as_map().unwrap();
+        assert!(stats.contains_key("calls"));
+        assert!(stats.contains_key("failures"));
+        assert!(stats.contains_key("time_ms"));
+    }
+
+    #[tokio::test]
+    async fn test_meta_set() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Define a tool
+        let ops = vec![
+            Op::Push(Value::Text("square".into())),
+            Op::Quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::call("def"),
+            // Set doc
+            Op::Push(Value::Text("square".into())),
+            Op::Push(Value::Text("doc".into())),
+            Op::Push(Value::Text("Squares a number".into())),
+            Op::call("meta!"),
+            // Get meta to verify
+            Op::Push(Value::Text("square".into())),
+            Op::call("meta"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        let meta = result.values()[0].as_map().unwrap();
+        assert_eq!(meta.get("doc").unwrap().as_text().unwrap(), "Squares a number");
+    }
+
+    // === Registration Tests ===
+
+    #[tokio::test]
+    async fn test_register_and_call() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Register a tool (def + persist)
+        let ops = vec![
+            Op::Push(Value::Text("double".into())),
+            Op::Quote(vec![Op::push(2), Op::call("mul")]),
+            Op::call("register"),
+            // Call it
+            Op::push(5),
+            Op::call("double"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        assert_eq!(result.values()[0].as_int().unwrap(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_stats_are_tracked() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+
+        // Call dup a few times
+        let ops = vec![
+            Op::push(5),
+            Op::call("dup"),
+            Op::call("dup"),
+            Op::call("dup"),
+            Op::call("drop"),
+            Op::call("drop"),
+            Op::call("drop"),
+            Op::call("drop"),
+            // Now check stats for dup
+            Op::Push(Value::Text("dup".into())),
+            Op::call("stats"),
+        ];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        let stats = result.values()[0].as_map().unwrap();
+        let calls = stats.get("calls").unwrap().as_int().unwrap();
+        // Should have at least 3 calls to dup
+        assert!(calls >= 3, "Expected at least 3 calls, got {}", calls);
     }
 }
