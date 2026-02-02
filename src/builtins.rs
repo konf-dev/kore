@@ -208,6 +208,16 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // fail: (code message -- ) - create structured error and halt
+    // This is the formal primitive for errors (see PREAMBLE)
+    dict.register(Tool::native("fail", "(code:Text msg:Text -- )", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let message = stack.pop()?.into_text()?;
+            let code = stack.pop()?.into_text()?;
+            Err(crate::error::Error::Custom { code, message })
+        })
+    }));
+
     // === Stack manipulation ===
 
     // dup: (a -- a a) - duplicate top value
@@ -269,6 +279,46 @@ pub async fn register_builtins(ctx: &mut Context) {
         Box::pin(async move {
             let d = stack.depth() as i64;
             stack.push(Value::Int(d))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // nip: (a b -- b) - remove second element
+    dict.register(Tool::native("nip", "(a:Any b:Any -- b:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let b = stack.pop()?;
+            stack.pop()?; // drop a
+            stack.push(b)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // tuck: (a b -- b a b) - copy top under second
+    dict.register(Tool::native("tuck", "(a:Any b:Any -- b:Any a:Any b:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let b = stack.pop()?;
+            let a = stack.pop()?;
+            stack.push(b.clone())?;
+            stack.push(a)?;
+            stack.push(b)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // pick: (n -- v) - copy nth element (0 = top)
+    dict.register(Tool::native("pick", "(n:Int -- v:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let n = stack.pop()?.into_int()? as usize;
+            let depth = stack.depth();
+            if n >= depth {
+                return Err(crate::error::Error::StackUnderflow {
+                    expected: n + 1,
+                    actual: depth,
+                });
+            }
+            // Stack is stored with top at end, so index from end
+            let value = stack.as_slice()[depth - 1 - n].clone();
+            stack.push(value)?;
             Ok((stack, ctx))
         })
     }));
@@ -542,6 +592,54 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // abs: (a -- |a|)
+    dict.register(Tool::native("abs", "(a:Num -- b:Num)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let a = stack.pop()?;
+            let result = match a {
+                Value::Int(x) => Value::Int(x.abs()),
+                Value::Float(x) => Value::Float(x.abs()),
+                _ => return Err(crate::error::Error::type_error("Num", &a)),
+            };
+            stack.push(result)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // min: (a b -- min(a,b))
+    dict.register(Tool::native("min", "(a:Num b:Num -- c:Num)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let b = stack.pop()?;
+            let a = stack.pop()?;
+            let result = match (&a, &b) {
+                (Value::Int(x), Value::Int(y)) => Value::Int(*x.min(y)),
+                (Value::Float(x), Value::Float(y)) => Value::Float(x.min(*y)),
+                (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64).min(*y)),
+                (Value::Float(x), Value::Int(y)) => Value::Float(x.min(*y as f64)),
+                _ => return Err(crate::error::Error::type_error("Num", &a)),
+            };
+            stack.push(result)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // max: (a b -- max(a,b))
+    dict.register(Tool::native("max", "(a:Num b:Num -- c:Num)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let b = stack.pop()?;
+            let a = stack.pop()?;
+            let result = match (&a, &b) {
+                (Value::Int(x), Value::Int(y)) => Value::Int(*x.max(y)),
+                (Value::Float(x), Value::Float(y)) => Value::Float(x.max(*y)),
+                (Value::Int(x), Value::Float(y)) => Value::Float((*x as f64).max(*y)),
+                (Value::Float(x), Value::Int(y)) => Value::Float(x.max(*y as f64)),
+                _ => return Err(crate::error::Error::type_error("Num", &a)),
+            };
+            stack.push(result)?;
+            Ok((stack, ctx))
+        })
+    }));
+
     // === Comparison ===
     // Returns Bool. Works on any comparable types.
 
@@ -783,6 +881,39 @@ pub async fn register_builtins(ctx: &mut Context) {
     // === List ===
     // Ordered sequences. Core data structure.
 
+    // list: (n -- list) - create list from n items on stack
+    // The formal primitive for list construction (see PREAMBLE)
+    dict.register(Tool::native("list", "(n:Int -- l:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let n = stack.pop()?.into_int()? as usize;
+            if n > stack.depth() {
+                return Err(crate::error::Error::StackUnderflow {
+                    expected: n,
+                    actual: stack.depth(),
+                });
+            }
+            let mut items = Vec::with_capacity(n);
+            for _ in 0..n {
+                items.push(stack.pop()?);
+            }
+            items.reverse(); // Stack order to list order
+            stack.push(Value::List(items))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // unlist: (list -- ...items) - spread list items onto stack
+    // The inverse of list
+    dict.register(Tool::native("unlist", "(l:List -- ...)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let list = stack.pop()?.into_list()?;
+            for item in list {
+                stack.push(item)?;
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
     // list-len: (l -- n)
     dict.register(Tool::native("list-len", "(l:List -- n:Int)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
@@ -904,6 +1035,15 @@ pub async fn register_builtins(ctx: &mut Context) {
 
     // === Map ===
     // Key-value stores. String keys only.
+
+    // map-new: ( -- m) - create empty map
+    // Alias for map-empty, formal name from core.rs
+    dict.register(Tool::native("map-new", "( -- m:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            stack.push(Value::Map(indexmap::IndexMap::new()))?;
+            Ok((stack, ctx))
+        })
+    }));
 
     // map-get: (m k -- v)
     dict.register(Tool::native("map-get", "(m:Map k:Text -- v:Any)", |mut stack: Stack, ctx: Context| {
@@ -1604,6 +1744,30 @@ pub async fn register_builtins(ctx: &mut Context) {
     // Traces form a monoid: concat is associative, empty is identity
     // Key property: trace(f ; g) = trace(f) · trace(g) (Postulate 3)
 
+    // trace-on: (bool -- ) - enable/disable tracing
+    // This is the formal primitive for trace control (see PREAMBLE)
+    // NOTE: Full implementation requires Context to store trace state
+    dict.register(Tool::native("trace-on", "(enabled:Bool -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let _enabled = stack.pop()?.is_truthy();
+            // TODO: When tracing is fully implemented, this will enable/disable recording
+            // For now, this is a no-op placeholder
+            Ok((stack, ctx))
+        })
+    }));
+
+    // trace: ( -- list) - get current trace as list of tool names
+    // This is the formal primitive for trace inspection (see PREAMBLE)
+    // NOTE: Full implementation requires Context to store accumulated trace
+    dict.register(Tool::native("trace", "( -- steps:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            // TODO: When tracing is fully implemented, this will return the trace
+            // For now, return empty list
+            stack.push(Value::List(vec![]))?;
+            Ok((stack, ctx))
+        })
+    }));
+
     // trace-step: (tool-name -- ) - record a trace step
     // This is primarily for internal use but exposed for completeness
     dict.register(Tool::native("trace-step", "(name:Text -- )", |mut stack: Stack, ctx: Context| {
@@ -1872,6 +2036,77 @@ pub async fn register_builtins(ctx: &mut Context) {
     }));
 
     // === Resources ===
+
+    // res-avail: ( -- mem rom compute net) - get available resources as Res monoid
+    // This is the formal primitive for resource inspection (see PREAMBLE)
+    dict.register(Tool::native("res-avail", "( -- mem:Int rom:Int compute:Int net:Int)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let (mem, rom, compute, net) = {
+                let res = ctx.resources.read().await;
+                (res.mem.available() as i64, res.rom.available() as i64, 
+                 res.compute.available() as i64, res.net.available() as i64)
+            };
+            stack.push(Value::Int(mem))?;
+            stack.push(Value::Int(rom))?;
+            stack.push(Value::Int(compute))?;
+            stack.push(Value::Int(net))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // res-cons: (mem rom compute net -- ) - consume specified resources
+    // This is the formal primitive for resource consumption (see PREAMBLE)
+    // Part of the Res monoid operations: consumption subtracts from available
+    dict.register(Tool::native("res-cons", "(mem:Int rom:Int compute:Int net:Int -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let net_req = stack.pop()?.into_int()? as u64;
+            let compute_req = stack.pop()?.into_int()? as u64;
+            let rom_req = stack.pop()?.into_int()? as u64;
+            let mem_req = stack.pop()?.into_int()? as u64;
+            
+            {
+                let mut res = ctx.resources.write().await;
+                
+                // Check availability first
+                if mem_req > res.mem.available() {
+                    return Err(crate::error::Error::ResourceExhausted { 
+                        resource: "mem".to_string(),
+                        requested: mem_req,
+                        available: res.mem.available(),
+                    });
+                }
+                if rom_req > res.rom.available() {
+                    return Err(crate::error::Error::ResourceExhausted { 
+                        resource: "rom".to_string(),
+                        requested: rom_req,
+                        available: res.rom.available(),
+                    });
+                }
+                if compute_req > res.compute.available() {
+                    return Err(crate::error::Error::ResourceExhausted { 
+                        resource: "compute".to_string(),
+                        requested: compute_req,
+                        available: res.compute.available(),
+                    });
+                }
+                if net_req > res.net.available() {
+                    return Err(crate::error::Error::ResourceExhausted { 
+                        resource: "net".to_string(),
+                        requested: net_req,
+                        available: res.net.available(),
+                    });
+                }
+                
+                // Consume by marking as used
+                res.mem.used = res.mem.used.saturating_add(mem_req);
+                res.rom.used = res.rom.used.saturating_add(rom_req);
+                res.compute.used = res.compute.used.saturating_add(compute_req);
+                res.net.used = res.net.used.saturating_add(net_req);
+            } // Drop lock here
+            
+            Ok((stack, ctx))
+        })
+    }));
 
     // res-mem: ( -- map) - get memory quota info
     dict.register(Tool::native("res-mem", "( -- info:Map)", |mut stack: Stack, ctx: Context| {

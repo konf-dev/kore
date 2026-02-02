@@ -9,8 +9,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Error, Debug, Clone)]
 pub enum Error {
     // Stack errors
-    #[error("Stack underflow: tried to pop from empty stack")]
-    StackUnderflow,
+    #[error("Stack underflow: expected {expected}, had {actual}")]
+    StackUnderflow { expected: usize, actual: usize },
 
     #[error("Stack overflow: exceeded maximum depth of {max}")]
     StackOverflow { max: usize },
@@ -52,6 +52,10 @@ pub enum Error {
     // Capability denied
     #[error("Capability denied: '{capability}' required for tool '{tool}'")]
     CapabilityDenied { capability: String, tool: String },
+
+    // Resource exhausted
+    #[error("Resource exhausted: {resource} - requested {requested}, available {available}")]
+    ResourceExhausted { resource: String, requested: u64, available: u64 },
 
     // Custom user error
     #[error("{code}: {message}")]
@@ -97,7 +101,7 @@ impl Error {
     /// Get error code for matching
     pub fn code(&self) -> &str {
         match self {
-            Self::StackUnderflow => "E_STACK_UNDERFLOW",
+            Self::StackUnderflow { .. } => "E_STACK_UNDERFLOW",
             Self::StackOverflow { .. } => "E_STACK_OVERFLOW",
             Self::TypeError { .. } => "E_TYPE",
             Self::EffectMismatch { .. } => "E_EFFECT_MISMATCH",
@@ -110,6 +114,7 @@ impl Error {
             Self::AssertionFailed(_) => "E_ASSERTION",
             Self::Runtime(_) => "E_RUNTIME",
             Self::CapabilityDenied { .. } => "E_CAPABILITY_DENIED",
+            Self::ResourceExhausted { .. } => "E_RESOURCE_EXHAUSTED",
             Self::Custom { code, .. } => code,
             Self::ParseError(_) => "E_PARSE",
             Self::HttpError(_) => "E_HTTP",

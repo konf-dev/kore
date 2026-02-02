@@ -49,18 +49,18 @@ impl Stack {
 
     /// Pop a value from the stack
     pub fn pop(&mut self) -> Result<Value> {
-        self.values.pop().ok_or(Error::StackUnderflow)
+        self.values.pop().ok_or(Error::StackUnderflow { expected: 1, actual: 0 })
     }
 
     /// Peek at the top value without removing it
     pub fn peek(&self) -> Result<&Value> {
-        self.values.last().ok_or(Error::StackUnderflow)
+        self.values.last().ok_or(Error::StackUnderflow { expected: 1, actual: 0 })
     }
 
     /// Peek at the nth value from top (0 = top)
     pub fn peek_n(&self, n: usize) -> Result<&Value> {
         if n >= self.values.len() {
-            return Err(Error::StackUnderflow);
+            return Err(Error::StackUnderflow { expected: n + 1, actual: self.values.len() });
         }
         Ok(&self.values[self.values.len() - 1 - n])
     }
@@ -77,6 +77,11 @@ impl Stack {
 
     /// Get all values (bottom to top)
     pub fn values(&self) -> &[Value] {
+        &self.values
+    }
+
+    /// Alias for values() - returns slice of stack values
+    pub fn as_slice(&self) -> &[Value] {
         &self.values
     }
 

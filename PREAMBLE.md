@@ -120,6 +120,29 @@ Look up a Tool by name and execute it.
 
 ---
 
+## The Core Primitives (51)
+
+Kore has exactly 51 core primitives that define the language semantics:
+
+| Category    | Count | Tools                                             |
+|-------------|-------|---------------------------------------------------|
+| Stack       | 9     | dup drop swap rot over nip tuck pick depth        |
+| Arithmetic  | 9     | add sub mul div mod neg abs min max               |
+| Comparison  | 6     | eq neq lt gt le ge                                |
+| Logic       | 3     | and or not                                        |
+| Control     | 3     | if call loop                                      |
+| Definition  | 3     | def words meta                                    |
+| Data        | 5     | list unlist map-new map-get map-set               |
+| Capability  | 4     | cap-has cap-list cap-leq cap-attenuate            |
+| Resource    | 4     | res-avail res-split res-cons res-has              |
+| Spawn       | 1     | spawn                                             |
+| Error       | 2     | try fail                                          |
+| Trace       | 2     | trace-on trace                                    |
+
+See `src/core.rs` for formal documentation.
+
+---
+
 ## The Invariants
 
 These are proven by tests and must never be violated:

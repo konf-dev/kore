@@ -87,7 +87,7 @@
 //! | words   | ( -- list)          | List defined tools      |
 //! | meta    | (name -- info)      | Get tool metadata       |
 //!
-//! ## Data (4 primitives)
+//! ## Data (5 primitives)
 //! Structured data operations.
 //!
 //! | Tool    | Signature            | Description             |
@@ -141,9 +141,14 @@
 //! | trace-on| ( -- )              | Enable tracing          |
 //! | trace   | ( -- trace)         | Get current trace       |
 //!
-//! # Total: 50 Core Primitives
+//! # Total: 51 Core Primitives
 //!
-//! Everything else (fs-*, net-*, str-*, json-*, etc.) is in the stdlib.
+//! Stack(9) + Arithmetic(9) + Comparison(6) + Logic(3) + Control(3) +
+//! Definition(3) + Data(5) + Capability(4) + Resource(4) + Spawn(1) +
+//! Error(2) + Trace(2) = 51
+//!
+//! Everything else is either stdlib (can be built from primitives)
+//! or system tools (native but not "primitives").
 
 use crate::algebra::{CapSet, Res, Trace, TraceStep};
 use crate::value::Value;
