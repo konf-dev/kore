@@ -797,7 +797,7 @@ pub async fn register_builtins(ctx: &mut Context) {
             let k = stack.pop()?.into_text()?;
             let map = stack.pop()?.into_map()?;
             let v = map.get(&k)
-                .ok_or_else(|| crate::error::Error::KeyNotFound(k))?
+                .ok_or(crate::error::Error::KeyNotFound(k.clone()))?
                 .clone();
             stack.push(v)?;
             Ok((stack, ctx))
@@ -1243,7 +1243,7 @@ pub async fn register_builtins(ctx: &mut Context) {
         Box::pin(async move {
             let path = stack.pop()?.into_text()?;
             // Try as file first, then as directory
-            if let Err(_) = tokio::fs::remove_file(&path).await {
+            if tokio::fs::remove_file(&path).await.is_err() {
                 if let Err(e) = tokio::fs::remove_dir_all(&path).await {
                     return Err(crate::error::Error::io(format!("fs-rm '{}': {}", path, e)));
                 }

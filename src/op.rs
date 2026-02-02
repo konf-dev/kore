@@ -45,7 +45,6 @@ impl Op {
 
     /// Simple parser for testing - not for production use
     /// Supports: integers, floats, "strings", 'strings', true/false/null, quotes, tool-names
-    
     pub fn parse(input: &str) -> crate::error::Result<Vec<Op>> {
         let tokens = Self::tokenize(input);
         Self::parse_tokens(&tokens)
@@ -105,15 +104,9 @@ impl Op {
             else if token == "null" {
                 ops.push(Op::Push(Value::Null));
             }
-            // String literal with double quotes
-            else if token.starts_with('"') && token.ends_with('"') && token.len() >= 2 {
-                let s = &token[1..token.len() - 1];
-                // Handle escape sequences
-                let s = unescape(s);
-                ops.push(Op::push(s));
-            }
-            // String literal with single quotes
-            else if token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2 {
+            // String literal (double or single quotes)
+            else if (token.starts_with('"') && token.ends_with('"') && token.len() >= 2)
+                 || (token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2) {
                 let s = &token[1..token.len() - 1];
                 // Handle escape sequences
                 let s = unescape(s);
@@ -131,7 +124,6 @@ impl Op {
     }
 
     /// Simple tokenizer that respects quoted strings and brackets
-    
     fn tokenize(input: &str) -> Vec<String> {
         let mut tokens = Vec::new();
         let mut chars = input.chars().peekable();
@@ -145,7 +137,7 @@ impl Op {
                         tokens.push(std::mem::take(&mut current));
                     }
                     // Skip until newline
-                    while let Some(c2) = chars.next() {
+                    for c2 in chars.by_ref() {
                         if c2 == '\n' {
                             break;
                         }
@@ -167,7 +159,7 @@ impl Op {
                 // Single quote - read until closing quote
                 '\'' => {
                     current.push(c);
-                    while let Some(c2) = chars.next() {
+                    for c2 in chars.by_ref() {
                         current.push(c2);
                         if c2 == '\'' {
                             break;
