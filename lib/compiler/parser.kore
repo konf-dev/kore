@@ -1,0 +1,172 @@
+# Kore Parser
+# ONE thing: Convert tokens to AST (list of ops)
+#
+# Input:  tokens:List of {type, value}
+# Output: ast:List of {op: Text, ...}
+#
+# Op types:
+#   {op: "push", value: <value>}
+#   {op: "call", name: <text>}
+#   {op: "quote", body: <list of ops>}
+
+# === Helpers ===
+
+# is-int-str: (text -- bool)
+# Check if text represents an integer (just first char for simplicity)
+"is-int-str" [
+    dup str-len 0 gt
+    [
+        0 str-get char-code  # get first char code
+        dup 48 ge swap 57 le and  # is digit? (0-9)
+    ]
+    [drop false]
+    if
+] def
+
+# make-push: (value -- op)
+"make-push" [map-empty swap "value" swap map-set "push" "op" swap map-set] def
+
+# make-call: (name -- op)
+"make-call" [map-empty swap "name" swap map-set "call" "op" swap map-set] def
+
+# make-quote: (body -- op)
+"make-quote" [map-empty swap "body" swap map-set "quote" "op" swap map-set] def
+
+# === Token access ===
+
+# token-type: (token -- type)
+"token-type" ["type" map-get] def
+
+# token-value: (token -- value)
+"token-value" ["value" map-get] def
+
+# === Parser State ===
+# We'll use a simple approach:
+# Stack: [ast, tokens]
+# - ast: accumulator of ops
+# - tokens: remaining tokens to parse
+
+# peek-token: (tokens -- tokens token)
+"peek-token" [dup 0 list-get] def
+
+# consume-token: (tokens -- tokens)
+"consume-token" [1 999999 list-slice] def
+
+# tokens-empty: (tokens -- bool)
+"tokens-empty" [list-len 0 eq] def
+
+# === Recursive Descent Parser ===
+
+# parse-quote: (tokens -- tokens body)
+# Parse tokens until ] is found
+# Called after consuming [
+# Returns remaining tokens and the body list
+"parse-quote" [
+    list-empty swap  # body tokens
+    
+    [
+        dup tokens-empty not
+        [peek-token token-type "RBRACKET" eq not]
+        [false]
+        if
+    ]
+    [
+        # Stack: body tokens
+        peek-token       # body tokens token
+        dup token-type   # body tokens token type
+        
+        dup "WORD" eq
+        [
+            # Stack: body tokens token type
+            drop           # body tokens token
+            token-value    # body tokens value
+            dup is-int-str
+            [to-int make-push]
+            [make-call]
+            if             # body tokens op
+            rot swap list-push swap  # body' tokens
+            consume-token            # body' tokens'
+        ]
+        [
+            dup "LBRACKET" eq
+            [
+                drop drop
+                consume-token  # body tokens' (consumed [)
+                parse-quote    # body tokens'' inner-body
+                make-quote     # body tokens'' op
+                rot swap list-push swap  # body' tokens''
+            ]
+            [
+                # Unknown, skip
+                drop drop
+                consume-token
+            ]
+            if
+        ]
+        if
+    ]
+    while
+    
+    # Consume the closing ]
+    consume-token  # body tokens'
+    swap           # tokens' body
+] def
+
+# parse: (tokens -- ast)
+# Main entry point
+"parse" [
+    list-empty swap  # ast tokens
+    
+    [dup tokens-empty not]
+    [
+        # Stack: ast tokens
+        peek-token       # ast tokens token
+        dup token-type   # ast tokens token type
+        
+        dup "WORD" eq
+        [
+            # Stack: ast tokens token type
+            drop           # ast tokens token
+            token-value    # ast tokens value
+            dup is-int-str
+            [to-int make-push]
+            [make-call]
+            if             # ast tokens op
+            rot            # tokens op ast
+            swap           # tokens ast op
+            list-push      # tokens ast'
+            swap           # ast' tokens
+            consume-token  # ast' tokens'
+        ]
+        [
+            dup "LBRACKET" eq
+            [
+                # Stack: ast tokens token type
+                drop drop              # ast tokens
+                consume-token          # ast tokens' (consumed [)
+                parse-quote            # ast tokens'' body
+                make-quote             # ast tokens'' op
+                rot swap list-push swap
+            ]
+            [
+                dup "RBRACKET" eq
+                [
+                    # Unexpected ], skip
+                    drop drop              # ast tokens
+                    consume-token
+                ]
+                [
+                    # Unknown token, skip
+                    drop drop              # ast tokens
+                    consume-token
+                ]
+                if
+            ]
+            if
+        ]
+        if
+    ]
+    while
+    
+    drop  # remove empty tokens
+] def

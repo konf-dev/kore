@@ -1,0 +1,29 @@
+# Map helpers - utilities for map manipulation
+# Each tool does ONE thing.
+
+# map-merge: (m1 m2 -- m)
+# Merge two maps, m2 values override m1
+"map-merge" [
+    swap  # m2 m1
+    over map-keys  # m2 m1 keys
+    [
+        # For each key in m2, set in m1
+        # Stack: m1 key
+        over swap  # m1 m1 key  
+        over swap map-get  # m1 m1 val
+        rot rot map-set  # m1
+    ] each
+    swap drop
+] def
+
+# map-from-pairs: (list -- map)
+# Create map from list of [key, value] pairs
+"map-from-pairs" [
+    map-empty swap
+    [
+        # Stack: map pair
+        dup 0 list-get  # map pair key
+        swap 1 list-get # map key value
+        map-set
+    ] each
+] def

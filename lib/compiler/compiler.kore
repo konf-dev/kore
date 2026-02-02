@@ -1,0 +1,19 @@
+# Kore Compiler
+# Composes: tokenizer -> parser -> codegen
+#
+# This demonstrates the philosophy:
+# - Each component does ONE thing
+# - Complex behavior emerges from composition
+# - The compiler is just: tokenize parse codegen
+
+# compile: (source -- source)
+# Round-trip: source -> tokens -> ast -> source
+"compile" [tokenize parse codegen] def
+
+# compile-to-ast: (source -- ast)
+# Compile to AST only
+"compile-to-ast" [tokenize parse] def
+
+# pretty-print: (ast -- text)
+# Format AST nicely (alias for codegen)
+"pretty-print" [codegen] def

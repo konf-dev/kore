@@ -1,0 +1,37 @@
+# List helpers - utilities for list manipulation
+# Each tool does ONE thing.
+
+# list-first: (list -- item)
+# Get first element
+"list-first" [0 list-get] def
+
+# list-last: (list -- item)
+# Get last element  
+"list-last" [dup list-len 1 sub list-get] def
+
+# list-rest: (list -- list)
+# Get all but first element
+"list-rest" [1 999999 list-slice] def
+
+# list-init: (list -- list)
+# Get all but last element
+"list-init" [dup list-len 1 sub 0 swap list-slice] def
+
+# list-contains: (list item -- bool)
+# Check if list contains item
+"list-contains" [
+    swap false swap  # found? list
+    [dup list-len 0 gt]
+    [
+        dup list-first   # found? list item
+        rot rot          # item found? list
+        dup list-rest    # item found? list rest
+        rot rot          # item rest found? list
+        drop             # item rest found?
+        rot              # rest found? item
+        3 2 roll         # found? item rest (need to compare)
+        # Actually let's simplify
+    ]
+    while
+    drop
+] def

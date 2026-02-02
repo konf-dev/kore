@@ -1,0 +1,37 @@
+# String helpers - small utilities for string manipulation
+# Each tool does ONE thing.
+
+# is-space: (char -- bool)
+# Check if character is whitespace
+"is-space" [
+    dup " " eq
+    over "\n" eq or
+    over "\t" eq or
+    swap "\r" eq or
+] def
+
+# is-digit: (char -- bool)
+# Check if character is 0-9
+"is-digit" [
+    char-code
+    dup 48 ge   # >= '0'
+    swap 57 le  # <= '9'
+    and
+] def
+
+# is-alpha: (char -- bool)
+# Check if character is a-z or A-Z
+"is-alpha" [
+    char-code
+    dup dup 65 ge swap 90 le and   # A-Z
+    swap dup 97 ge swap 122 le and # a-z
+    or
+] def
+
+# is-alnum: (char -- bool)
+# Check if character is alphanumeric
+"is-alnum" [
+    dup is-digit
+    swap is-alpha
+    or
+] def

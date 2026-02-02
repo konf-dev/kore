@@ -1,0 +1,68 @@
+# Kore Tokenizer
+# ONE thing: Convert source string to list of tokens
+#
+# Input:  source:Text
+# Output: tokens:List of {type: Text, value: Text}
+#
+# Token types: WORD, LBRACKET, RBRACKET
+
+# is-space: (char -- bool)
+"is-space" [dup " " eq over "\n" eq or over "\t" eq or swap "\r" eq or] def
+
+# skip-spaces: (source -- source)
+"skip-spaces" [
+    [dup str-len 0 gt [dup 0 str-get is-space] [false] if]
+    [1 999999 str-slice]
+    while
+] def
+
+# read-word: (source -- source word)
+"read-word" [
+    "" swap   
+    [dup str-len 0 gt [dup 0 str-get dup is-space not over "[" eq not and swap "]" eq not and] [false] if]
+    [dup 0 str-get rot swap str-concat swap 1 999999 str-slice]
+    while
+    swap  
+] def
+
+# make-token: (type value -- token)
+"make-token" [map-empty swap "value" swap map-set swap "type" swap map-set] def
+
+# tokenize: (source -- tokens)
+"tokenize" [
+    list-empty swap
+    
+    [dup str-len 0 gt]
+    [
+        skip-spaces
+        dup str-len 0 gt
+        [
+            dup 0 str-get
+            
+            dup "[" eq
+            [
+                drop 1 999999 str-slice
+                swap "LBRACKET" "[" make-token list-push swap
+            ]
+            [
+                dup "]" eq
+                [
+                    drop 1 999999 str-slice
+                    swap "RBRACKET" "]" make-token list-push swap
+                ]
+                [
+                    drop read-word
+                    "WORD" swap make-token
+                    rot swap list-push swap
+                ]
+                if
+            ]
+            if
+        ]
+        []
+        if
+    ]
+    while
+    
+    drop
+] def

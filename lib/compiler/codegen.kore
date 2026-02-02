@@ -1,0 +1,66 @@
+# Kore Code Generator
+# ONE thing: Convert AST to Kore source text
+#
+# Input:  ast:List of ops
+# Output: source:Text
+
+# === Helpers ===
+
+# op-type: (op -- type)
+"op-type" ["op" map-get] def
+
+# op-value: (op -- value)
+"op-value" ["value" map-get] def
+
+# op-name: (op -- name)
+"op-name" ["name" map-get] def
+
+# op-body: (op -- body)
+"op-body" ["body" map-get] def
+
+# === Code Generation ===
+
+# codegen-one: (op -- text)
+# Generate code for a single op
+"codegen-one" [
+    dup op-type
+    
+    dup "push" eq
+    [
+        drop op-value to-text
+    ]
+    [
+        dup "call" eq
+        [
+            drop op-name
+        ]
+        [
+            "quote" eq
+            [
+                op-body codegen
+                "[" swap str-concat "]" str-concat
+            ]
+            [""]  # unknown
+            if
+        ]
+        if
+    ]
+    if
+] def
+
+# codegen: (ast -- source)
+# Main entry point
+"codegen" [
+    "" swap  # result ast
+    [dup list-len 0 gt]
+    [
+        dup 0 list-get codegen-one  # result ast text
+        rot                         # ast text result
+        swap str-concat " " str-concat  # ast result
+        swap                        # result ast
+        1 999999 list-slice         # result rest
+    ]
+    while
+    drop
+    str-trim
+] def
