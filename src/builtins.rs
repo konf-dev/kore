@@ -65,16 +65,23 @@
 //! ## OS: Time (2)
 //! - `now`, `sleep`
 //!
+//! ## OS: Misc (2)
+//! - `uuid`: Generate UUID v4
+//! - `random`: Random float 0.0-1.0
+//!
 //! ## OS: Module Loading (1)
 //! - `load`: Execute a .kore file
 //!
 //! ## OS: Environment (2)
 //! - `env-get`, `env-set`
 //!
+//! ## OS: HTTP (3)
+//! - `http-get`, `http-post`, `http-request`
+//!
 //! ## Data: JSON (2)
 //! - `json-parse`, `json-encode`
 //!
-//! **Total: 95 primitives**
+//! **Total: 100 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -1260,6 +1267,33 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // === OS: Misc (1) ===
+
+    // uuid: ( -- uuid) - generate a new UUID v4
+    dict.register(Tool::native("uuid", "( -- id:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let id = uuid::Uuid::new_v4().to_string();
+            stack.push(Value::Text(id))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // random: ( -- n) - generate random float between 0.0 and 1.0
+    dict.register(Tool::native("random", "( -- n:Float)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            // Use UUID as source of randomness (simple approach without adding rand crate)
+            let uuid = uuid::Uuid::new_v4();
+            let bytes = uuid.as_bytes();
+            // Convert first 8 bytes to u64, then normalize to 0.0-1.0
+            let mut arr = [0u8; 8];
+            arr.copy_from_slice(&bytes[0..8]);
+            let raw = u64::from_le_bytes(arr);
+            let normalized = (raw as f64) / (u64::MAX as f64);
+            stack.push(Value::Float(normalized))?;
+            Ok((stack, ctx))
+        })
+    }));
+
     // === OS: Module Loading (1) ===
 
     // load: (path -- ) - execute a .kore file
@@ -1340,6 +1374,145 @@ pub async fn register_builtins(ctx: &mut Context) {
             let text = serde_json::to_string(&json)
                 .map_err(|e| crate::error::Error::io(format!("json-encode: {}", e)))?;
             stack.push(Value::Text(text))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: HTTP (3) ===
+
+    // http-get: (url -- response) - HTTP GET request, returns response map
+    dict.register(Tool::native("http-get", "(url:Text -- response:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let url = stack.pop()?.into_text()?;
+            
+            let client = reqwest::Client::new();
+            let response = client.get(&url)
+                .send()
+                .await
+                .map_err(|e| crate::error::Error::io(format!("http-get: {}", e)))?;
+            
+            let status = response.status().as_u16() as i64;
+            let headers = response.headers().clone();
+            let body = response.text().await
+                .map_err(|e| crate::error::Error::io(format!("http-get body: {}", e)))?;
+            
+            // Build response map
+            let mut result = indexmap::IndexMap::new();
+            result.insert("status".to_string(), Value::Int(status));
+            result.insert("body".to_string(), Value::Text(body));
+            
+            // Headers as a map
+            let mut header_map = indexmap::IndexMap::new();
+            for (k, v) in headers.iter() {
+                if let Ok(v_str) = v.to_str() {
+                    header_map.insert(k.to_string(), Value::Text(v_str.to_string()));
+                }
+            }
+            result.insert("headers".to_string(), Value::Map(header_map));
+            
+            stack.push(Value::Map(result))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // http-post: (url body headers -- response) - HTTP POST with body and headers
+    dict.register(Tool::native("http-post", "(url:Text body:Text headers:Map -- response:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let headers_map = stack.pop()?.into_map()?;
+            let body = stack.pop()?.into_text()?;
+            let url = stack.pop()?.into_text()?;
+            
+            let client = reqwest::Client::new();
+            let mut request = client.post(&url).body(body);
+            
+            // Add headers
+            for (k, v) in headers_map.iter() {
+                if let Value::Text(v_str) = v {
+                    request = request.header(k.as_str(), v_str.as_str());
+                }
+            }
+            
+            let response = request.send()
+                .await
+                .map_err(|e| crate::error::Error::io(format!("http-post: {}", e)))?;
+            
+            let status = response.status().as_u16() as i64;
+            let resp_headers = response.headers().clone();
+            let resp_body = response.text().await
+                .map_err(|e| crate::error::Error::io(format!("http-post body: {}", e)))?;
+            
+            // Build response map
+            let mut result = indexmap::IndexMap::new();
+            result.insert("status".to_string(), Value::Int(status));
+            result.insert("body".to_string(), Value::Text(resp_body));
+            
+            // Headers as a map
+            let mut header_map = indexmap::IndexMap::new();
+            for (k, v) in resp_headers.iter() {
+                if let Ok(v_str) = v.to_str() {
+                    header_map.insert(k.to_string(), Value::Text(v_str.to_string()));
+                }
+            }
+            result.insert("headers".to_string(), Value::Map(header_map));
+            
+            stack.push(Value::Map(result))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // http-request: (method url body headers -- response) - generic HTTP request
+    dict.register(Tool::native("http-request", "(method:Text url:Text body:Text headers:Map -- response:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let headers_map = stack.pop()?.into_map()?;
+            let body = stack.pop()?.into_text()?;
+            let url = stack.pop()?.into_text()?;
+            let method = stack.pop()?.into_text()?;
+            
+            let client = reqwest::Client::new();
+            let method_enum = match method.to_uppercase().as_str() {
+                "GET" => reqwest::Method::GET,
+                "POST" => reqwest::Method::POST,
+                "PUT" => reqwest::Method::PUT,
+                "DELETE" => reqwest::Method::DELETE,
+                "PATCH" => reqwest::Method::PATCH,
+                "HEAD" => reqwest::Method::HEAD,
+                "OPTIONS" => reqwest::Method::OPTIONS,
+                _ => return Err(crate::error::Error::Runtime(format!("Unknown HTTP method: {}", method))),
+            };
+            
+            let mut request = client.request(method_enum, &url).body(body);
+            
+            // Add headers
+            for (k, v) in headers_map.iter() {
+                if let Value::Text(v_str) = v {
+                    request = request.header(k.as_str(), v_str.as_str());
+                }
+            }
+            
+            let response = request.send()
+                .await
+                .map_err(|e| crate::error::Error::io(format!("http-request: {}", e)))?;
+            
+            let status = response.status().as_u16() as i64;
+            let resp_headers = response.headers().clone();
+            let resp_body = response.text().await
+                .map_err(|e| crate::error::Error::io(format!("http-request body: {}", e)))?;
+            
+            // Build response map
+            let mut result = indexmap::IndexMap::new();
+            result.insert("status".to_string(), Value::Int(status));
+            result.insert("body".to_string(), Value::Text(resp_body));
+            
+            // Headers as a map
+            let mut header_map = indexmap::IndexMap::new();
+            for (k, v) in resp_headers.iter() {
+                if let Ok(v_str) = v.to_str() {
+                    header_map.insert(k.to_string(), Value::Text(v_str.to_string()));
+                }
+            }
+            result.insert("headers".to_string(), Value::Map(header_map));
+            
+            stack.push(Value::Map(result))?;
             Ok((stack, ctx))
         })
     }));
