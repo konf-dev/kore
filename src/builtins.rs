@@ -89,7 +89,19 @@
 //! ## Data: JSON (2)
 //! - `json-parse`, `json-encode`
 //!
-//! **Total: 111 primitives**
+//! ## Resources (5)
+//! - `res-mem`, `res-rom`, `res-compute`, `res-net`, `res-all`
+//!
+//! ## Capabilities (4)
+//! - `cap-has`, `cap-list`, `cap-fs`, `cap-net`
+//!
+//! ## Session Memory (5)
+//! - `mem-set`, `mem-get`, `mem-del`, `mem-has`, `mem-keys`
+//!
+//! ## Persistent Storage (5)
+//! - `rom-set`, `rom-get`, `rom-del`, `rom-has`, `rom-keys`
+//!
+//! **Total: 130 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -1164,6 +1176,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("fs-read", "(path:Text -- contents:Text)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let path = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_read_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-read '{}': capability denied", path)));
+            }
             match tokio::fs::read_to_string(&path).await {
                 Ok(contents) => stack.push(Value::Text(contents))?,
                 Err(e) => return Err(crate::error::Error::io(format!("fs-read '{}': {}", path, e))),
@@ -1177,6 +1193,10 @@ pub async fn register_builtins(ctx: &mut Context) {
         Box::pin(async move {
             let contents = stack.pop()?.into_text()?;
             let path = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-write '{}': capability denied", path)));
+            }
             match tokio::fs::write(&path, &contents).await {
                 Ok(_) => {},
                 Err(e) => return Err(crate::error::Error::io(format!("fs-write '{}': {}", path, e))),
@@ -1190,6 +1210,10 @@ pub async fn register_builtins(ctx: &mut Context) {
         Box::pin(async move {
             let contents = stack.pop()?.into_text()?;
             let path = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-append '{}': capability denied", path)));
+            }
             use tokio::io::AsyncWriteExt;
             let mut file = match tokio::fs::OpenOptions::new()
                 .create(true)
@@ -1211,6 +1235,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("fs-exists", "(path:Text -- exists:Bool)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let path = stack.pop()?.into_text()?;
+            // Check capability (need read to check existence)
+            if !ctx.caps.can_read_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-exists '{}': capability denied", path)));
+            }
             let exists = tokio::fs::metadata(&path).await.is_ok();
             stack.push(Value::Bool(exists))?;
             Ok((stack, ctx))
@@ -1221,6 +1249,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("fs-list", "(path:Text -- entries:List)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let path = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_read_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-list '{}': capability denied", path)));
+            }
             let mut entries = Vec::new();
             let mut dir = match tokio::fs::read_dir(&path).await {
                 Ok(d) => d,
@@ -1242,6 +1274,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("fs-rm", "(path:Text -- )", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let path = stack.pop()?.into_text()?;
+            // Check capability (need write to delete)
+            if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-rm '{}': capability denied", path)));
+            }
             // Try as file first, then as directory
             if tokio::fs::remove_file(&path).await.is_err() {
                 if let Err(e) = tokio::fs::remove_dir_all(&path).await {
@@ -1256,6 +1292,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("fs-mkdir", "(path:Text -- )", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let path = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_write_path(std::path::Path::new(&path)) {
+                return Err(crate::error::Error::Runtime(format!("fs-mkdir '{}': capability denied", path)));
+            }
             match tokio::fs::create_dir_all(&path).await {
                 Ok(_) => {},
                 Err(e) => return Err(crate::error::Error::io(format!("fs-mkdir '{}': {}", path, e))),
@@ -1270,6 +1310,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("exec", "(cmd:Text -- output:Text)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let cmd = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_exec() {
+                return Err(crate::error::Error::Runtime("exec: capability denied".to_string()));
+            }
             let output = tokio::process::Command::new("sh")
                 .arg("-c")
                 .arg(&cmd)
@@ -1450,6 +1494,10 @@ pub async fn register_builtins(ctx: &mut Context) {
     dict.register(Tool::native("env-get", "(name:Text -- value:Text|Null)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let name = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_env_read() {
+                return Err(crate::error::Error::Runtime("env-get: capability denied".to_string()));
+            }
             match std::env::var(&name) {
                 Ok(val) => stack.push(Value::Text(val))?,
                 Err(_) => stack.push(Value::Null)?,
@@ -1463,6 +1511,10 @@ pub async fn register_builtins(ctx: &mut Context) {
         Box::pin(async move {
             let value = stack.pop()?.into_text()?;
             let name = stack.pop()?.into_text()?;
+            // Check capability
+            if !ctx.caps.can_env_write() {
+                return Err(crate::error::Error::Runtime("env-set: capability denied".to_string()));
+            }
             std::env::set_var(&name, &value);
             Ok((stack, ctx))
         })
@@ -1649,6 +1701,307 @@ pub async fn register_builtins(ctx: &mut Context) {
             result.insert("headers".to_string(), Value::Map(header_map));
             
             stack.push(Value::Map(result))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === Resources ===
+
+    // res-mem: ( -- map) - get memory quota info
+    dict.register(Tool::native("res-mem", "( -- info:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let info = {
+                let res = ctx.resources.read().await;
+                let quota = &res.mem;
+                let mut info = indexmap::IndexMap::new();
+                info.insert("total".to_string(), Value::Int(quota.total as i64));
+                info.insert("used".to_string(), Value::Int(quota.used as i64));
+                info.insert("reserved".to_string(), Value::Int(quota.reserved as i64));
+                info.insert("free".to_string(), Value::Int(quota.free() as i64));
+                info
+            };
+            stack.push(Value::Map(info))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // res-rom: ( -- map) - get storage quota info
+    dict.register(Tool::native("res-rom", "( -- info:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let info = {
+                let res = ctx.resources.read().await;
+                let quota = &res.rom;
+                let mut info = indexmap::IndexMap::new();
+                info.insert("total".to_string(), Value::Int(quota.total as i64));
+                info.insert("used".to_string(), Value::Int(quota.used as i64));
+                info.insert("reserved".to_string(), Value::Int(quota.reserved as i64));
+                info.insert("free".to_string(), Value::Int(quota.free() as i64));
+                info
+            };
+            stack.push(Value::Map(info))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // res-compute: ( -- map) - get compute quota info
+    dict.register(Tool::native("res-compute", "( -- info:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let info = {
+                let res = ctx.resources.read().await;
+                let quota = &res.compute;
+                let mut info = indexmap::IndexMap::new();
+                info.insert("total".to_string(), Value::Int(quota.total as i64));
+                info.insert("used".to_string(), Value::Int(quota.used as i64));
+                info.insert("reserved".to_string(), Value::Int(quota.reserved as i64));
+                info.insert("free".to_string(), Value::Int(quota.free() as i64));
+                info
+            };
+            stack.push(Value::Map(info))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // res-net: ( -- map) - get network quota info
+    dict.register(Tool::native("res-net", "( -- info:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let info = {
+                let res = ctx.resources.read().await;
+                let quota = &res.net;
+                let mut info = indexmap::IndexMap::new();
+                info.insert("total".to_string(), Value::Int(quota.total as i64));
+                info.insert("used".to_string(), Value::Int(quota.used as i64));
+                info.insert("reserved".to_string(), Value::Int(quota.reserved as i64));
+                info.insert("free".to_string(), Value::Int(quota.free() as i64));
+                info
+            };
+            stack.push(Value::Map(info))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // res-all: ( -- map) - get all resource quotas
+    dict.register(Tool::native("res-all", "( -- info:Map)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let all = {
+                let res = ctx.resources.read().await;
+
+                let make_quota = |q: &crate::resources::ResourceQuota| {
+                    let mut m = indexmap::IndexMap::new();
+                    m.insert("total".to_string(), Value::Int(q.total as i64));
+                    m.insert("used".to_string(), Value::Int(q.used as i64));
+                    m.insert("reserved".to_string(), Value::Int(q.reserved as i64));
+                    m.insert("free".to_string(), Value::Int(q.free() as i64));
+                    Value::Map(m)
+                };
+
+                let mut all = indexmap::IndexMap::new();
+                all.insert("mem".to_string(), make_quota(&res.mem));
+                all.insert("rom".to_string(), make_quota(&res.rom));
+                all.insert("compute".to_string(), make_quota(&res.compute));
+                all.insert("net".to_string(), make_quota(&res.net));
+                all
+            };
+            stack.push(Value::Map(all))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === Capabilities ===
+
+    // cap-has: (cap -- bool) - check if capability is granted
+    dict.register(Tool::native("cap-has", "(cap:Text -- result:Bool)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let cap = stack.pop()?.into_text()?;
+            let has = ctx.caps.has(&cap);
+            stack.push(Value::Bool(has))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // cap-list: ( -- list) - list all granted capabilities
+    dict.register(Tool::native("cap-list", "( -- caps:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let caps = ctx.caps.list();
+            let list: Vec<Value> = caps.into_iter().map(Value::Text).collect();
+            stack.push(Value::List(list))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // cap-fs: (path mode -- bool) - check fs capability (mode: "read" or "write")
+    dict.register(Tool::native("cap-fs", "(path:Text mode:Text -- result:Bool)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let mode = stack.pop()?.into_text()?;
+            let path = stack.pop()?.into_text()?;
+            let path = std::path::Path::new(&path);
+
+            let can = match mode.as_str() {
+                "read" => ctx.caps.can_read_path(path),
+                "write" => ctx.caps.can_write_path(path),
+                _ => false,
+            };
+            stack.push(Value::Bool(can))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // cap-net: (host port mode -- bool) - check net capability (mode: "connect" or "listen")
+    dict.register(Tool::native("cap-net", "(host:Text port:Int mode:Text -- result:Bool)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let mode = stack.pop()?.into_text()?;
+            let port = stack.pop()?.into_int()? as u16;
+            let host = stack.pop()?.into_text()?;
+
+            let can = match mode.as_str() {
+                "connect" => ctx.caps.can_connect(&host, port),
+                "listen" => ctx.caps.can_listen(port),
+                _ => false,
+            };
+            stack.push(Value::Bool(can))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === Session Memory ===
+
+    // mem-set: (key value -- ) - store value in session memory
+    dict.register(Tool::native("mem-set", "(key:Text value:Any -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let value = stack.pop()?;
+            let key = stack.pop()?.into_text()?;
+
+            {
+                let mut res = ctx.resources.write().await;
+                ctx.memory.set(key, value, &mut res.mem).await
+                    .map_err(|e| crate::error::Error::Runtime(format!("mem-set: {}", e)))?;
+            }
+
+            Ok((stack, ctx))
+        })
+    }));
+
+    // mem-get: (key -- value) - get value from session memory
+    dict.register(Tool::native("mem-get", "(key:Text -- value:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.into_text()?;
+            let value = ctx.memory.get(&key).await.unwrap_or(Value::Null);
+            stack.push(value)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // mem-del: (key -- ) - remove key from session memory
+    dict.register(Tool::native("mem-del", "(key:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.into_text()?;
+            {
+                let mut res = ctx.resources.write().await;
+                ctx.memory.del(&key, &mut res.mem).await;
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // mem-has: (key -- bool) - check if key exists in session memory
+    dict.register(Tool::native("mem-has", "(key:Text -- exists:Bool)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.into_text()?;
+            let has = ctx.memory.has(&key).await;
+            stack.push(Value::Bool(has))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // mem-keys: ( -- list) - list all keys in session memory
+    dict.register(Tool::native("mem-keys", "( -- keys:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let keys = ctx.memory.keys().await;
+            let list: Vec<Value> = keys.into_iter().map(Value::Text).collect();
+            stack.push(Value::List(list))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === Persistent Storage (ROM) ===
+
+    // rom-set: (key value -- ) - store value in persistent storage
+    dict.register(Tool::native("rom-set", "(key:Text value:Any -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let value = stack.pop()?;
+            let key = stack.pop()?.into_text()?;
+
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("rom-set: storage not available".to_string()))?;
+
+            {
+                let mut res = ctx.resources.write().await;
+                storage.set(&key, &value, &mut res.rom)
+                    .map_err(|e| crate::error::Error::Runtime(format!("rom-set: {}", e)))?;
+            }
+
+            Ok((stack, ctx))
+        })
+    }));
+
+    // rom-get: (key -- value) - get value from persistent storage
+    dict.register(Tool::native("rom-get", "(key:Text -- value:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.into_text()?;
+
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("rom-get: storage not available".to_string()))?;
+
+            let value = storage.get(&key)
+                .map_err(|e| crate::error::Error::Runtime(format!("rom-get: {}", e)))?
+                .unwrap_or(Value::Null);
+
+            stack.push(value)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // rom-del: (key -- ) - remove key from persistent storage
+    dict.register(Tool::native("rom-del", "(key:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.into_text()?;
+
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("rom-del: storage not available".to_string()))?;
+
+            {
+                let mut res = ctx.resources.write().await;
+                storage.del(&key, &mut res.rom)
+                    .map_err(|e| crate::error::Error::Runtime(format!("rom-del: {}", e)))?;
+            }
+
+            Ok((stack, ctx))
+        })
+    }));
+
+    // rom-has: (key -- bool) - check if key exists in persistent storage
+    dict.register(Tool::native("rom-has", "(key:Text -- exists:Bool)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.into_text()?;
+
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("rom-has: storage not available".to_string()))?;
+
+            let has = storage.has(&key);
+            stack.push(Value::Bool(has))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // rom-keys: ( -- list) - list all keys in persistent storage
+    dict.register(Tool::native("rom-keys", "( -- keys:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let storage = ctx.storage.as_ref()
+                .ok_or_else(|| crate::error::Error::Runtime("rom-keys: storage not available".to_string()))?;
+
+            let keys = storage.keys()
+                .map_err(|e| crate::error::Error::Runtime(format!("rom-keys: {}", e)))?;
+            let list: Vec<Value> = keys.into_iter().map(Value::Text).collect();
+            stack.push(Value::List(list))?;
             Ok((stack, ctx))
         })
     }));

@@ -58,22 +58,30 @@
 //! | `rot` | `(a b c -- b c a)` | Rotate top three |
 
 pub mod builtins;
+pub mod capabilities;
 pub mod context;
 pub mod effect;
 pub mod error;
 pub mod executor;
+pub mod memory;
 pub mod op;
+pub mod resources;
 pub mod stack;
+pub mod storage;
 pub mod tool;
 pub mod value;
 
 // Re-export main types for convenience
 pub use builtins::register_builtins;
+pub use capabilities::Capabilities;
 pub use context::Context;
 pub use effect::{Effect, Type};
 pub use error::{Error, Result};
 pub use executor::{execute, ExecFuture};
+pub use memory::Memory;
 pub use op::Op;
+pub use resources::{ResourceQuota, Resources};
 pub use stack::Stack;
+pub use storage::Storage;
 pub use tool::Tool;
-pub use value::{Value, Handle, HandleKind, ErrorValue};
+pub use value::{ErrorValue, Handle, HandleKind, Value};

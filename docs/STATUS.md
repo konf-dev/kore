@@ -1,11 +1,18 @@
 # Kore OS Status
 
-> **Current Version**: v0.1.0 (stable-v0.1-agent-working branch)
-> **Last Updated**: Session 3
+> **Current Version**: v0.1.0+ (stable-v0.1-agent-working branch)
+> **Last Updated**: Session 4
 
 ## Summary
 
-Kore is now a feature-complete OS for LLM agents with **111 primitives**.
+Kore is now a feature-complete OS for LLM agents with **130 primitives**.
+
+### v0.2 Foundation (NEW)
+- **Resources**: Abstract quota system (mem, rom, compute, net)
+- **Capabilities**: Permission system for all operations
+- **Session Memory**: Volatile key-value storage with quota enforcement
+- **Persistent Storage**: ROM that survives restarts
+- **Security**: All I/O operations check capabilities before executing
 
 ## Primitives by Category
 
@@ -60,10 +67,10 @@ Kore is now a feature-complete OS for LLM agents with **111 primitives**.
 ### Combinators (6)
 - `map`, `filter`, `fold`, `each`, `times`, `while`
 
-### OS: File System (7)
+### OS: File System (7) - requires `fs:read` or `fs:write` capability
 - `fs-read`, `fs-write`, `fs-append`, `fs-exists`, `fs-list`, `fs-rm`, `fs-mkdir`
 
-### OS: Process (1)
+### OS: Process (1) - requires `exec` capability
 - `exec` - Run shell command
 
 ### OS: I/O (4)
@@ -87,7 +94,7 @@ Kore is now a feature-complete OS for LLM agents with **111 primitives**.
 ### OS: Module Loading (1)
 - `load` - Execute a .kore file
 
-### OS: Environment (2)
+### OS: Environment (2) - requires `env:read` or `env:write` capability
 - `env-get`, `env-set`
 
 ### OS: HTTP (3)
@@ -98,6 +105,25 @@ Kore is now a feature-complete OS for LLM agents with **111 primitives**.
 ### Data: JSON (2)
 - `json-parse` - JSON text to value
 - `json-encode` - Value to JSON text
+
+### Resources (5) - NEW
+- `res-mem` - Get memory quota info
+- `res-rom` - Get storage quota info
+- `res-compute` - Get compute quota info
+- `res-net` - Get network quota info
+- `res-all` - Get all quotas
+
+### Capabilities (4) - NEW
+- `cap-has` - Check if capability granted
+- `cap-list` - List all capabilities
+- `cap-fs` - Check fs capability
+- `cap-net` - Check net capability
+
+### Session Memory (5) - NEW
+- `mem-set`, `mem-get`, `mem-del`, `mem-has`, `mem-keys`
+
+### Persistent Storage (5) - NEW
+- `rom-set`, `rom-get`, `rom-del`, `rom-has`, `rom-keys`
 
 ## Self-Hosted Compiler
 

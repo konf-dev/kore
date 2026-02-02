@@ -1,8 +1,17 @@
 //! Context - The execution environment
 //!
-//! Simple: a shared dictionary of tools and optional capabilities.
+//! Contains:
+//! - Tool dictionary
+//! - Capabilities (what this execution can do)
+//! - Resources (quotas and usage tracking)
+//! - Memory (volatile session storage)
+//! - Storage (persistent ROM)
 
+use crate::capabilities::Capabilities;
 use crate::error::{Error, Result};
+use crate::memory::Memory;
+use crate::resources::Resources;
+use crate::storage::Storage;
 use crate::tool::Tool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,7 +24,16 @@ pub struct Context {
     pub dict: Arc<RwLock<Dictionary>>,
 
     /// Capabilities (what this execution can do)
-    pub capabilities: Vec<String>,
+    pub caps: Arc<Capabilities>,
+
+    /// Resource quotas and usage
+    pub resources: Arc<RwLock<Resources>>,
+
+    /// Session memory (volatile)
+    pub memory: Memory,
+
+    /// Persistent storage (optional, may not be available)
+    pub storage: Option<Arc<Storage>>,
 }
 
 /// Tool dictionary - name → tool mapping
@@ -79,30 +97,81 @@ impl Dictionary {
 
 impl Context {
     /// Create a new context with default settings
+    /// Uses environment variables for configuration:
+    /// - KORE_CAPS: capability string
+    /// - KORE_MEM_LIMIT, KORE_ROM_LIMIT, etc: resource limits
+    /// - KORE_STORAGE_PATH: persistent storage location
     pub fn new() -> Self {
+        let storage = Storage::from_env().ok().map(Arc::new);
+
         Self {
             dict: Arc::new(RwLock::new(Dictionary::new())),
-            capabilities: Vec::new(),
+            caps: Arc::new(Capabilities::from_env()),
+            resources: Arc::new(RwLock::new(Resources::from_env())),
+            memory: Memory::new(),
+            storage,
+        }
+    }
+
+    /// Create with all capabilities (for trusted contexts)
+    pub fn trusted() -> Self {
+        let storage = Storage::from_env().ok().map(Arc::new);
+
+        Self {
+            dict: Arc::new(RwLock::new(Dictionary::new())),
+            caps: Arc::new(Capabilities::all()),
+            resources: Arc::new(RwLock::new(Resources::unlimited())),
+            memory: Memory::new(),
+            storage,
         }
     }
 
     /// Create a new context with a shared dictionary
     pub fn with_dict(dict: Arc<RwLock<Dictionary>>) -> Self {
+        let storage = Storage::from_env().ok().map(Arc::new);
+
         Self {
             dict,
-            capabilities: Vec::new(),
+            caps: Arc::new(Capabilities::from_env()),
+            resources: Arc::new(RwLock::new(Resources::from_env())),
+            memory: Memory::new(),
+            storage,
         }
     }
 
-    /// Add a capability
-    pub fn with_capability(mut self, cap: impl Into<String>) -> Self {
-        self.capabilities.push(cap.into());
+    /// Set capabilities
+    pub fn with_caps(mut self, caps: Capabilities) -> Self {
+        self.caps = Arc::new(caps);
         self
     }
 
-    /// Check if context has a capability
+    /// Set resources
+    pub fn with_resources(mut self, resources: Resources) -> Self {
+        self.resources = Arc::new(RwLock::new(resources));
+        self
+    }
+
+    /// Set storage
+    pub fn with_storage(mut self, storage: Storage) -> Self {
+        self.storage = Some(Arc::new(storage));
+        self
+    }
+
+    /// Check if context has a capability (legacy API)
     pub fn has_capability(&self, cap: &str) -> bool {
-        self.capabilities.iter().any(|c| c == cap)
+        self.caps.has(cap)
+    }
+
+    /// Add a capability (legacy API for compatibility)
+    pub fn with_capability(self, cap: impl Into<String>) -> Self {
+        // For backwards compatibility, parse the string
+        let cap_str = cap.into();
+        let mut new_caps = (*self.caps).clone();
+        new_caps.add(&cap_str);
+        Self {
+            caps: Arc::new(new_caps),
+            ..self
+        }
     }
 }
 
@@ -136,11 +205,32 @@ mod tests {
     #[test]
     fn test_context_capabilities() {
         let ctx = Context::new()
-            .with_capability("io")
-            .with_capability("http");
+            .with_capability("exec")
+            .with_capability("fs:read:/tmp");
 
-        assert!(ctx.has_capability("io"));
-        assert!(ctx.has_capability("http"));
+        assert!(ctx.has_capability("exec"));
+        assert!(ctx.has_capability("fs:read:/tmp"));
         assert!(!ctx.has_capability("shell"));
+    }
+
+    #[test]
+    fn test_trusted_context() {
+        let ctx = Context::trusted();
+
+        assert!(ctx.caps.can_exec());
+        assert!(ctx.caps.can_read_path(std::path::Path::new("/tmp")));
+    }
+
+    #[test]
+    fn test_context_with_caps() {
+        let caps = Capabilities::none()
+            .with_fs_read("/workspace")
+            .with_exec();
+
+        let ctx = Context::new().with_caps(caps);
+
+        assert!(ctx.caps.can_exec());
+        assert!(ctx.caps.can_read_path(std::path::Path::new("/workspace/file.txt")));
+        assert!(!ctx.caps.can_write_path(std::path::Path::new("/workspace/file.txt")));
     }
 }
