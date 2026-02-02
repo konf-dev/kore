@@ -59,8 +59,8 @@
 //! ## OS: Process (1)
 //! - `exec`: Run shell command
 //!
-//! ## OS: I/O (2)
-//! - `print`, `println`
+//! ## OS: I/O (3)
+//! - `print`, `println`, `read-line`
 //!
 //! ## OS: Time (2)
 //! - `now`, `sleep`
@@ -68,7 +68,13 @@
 //! ## OS: Module Loading (1)
 //! - `load`: Execute a .kore file
 //!
-//! **Total: 90 primitives**
+//! ## OS: Environment (2)
+//! - `env-get`, `env-set`
+//!
+//! ## Data: JSON (2)
+//! - `json-parse`, `json-encode`
+//!
+//! **Total: 95 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -1267,6 +1273,132 @@ pub async fn register_builtins(ctx: &mut Context) {
             Ok((new_stack, new_ctx))
         })
     }));
+
+    // === OS: Environment (2) ===
+
+    // env-get: (name -- value-or-null) - get environment variable
+    dict.register(Tool::native("env-get", "(name:Text -- value:Text|Null)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            match std::env::var(&name) {
+                Ok(val) => stack.push(Value::Text(val))?,
+                Err(_) => stack.push(Value::Null)?,
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // env-set: (name value -- ) - set environment variable
+    dict.register(Tool::native("env-set", "(name:Text value:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let value = stack.pop()?.into_text()?;
+            let name = stack.pop()?.into_text()?;
+            std::env::set_var(&name, &value);
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: Stdin (1) ===
+
+    // read-line: ( -- text) - read a line from stdin
+    dict.register(Tool::native("read-line", "( -- line:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)
+                .map_err(|e| crate::error::Error::io(format!("read-line: {}", e)))?;
+            // Remove trailing newline
+            if line.ends_with('\n') {
+                line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            }
+            stack.push(Value::Text(line))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === Data: JSON (2) ===
+
+    // json-parse: (text -- value) - parse JSON text into a value
+    dict.register(Tool::native("json-parse", "(json:Text -- value:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let text = stack.pop()?.into_text()?;
+            let json: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| crate::error::Error::io(format!("json-parse: {}", e)))?;
+            let value = json_to_value(json);
+            stack.push(value)?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // json-encode: (value -- text) - encode a value as JSON text
+    dict.register(Tool::native("json-encode", "(value:Any -- json:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let value = stack.pop()?;
+            let json = value_to_json(&value);
+            let text = serde_json::to_string(&json)
+                .map_err(|e| crate::error::Error::io(format!("json-encode: {}", e)))?;
+            stack.push(Value::Text(text))?;
+            Ok((stack, ctx))
+        })
+    }));
+}
+
+// Helper: Convert serde_json::Value to kore Value
+fn json_to_value(json: serde_json::Value) -> Value {
+    match json {
+        serde_json::Value::Null => Value::Null,
+        serde_json::Value::Bool(b) => Value::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Int(i)
+            } else if let Some(f) = n.as_f64() {
+                Value::Float(f)
+            } else {
+                Value::Null
+            }
+        }
+        serde_json::Value::String(s) => Value::Text(s),
+        serde_json::Value::Array(arr) => {
+            Value::List(arr.into_iter().map(json_to_value).collect())
+        }
+        serde_json::Value::Object(obj) => {
+            let mut map = indexmap::IndexMap::new();
+            for (k, v) in obj {
+                map.insert(k, json_to_value(v));
+            }
+            Value::Map(map)
+        }
+    }
+}
+
+// Helper: Convert kore Value to serde_json::Value
+fn value_to_json(value: &Value) -> serde_json::Value {
+    match value {
+        Value::Null => serde_json::Value::Null,
+        Value::Bool(b) => serde_json::Value::Bool(*b),
+        Value::Int(i) => serde_json::Value::Number((*i).into()),
+        Value::Float(f) => {
+            serde_json::Number::from_f64(*f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null)
+        }
+        Value::Text(s) => serde_json::Value::String(s.clone()),
+        Value::List(arr) => {
+            serde_json::Value::Array(arr.iter().map(value_to_json).collect())
+        }
+        Value::Map(map) => {
+            let obj: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), value_to_json(v)))
+                .collect();
+            serde_json::Value::Object(obj)
+        }
+        Value::Quote(_) => serde_json::Value::String("<quote>".to_string()),
+        Value::Handle(h) => serde_json::Value::String(format!("<handle:{:?}>", h)),
+        Value::Error(e) => serde_json::Value::String(format!("<error:{}>", e.message)),
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,17 @@
-//! Kore CLI - Run kore programs from text
+//! Kore CLI - The Kore OS interface
 //!
-//! One thing: execute a kore program and print the result.
+//! Modes:
+//! - REPL: Interactive mode (no args)
+//! - Script: Run a file (kore file.kore)
+//! - Inline: Run code (kore -e 'code')
 
 use kore::{Context, Stack, Op, execute};
 use kore::builtins::register_builtins;
 use std::env;
 use std::fs;
+use std::io::{self, Write};
+
+const PRELUDE_PATH: &str = "lib/prelude.kore";
 
 #[tokio::main]
 async fn main() {
@@ -13,23 +19,17 @@ async fn main() {
     
     match args.len() {
         1 => {
-            // No args - show usage
-            eprintln!("kore - stack-based language runtime");
-            eprintln!();
-            eprintln!("Usage:");
-            eprintln!("  kore <file.kore>     Run a file");
-            eprintln!("  kore -e '<code>'     Run inline code");
-            eprintln!();
-            eprintln!("Examples:");
-            eprintln!("  kore -e '5 3 add'");
-            eprintln!("  kore -e '[1 2 3] [10 mul] map'");
-            std::process::exit(0);
+            // No args - REPL mode
+            repl().await;
+        }
+        2 if args[1] == "--help" || args[1] == "-h" => {
+            show_help();
         }
         2 => {
             // Single arg - it's a file
             let path = &args[1];
             match fs::read_to_string(path) {
-                Ok(source) => run(&source).await,
+                Ok(source) => run_script(&source).await,
                 Err(e) => {
                     eprintln!("Error reading {}: {}", path, e);
                     std::process::exit(1);
@@ -38,16 +38,152 @@ async fn main() {
         }
         3 if args[1] == "-e" => {
             // -e '<code>' - inline execution
-            run(&args[2]).await;
+            run_script(&args[2]).await;
         }
         _ => {
-            eprintln!("Unknown arguments. Use: kore -e '<code>' or kore <file>");
+            eprintln!("Unknown arguments. Use: kore --help");
             std::process::exit(1);
         }
     }
 }
 
-async fn run(source: &str) {
+fn show_help() {
+    eprintln!("kore - Kore OS runtime");
+    eprintln!();
+    eprintln!("Usage:");
+    eprintln!("  kore                 Start REPL (interactive mode)");
+    eprintln!("  kore <file.kore>     Run a script file");
+    eprintln!("  kore -e '<code>'     Run inline code");
+    eprintln!();
+    eprintln!("Examples:");
+    eprintln!("  kore                          # Start REPL");
+    eprintln!("  kore -e '5 3 add'             # => 8");
+    eprintln!("  kore -e '[1 2 3] [10 mul] map' # => [10 20 30]");
+    eprintln!("  kore examples/hello.kore      # Run a script");
+}
+
+async fn repl() {
+    eprintln!("Kore OS v0.1.0");
+    eprintln!("Type 'exit' to quit, 'help' for commands.");
+    eprintln!();
+    
+    // Setup context with builtins
+    let mut ctx = Context::new();
+    register_builtins(&mut ctx).await;
+    
+    // Try to load prelude
+    if fs::metadata(PRELUDE_PATH).is_ok() {
+        if let Ok(source) = fs::read_to_string(PRELUDE_PATH) {
+            match Op::parse(&source) {
+                Ok(ops) => {
+                    let stack = Stack::new();
+                    match execute(&ops, stack, ctx.clone()).await {
+                        Ok((_, new_ctx)) => {
+                            ctx = new_ctx;
+                            eprintln!("Loaded prelude.");
+                        }
+                        Err(e) => eprintln!("Prelude error: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("Prelude parse error: {}", e),
+            }
+        }
+    }
+    
+    // Persistent stack across REPL iterations
+    let mut stack = Stack::new();
+    
+    loop {
+        // Show prompt with stack depth
+        let depth = stack.depth();
+        if depth > 0 {
+            print!("[{}] > ", depth);
+        } else {
+            print!("> ");
+        }
+        io::stdout().flush().unwrap();
+        
+        // Read line
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Read error: {}", e);
+                break;
+            }
+        }
+        
+        let line = line.trim();
+        
+        // Handle special commands
+        match line {
+            "" => continue,
+            "exit" | "quit" => break,
+            "help" => {
+                eprintln!("Commands:");
+                eprintln!("  exit, quit  - Exit REPL");
+                eprintln!("  clear       - Clear stack");
+                eprintln!("  stack       - Show full stack");
+                eprintln!("  .s          - Show stack (short)");
+                eprintln!("  help        - Show this help");
+                continue;
+            }
+            "clear" => {
+                stack = Stack::new();
+                eprintln!("Stack cleared.");
+                continue;
+            }
+            "stack" | ".s" => {
+                if stack.depth() == 0 {
+                    eprintln!("(empty stack)");
+                } else {
+                    for (i, v) in stack.values().iter().enumerate() {
+                        eprintln!("  {}: {}", i, format_value(v));
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+        
+        // Parse and execute
+        match Op::parse(line) {
+            Ok(ops) => {
+                match execute(&ops, stack.clone(), ctx.clone()).await {
+                    Ok((new_stack, new_ctx)) => {
+                        // Show new values on stack
+                        let old_depth = stack.depth();
+                        let new_depth = new_stack.depth();
+                        
+                        if new_depth > old_depth {
+                            // Print new values
+                            for i in old_depth..new_depth {
+                                println!("{}", format_value(&new_stack.values()[i]));
+                            }
+                        } else if new_depth < old_depth {
+                            // Values were consumed
+                            eprintln!("({} values consumed)", old_depth - new_depth);
+                        }
+                        
+                        stack = new_stack;
+                        ctx = new_ctx;
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Parse error: {}", e);
+            }
+        }
+    }
+    
+    eprintln!("Goodbye.");
+}
+
+async fn run_script(source: &str) {
     // Parse source to ops
     let ops = match Op::parse(source) {
         Ok(ops) => ops,

@@ -1,0 +1,78 @@
+# Kore Prelude - standard library loaded at boot
+#
+# This file is automatically loaded when the REPL starts.
+# It defines useful words built from primitives.
+#
+# Philosophy: Each word does one thing, clearly.
+#
+# Syntax: "name" [body] def
+
+# -- Stack utilities --
+
+# nip: (a b -- b) - drop second item
+"nip" [swap drop] def
+
+# tuck: (a b -- b a b) - copy top under second
+"tuck" [swap over] def
+
+# 2dup: (a b -- a b a b) - duplicate top two
+"2dup" [over over] def
+
+# 2drop: (a b -- ) - drop top two
+"2drop" [drop drop] def
+
+# -- List creation --
+
+# list1: (a -- [a]) - single item list
+"list1" [list-empty swap list-push] def
+
+# list2: (a b -- [a b]) - two item list  
+"list2" [list-empty rot list-push swap list-push] def
+
+# -- Arithmetic --
+
+# inc: (n -- n+1)
+"inc" [1 add] def
+
+# dec: (n -- n-1)
+"dec" [1 sub] def
+
+# square: (n -- n*n)
+"square" [dup mul] def
+
+# abs: (n -- |n|) - absolute value
+"abs" [dup 0 lt [neg] [] if] def
+
+# max: (a b -- max) - larger of two
+"max" [2dup gt [drop] [nip] if] def
+
+# min: (a b -- min) - smaller of two
+"min" [2dup lt [drop] [nip] if] def
+
+# -- String --
+
+# empty-str?: (s -- b) - check if string is empty
+"empty-str?" [str-len 0 eq] def
+
+# -- List --
+
+# empty-list?: (l -- b) - check if list is empty  
+"empty-list?" [list-len 0 eq] def
+
+# first: (l -- item) - get first item
+"first" [0 list-get] def
+
+# last: (l -- item) - get last item
+"last" [dup list-len 1 sub list-get] def
+
+# rest: (l -- l') - all but first
+"rest" [dup list-len 1 swap list-slice] def
+
+# -- Higher-order --
+
+# sum: (l -- n) - sum of list
+"sum" [0 [add] fold] def
+
+# product: (l -- n) - product of list
+"product" [1 [mul] fold] def
+
