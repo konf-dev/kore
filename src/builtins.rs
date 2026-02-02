@@ -53,7 +53,22 @@
 //! ## Combinators (6)
 //! - `map`, `filter`, `fold`, `each`, `times`, `while`
 //!
-//! **Total: 77 primitives**
+//! ## OS: File System (7)
+//! - `fs-read`, `fs-write`, `fs-append`, `fs-exists`, `fs-list`, `fs-rm`, `fs-mkdir`
+//!
+//! ## OS: Process (1)
+//! - `exec`: Run shell command
+//!
+//! ## OS: I/O (2)
+//! - `print`, `println`
+//!
+//! ## OS: Time (2)
+//! - `now`, `sleep`
+//!
+//! ## OS: Module Loading (1)
+//! - `load`: Execute a .kore file
+//!
+//! **Total: 90 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -1060,6 +1075,196 @@ pub async fn register_builtins(ctx: &mut Context) {
             }
             
             Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: File System (6) ===
+
+    // fs-read: (path -- text) - read file contents
+    dict.register(Tool::native("fs-read", "(path:Text -- contents:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let path = stack.pop()?.into_text()?;
+            match tokio::fs::read_to_string(&path).await {
+                Ok(contents) => stack.push(Value::Text(contents))?,
+                Err(e) => return Err(crate::error::Error::io(format!("fs-read '{}': {}", path, e))),
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // fs-write: (path text -- ) - write text to file
+    dict.register(Tool::native("fs-write", "(path:Text contents:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let contents = stack.pop()?.into_text()?;
+            let path = stack.pop()?.into_text()?;
+            match tokio::fs::write(&path, &contents).await {
+                Ok(_) => {},
+                Err(e) => return Err(crate::error::Error::io(format!("fs-write '{}': {}", path, e))),
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // fs-append: (path text -- ) - append text to file
+    dict.register(Tool::native("fs-append", "(path:Text contents:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let contents = stack.pop()?.into_text()?;
+            let path = stack.pop()?.into_text()?;
+            use tokio::io::AsyncWriteExt;
+            let mut file = match tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .await {
+                    Ok(f) => f,
+                    Err(e) => return Err(crate::error::Error::io(format!("fs-append '{}': {}", path, e))),
+                };
+            match file.write_all(contents.as_bytes()).await {
+                Ok(_) => {},
+                Err(e) => return Err(crate::error::Error::io(format!("fs-append '{}': {}", path, e))),
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // fs-exists: (path -- bool) - check if path exists
+    dict.register(Tool::native("fs-exists", "(path:Text -- exists:Bool)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let path = stack.pop()?.into_text()?;
+            let exists = tokio::fs::metadata(&path).await.is_ok();
+            stack.push(Value::Bool(exists))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // fs-list: (path -- list) - list directory contents
+    dict.register(Tool::native("fs-list", "(path:Text -- entries:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let path = stack.pop()?.into_text()?;
+            let mut entries = Vec::new();
+            let mut dir = match tokio::fs::read_dir(&path).await {
+                Ok(d) => d,
+                Err(e) => return Err(crate::error::Error::io(format!("fs-list '{}': {}", path, e))),
+            };
+            while let Some(entry) = dir.next_entry().await.map_err(|e| 
+                crate::error::Error::io(format!("fs-list '{}': {}", path, e)))? {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let is_dir = entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
+                let display = if is_dir { format!("{}/", name) } else { name };
+                entries.push(Value::Text(display));
+            }
+            stack.push(Value::List(entries))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // fs-rm: (path -- ) - remove file or directory
+    dict.register(Tool::native("fs-rm", "(path:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let path = stack.pop()?.into_text()?;
+            // Try as file first, then as directory
+            if let Err(_) = tokio::fs::remove_file(&path).await {
+                if let Err(e) = tokio::fs::remove_dir_all(&path).await {
+                    return Err(crate::error::Error::io(format!("fs-rm '{}': {}", path, e)));
+                }
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // fs-mkdir: (path -- ) - create directory (and parents)
+    dict.register(Tool::native("fs-mkdir", "(path:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let path = stack.pop()?.into_text()?;
+            match tokio::fs::create_dir_all(&path).await {
+                Ok(_) => {},
+                Err(e) => return Err(crate::error::Error::io(format!("fs-mkdir '{}': {}", path, e))),
+            }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: Process (1) ===
+
+    // exec: (cmd -- output) - run shell command, return stdout
+    dict.register(Tool::native("exec", "(cmd:Text -- output:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let cmd = stack.pop()?.into_text()?;
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .output()
+                .await
+                .map_err(|e| crate::error::Error::io(format!("exec '{}': {}", cmd, e)))?;
+            
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            
+            if !output.status.success() {
+                return Err(crate::error::Error::io(format!("exec '{}' failed: {}", cmd, stderr)));
+            }
+            
+            stack.push(Value::Text(stdout))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: I/O (2) ===
+
+    // print: (text -- ) - print to stdout (no newline)
+    dict.register(Tool::native("print", "(text:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let text = stack.pop()?.into_text()?;
+            use std::io::Write;
+            print!("{}", text);
+            std::io::stdout().flush().ok();
+            Ok((stack, ctx))
+        })
+    }));
+
+    // println: (text -- ) - print with newline
+    dict.register(Tool::native("println", "(text:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let text = stack.pop()?.into_text()?;
+            println!("{}", text);
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: Time (2) ===
+
+    // now: ( -- ms) - current unix timestamp in milliseconds
+    dict.register(Tool::native("now", "( -- ms:Int)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            stack.push(Value::Int(ms))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // sleep: (ms -- ) - sleep for milliseconds
+    dict.register(Tool::native("sleep", "(ms:Int -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let ms = stack.pop()?.as_int()?;
+            tokio::time::sleep(tokio::time::Duration::from_millis(ms as u64)).await;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // === OS: Module Loading (1) ===
+
+    // load: (path -- ) - execute a .kore file
+    dict.register(Tool::native("load", "(path:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let path = stack.pop()?.into_text()?;
+            let source = tokio::fs::read_to_string(&path).await
+                .map_err(|e| crate::error::Error::io(format!("load '{}': {}", path, e)))?;
+            let ops = crate::op::Op::parse(&source)?;
+            let (new_stack, new_ctx) = execute(&ops, stack, ctx).await?;
+            Ok((new_stack, new_ctx))
         })
     }));
 }

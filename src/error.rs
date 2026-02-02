@@ -67,6 +67,9 @@ pub enum Error {
 
     #[error("Shell error: {0}")]
     ShellError(String),
+
+    #[error("I/O error: {0}")]
+    IoError(String),
 }
 
 impl Error {
@@ -76,6 +79,11 @@ impl Error {
             code: code.into(),
             message: message.into(),
         }
+    }
+
+    /// Create an I/O error
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::IoError(message.into())
     }
 
     /// Create a type error
@@ -106,6 +114,7 @@ impl Error {
             Self::ParseError(_) => "E_PARSE",
             Self::HttpError(_) => "E_HTTP",
             Self::ShellError(_) => "E_SHELL",
+            Self::IoError(_) => "E_IO",
         }
     }
 }
