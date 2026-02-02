@@ -465,9 +465,10 @@ async fn composition_is_concatenation() {
 #[tokio::test]
 async fn def_creates_tool() {
     // def creates a tool from a quote
+    // [ body ] "name" def
     let result = run(vec![
-        Op::push("double"),
         Op::quote(vec![Op::call("dup"), Op::call("add")]),
+        Op::push("double"),
         Op::call("def"),
         
         Op::push(21),
@@ -675,15 +676,15 @@ async fn postulate_3_composition_is_concatenation() {
     // Composition IS concatenation - we just put operations together
     // There's no special compose operator needed, you just... compose
     
-    // Define double = [dup add]
+    // Define double = [dup add] with [ body ] "name" def
     let result = run(vec![
-        Op::push("double"),
         Op::quote(vec![Op::call("dup"), Op::call("add")]),
+        Op::push("double"),
         Op::call("def"),
         
         // Define quadruple = [double double] (composition!)
-        Op::push("quadruple"),
         Op::quote(vec![Op::call("double"), Op::call("double")]),
+        Op::push("quadruple"),
         Op::call("def"),
         
         // Test: 5 quadruple = 20

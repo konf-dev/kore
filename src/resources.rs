@@ -66,6 +66,11 @@ impl ResourceQuota {
         self.total.saturating_sub(self.used).saturating_sub(self.reserved)
     }
 
+    /// Alias for free() - units available for allocation
+    pub fn available(&self) -> u64 {
+        self.free()
+    }
+
     /// Can we allocate this many units?
     pub fn can_allocate(&self, units: u64) -> bool {
         self.free() >= units

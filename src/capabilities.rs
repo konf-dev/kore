@@ -311,6 +311,12 @@ impl Capabilities {
         self.add("env:write");
         self
     }
+
+    /// Add a custom/raw capability string
+    pub fn with_custom(mut self, cap: &str) -> Self {
+        self.add(cap);
+        self
+    }
 }
 
 #[cfg(test)]

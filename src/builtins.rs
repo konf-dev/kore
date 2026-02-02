@@ -310,11 +310,96 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
-    // def: (name quote -- ) - define a new tool
-    dict.register(Tool::native("def", "(name:Text body:Quote -- )", |mut stack: Stack, ctx: Context| {
+    // === Spawn (Formal: Capability Attenuation + Resource Conservation) ===
+    
+    // spawn: (quote caps-list res-ratio -- result-list)
+    // Creates an isolated child context with:
+    //   1. ATTENUATED capabilities: child-caps ≤ parent-caps (guaranteed)
+    //   2. SPLIT resources: child-res + parent-remaining = parent-original (conservation)
+    // Returns the child's stack as a list.
+    dict.register(Tool::native("spawn", "(body:Quote caps:List ratio:Float -- result:List)", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
-            let body = stack.pop()?.into_quote()?;
+            let ratio = stack.pop()?.as_float()?;
+            let caps_list = stack.pop()?.into_list()?;
+            let quote = stack.pop()?.into_quote()?;
+
+            // Build requested capabilities
+            let caps_str: String = caps_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            let requested = crate::algebra::CapSet::parse(&caps_str);
+
+            // Get parent's capabilities as CapSet
+            let parent_caps_list = ctx.caps.list();
+            let parent_caps_str = parent_caps_list.join(",");
+            let parent_caps = crate::algebra::CapSet::parse(&parent_caps_str);
+
+            // ATTENUATE: child capabilities ≤ parent capabilities
+            let child_caps = parent_caps.attenuate(&requested);
+
+            // Convert back to Capabilities for context
+            let mut new_caps = crate::capabilities::Capabilities::none();
+            for cap in child_caps.list() {
+                new_caps = new_caps.with_custom(cap.as_str());
+            }
+
+            // SPLIT resources with conservation
+            let parent_res = {
+                let res = ctx.resources.read().await;
+                crate::algebra::Res::new(
+                    res.mem.available(),
+                    res.rom.available(),
+                    res.compute.available(),
+                    res.net.available(),
+                )
+            };
+            let (child_res, remaining) = parent_res.split(ratio);
+
+            // Update parent's resources (they gave some to child)
+            {
+                let mut res = ctx.resources.write().await;
+                // Reduce parent resources by what child took
+                res.mem.used = res.mem.total.saturating_sub(remaining.mem);
+                res.rom.used = res.rom.total.saturating_sub(remaining.rom);
+                res.compute.used = res.compute.total.saturating_sub(remaining.compute);
+                res.net.used = res.net.total.saturating_sub(remaining.net);
+            }
+
+            // Create child context with attenuated caps and split resources
+            let child_resources = crate::resources::Resources {
+                mem: crate::resources::ResourceQuota::new(child_res.mem),
+                rom: crate::resources::ResourceQuota::new(child_res.rom),
+                compute: crate::resources::ResourceQuota::new(child_res.compute),
+                net: crate::resources::ResourceQuota::new(child_res.net),
+            };
+
+            let child_ctx = Context {
+                dict: ctx.dict.clone(), // Shared dictionary
+                caps: std::sync::Arc::new(new_caps),
+                resources: std::sync::Arc::new(tokio::sync::RwLock::new(child_resources)),
+                memory: crate::memory::Memory::new(), // Fresh memory
+                storage: ctx.storage.clone(), // Shared storage
+            };
+
+            // Execute quote in child context with fresh stack
+            let child_stack = Stack::new();
+            let (result_stack, _) = execute(&quote, child_stack, child_ctx).await?;
+
+            // Return child's stack as list
+            let result: Vec<Value> = result_stack.values().to_vec();
+            stack.push(Value::List(result))?;
+
+            Ok((stack, ctx))
+        })
+    }));
+
+    // def: (quote name -- ) - define a new tool
+    // Usage: [ body ] "name" def
+    dict.register(Tool::native("def", "(body:Quote name:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
             let name = stack.pop()?.into_text()?;
+            let body = stack.pop()?.into_quote()?;
             
             // Create composed tool from quote
             let tool = Tool::composed(&name, None, body);
@@ -1515,6 +1600,40 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // === Trace Tools (NEW: For auditing and debugging) ===
+    // Traces form a monoid: concat is associative, empty is identity
+    // Key property: trace(f ; g) = trace(f) · trace(g) (Postulate 3)
+
+    // trace-step: (tool-name -- ) - record a trace step
+    // This is primarily for internal use but exposed for completeness
+    dict.register(Tool::native("trace-step", "(name:Text -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            // In future, this would add to context's trace
+            // For now, just acknowledge
+            let _ = crate::algebra::TraceStep::new(&name);
+            Ok((stack, ctx))
+        })
+    }));
+
+    // trace-fingerprint: ( -- hash) - get fingerprint of current execution
+    dict.register(Tool::native("trace-fingerprint", "( -- hash:Int)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            // For now, return a hash based on current time (placeholder)
+            // In full implementation, this would hash the trace
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+                .hash(&mut hasher);
+            stack.push(Value::Int(hasher.finish() as i64))?;
+            Ok((stack, ctx))
+        })
+    }));
+
     // === OS: Module Loading (1) ===
 
     // load: (path -- ) - execute a .kore file
@@ -1906,6 +2025,189 @@ pub async fn register_builtins(ctx: &mut Context) {
             };
             stack.push(Value::Bool(can))?;
             Ok((stack, ctx))
+        })
+    }));
+
+    // === Algebraic Capability Tools (NEW: Based on algebra.rs) ===
+
+    // cap-leq: (caps1 caps2 -- bool) - check if caps1 ≤ caps2 (lattice ordering)
+    dict.register(Tool::native("cap-leq", "(caps1:List caps2:List -- result:Bool)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let caps2_list = stack.pop()?.into_list()?;
+            let caps1_list = stack.pop()?.into_list()?;
+
+            // Convert to CapSet
+            let caps1_str: String = caps1_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            let caps2_str: String = caps2_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            
+            let a = crate::algebra::CapSet::parse(&caps1_str);
+            let b = crate::algebra::CapSet::parse(&caps2_str);
+            
+            stack.push(Value::Bool(a.leq(&b)))?;
+            Ok((stack, _ctx))
+        })
+    }));
+
+    // cap-meet: (caps1 caps2 -- caps) - greatest lower bound (intersection)
+    dict.register(Tool::native("cap-meet", "(caps1:List caps2:List -- result:List)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let caps2_list = stack.pop()?.into_list()?;
+            let caps1_list = stack.pop()?.into_list()?;
+
+            let caps1_str: String = caps1_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            let caps2_str: String = caps2_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            
+            let a = crate::algebra::CapSet::parse(&caps1_str);
+            let b = crate::algebra::CapSet::parse(&caps2_str);
+            let meet = a.meet(&b);
+            
+            let result: Vec<Value> = meet.list().iter()
+                .map(|c| Value::Text(c.as_str().to_string()))
+                .collect();
+            stack.push(Value::List(result))?;
+            Ok((stack, _ctx))
+        })
+    }));
+
+    // cap-join: (caps1 caps2 -- caps) - least upper bound (union)
+    dict.register(Tool::native("cap-join", "(caps1:List caps2:List -- result:List)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let caps2_list = stack.pop()?.into_list()?;
+            let caps1_list = stack.pop()?.into_list()?;
+
+            let caps1_str: String = caps1_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            let caps2_str: String = caps2_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            
+            let a = crate::algebra::CapSet::parse(&caps1_str);
+            let b = crate::algebra::CapSet::parse(&caps2_str);
+            let join = a.join(&b);
+            
+            let result: Vec<Value> = join.list().iter()
+                .map(|c| Value::Text(c.as_str().to_string()))
+                .collect();
+            stack.push(Value::List(result))?;
+            Ok((stack, _ctx))
+        })
+    }));
+
+    // cap-attenuate: (caps mask -- caps') - attenuate (can only decrease)
+    dict.register(Tool::native("cap-attenuate", "(caps:List mask:List -- result:List)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let mask_list = stack.pop()?.into_list()?;
+            let caps_list = stack.pop()?.into_list()?;
+
+            let caps_str: String = caps_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            let mask_str: String = mask_list.iter()
+                .filter_map(|v| v.as_text().ok())
+                .collect::<Vec<_>>()
+                .join(",");
+            
+            let caps = crate::algebra::CapSet::parse(&caps_str);
+            let mask = crate::algebra::CapSet::parse(&mask_str);
+            let attenuated = caps.attenuate(&mask);
+            
+            let result: Vec<Value> = attenuated.list().iter()
+                .map(|c| Value::Text(c.as_str().to_string()))
+                .collect();
+            stack.push(Value::List(result))?;
+            Ok((stack, _ctx))
+        })
+    }));
+
+    // === Algebraic Resource Tools (NEW: Based on algebra.rs) ===
+
+    // res-split: (mem rom compute net ratio -- child-mem child-rom child-compute child-net parent-mem parent-rom parent-compute parent-net)
+    // Splits resources by ratio, GUARANTEES conservation: child + parent = original
+    dict.register(Tool::native("res-split", "(mem:Int rom:Int compute:Int net:Int ratio:Float -- child-mem:Int child-rom:Int child-compute:Int child-net:Int parent-mem:Int parent-rom:Int parent-compute:Int parent-net:Int)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let ratio = stack.pop()?.as_float()?;
+            let net = stack.pop()?.as_int()? as u64;
+            let compute = stack.pop()?.as_int()? as u64;
+            let rom = stack.pop()?.as_int()? as u64;
+            let mem = stack.pop()?.as_int()? as u64;
+
+            let res = crate::algebra::Res::new(mem, rom, compute, net);
+            let (child, parent) = res.split(ratio);
+
+            // Push child resources
+            stack.push(Value::Int(child.mem as i64))?;
+            stack.push(Value::Int(child.rom as i64))?;
+            stack.push(Value::Int(child.compute as i64))?;
+            stack.push(Value::Int(child.net as i64))?;
+            // Push parent (remaining) resources
+            stack.push(Value::Int(parent.mem as i64))?;
+            stack.push(Value::Int(parent.rom as i64))?;
+            stack.push(Value::Int(parent.compute as i64))?;
+            stack.push(Value::Int(parent.net as i64))?;
+
+            Ok((stack, _ctx))
+        })
+    }));
+
+    // res-add: (m1 r1 c1 n1 m2 r2 c2 n2 -- m3 r3 c3 n3) - add two resource bundles
+    dict.register(Tool::native("res-add", "(m1:Int r1:Int c1:Int n1:Int m2:Int r2:Int c2:Int n2:Int -- m3:Int r3:Int c3:Int n3:Int)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let n2 = stack.pop()?.as_int()? as u64;
+            let c2 = stack.pop()?.as_int()? as u64;
+            let r2 = stack.pop()?.as_int()? as u64;
+            let m2 = stack.pop()?.as_int()? as u64;
+            let n1 = stack.pop()?.as_int()? as u64;
+            let c1 = stack.pop()?.as_int()? as u64;
+            let r1 = stack.pop()?.as_int()? as u64;
+            let m1 = stack.pop()?.as_int()? as u64;
+
+            let res1 = crate::algebra::Res::new(m1, r1, c1, n1);
+            let res2 = crate::algebra::Res::new(m2, r2, c2, n2);
+            let sum = res1.add(&res2);
+
+            stack.push(Value::Int(sum.mem as i64))?;
+            stack.push(Value::Int(sum.rom as i64))?;
+            stack.push(Value::Int(sum.compute as i64))?;
+            stack.push(Value::Int(sum.net as i64))?;
+
+            Ok((stack, _ctx))
+        })
+    }));
+
+    // res-has: (avail-mem avail-rom avail-compute avail-net req-mem req-rom req-compute req-net -- bool)
+    dict.register(Tool::native("res-has", "(am:Int ar:Int ac:Int an:Int rm:Int rr:Int rc:Int rn:Int -- result:Bool)", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let rn = stack.pop()?.as_int()? as u64;
+            let rc = stack.pop()?.as_int()? as u64;
+            let rr = stack.pop()?.as_int()? as u64;
+            let rm = stack.pop()?.as_int()? as u64;
+            let an = stack.pop()?.as_int()? as u64;
+            let ac = stack.pop()?.as_int()? as u64;
+            let ar = stack.pop()?.as_int()? as u64;
+            let am = stack.pop()?.as_int()? as u64;
+
+            let avail = crate::algebra::Res::new(am, ar, ac, an);
+            let required = crate::algebra::Res::new(rm, rr, rc, rn);
+
+            stack.push(Value::Bool(avail.has(&required)))?;
+
+            Ok((stack, _ctx))
         })
     }));
 
@@ -2694,10 +2996,10 @@ mod tests {
         let ctx = setup().await;
         let stack = Stack::new();
 
-        // First define a composed tool
+        // First define a composed tool: [ body ] "name" def
         let ops = vec![
-            Op::Push(Value::Text("square".into())),
             Op::quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::Push(Value::Text("square".into())),
             Op::call("def"),
             // Now get its dependencies
             Op::Push(Value::Text("square".into())),
@@ -2716,10 +3018,10 @@ mod tests {
         let ctx = setup().await;
         let stack = Stack::new();
 
-        // Define a composed tool
+        // Define a composed tool: [ body ] "name" def
         let ops = vec![
-            Op::Push(Value::Text("square".into())),
             Op::quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::Push(Value::Text("square".into())),
             Op::call("def"),
             // Get call graph
             Op::Push(Value::Text("square".into())),
@@ -2737,10 +3039,10 @@ mod tests {
         let ctx = setup().await;
         let stack = Stack::new();
 
-        // Define a tool
+        // Define a tool: [ body ] "name" def
         let ops = vec![
-            Op::Push(Value::Text("square".into())),
             Op::quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::Push(Value::Text("square".into())),
             Op::call("def"),
             // Add a tag
             Op::Push(Value::Text("square".into())),
@@ -2791,10 +3093,10 @@ mod tests {
         let ctx = setup().await;
         let stack = Stack::new();
 
-        // Define a tool
+        // Define a tool: [ body ] "name" def
         let ops = vec![
-            Op::Push(Value::Text("square".into())),
             Op::quote(vec![Op::call("dup"), Op::call("mul")]),
+            Op::Push(Value::Text("square".into())),
             Op::call("def"),
             // Set doc
             Op::Push(Value::Text("square".into())),

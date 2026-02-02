@@ -157,9 +157,10 @@ async fn try_success_passes_through() {
 
 #[tokio::test]
 async fn def_and_call() {
+    // [ body ] "name" def
     let result = run(vec![
-        Op::push("square"),
         Op::quote(vec![Op::call("dup"), Op::call("mul")]),
+        Op::push("square"),
         Op::call("def"),
         
         Op::push(7),
@@ -172,15 +173,16 @@ async fn def_and_call() {
 #[tokio::test]
 async fn def_with_composed_tools() {
     // Define a tool that uses other defined tools
+    // [ body ] "name" def
     let result = run(vec![
         // Define double
-        Op::push("double"),
         Op::quote(vec![Op::call("dup"), Op::call("add")]),
+        Op::push("double"),
         Op::call("def"),
         
         // Define quadruple using double
-        Op::push("quadruple"),
         Op::quote(vec![Op::call("double"), Op::call("double")]),
+        Op::push("quadruple"),
         Op::call("def"),
         
         // Test it
@@ -232,9 +234,9 @@ async fn list_operations_chain() {
 #[tokio::test]
 async fn recursive_factorial() {
     // Factorial using recursion with if tool
+    // [ body ] "name" def
     let result = run(vec![
         // Define factorial
-        Op::push("factorial"),
         Op::quote(vec![
             // (n -- n!)
             Op::call("dup"),
@@ -250,6 +252,7 @@ async fn recursive_factorial() {
             ]),  // recursive case
             Op::call("if"),
         ]),
+        Op::push("factorial"),
         Op::call("def"),
         
         // Test: 5!
@@ -374,12 +377,13 @@ async fn fibonacci_sequence() {
         // over gives us (a b -- a b a), then add gives (a, b+a)
         // We need swap at the end: (a c -- c a) where c = b+a... 
         // Actually: swap, over, add = (a b -- b a) -> (b a b) -> (b a+b)
-        Op::push("fib-next"),
+        // [ body ] "name" def
         Op::quote(vec![
             Op::call("swap"),  // a b -> b a
             Op::call("over"),  // b a -> b a b
             Op::call("add"),   // b a b -> b a+b
         ]),
+        Op::push("fib-next"),
         Op::call("def"),
         
         // Start with 0 1, and a counter

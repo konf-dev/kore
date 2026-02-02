@@ -86,6 +86,7 @@ pub mod meta;
 pub mod op;
 pub mod resources;
 pub mod stack;
+pub mod stdlib;  // NEW: stdlib loader
 pub mod storage;
 pub mod tool;
 pub mod value;
