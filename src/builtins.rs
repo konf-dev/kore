@@ -141,6 +141,43 @@ pub async fn register_builtins(ctx: &mut Context) {
             Ok((stack, ctx))
         })
     }));
+
+    // === Control Flow ===
+
+    // if: (condition then-quote else-quote -- ...) - conditional execution
+    dict.register(Tool::native("if", "(cond:Bool then:Quote else:Quote -- ...)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let else_quote = stack.pop()?.into_quote()?;
+            let then_quote = stack.pop()?.into_quote()?;
+            let condition = stack.pop()?;
+            
+            let ops = if condition.is_truthy() {
+                then_quote
+            } else {
+                else_quote
+            };
+            execute(&ops, stack, ctx).await
+        })
+    }));
+
+    // loop: (quote -- ...) - repeat until false on stack
+    dict.register(Tool::native("loop", "(body:Quote -- ...)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let quote = stack.pop()?.into_quote()?;
+            
+            loop {
+                let (new_stack, new_ctx) = execute(&quote, stack, ctx.clone()).await?;
+                stack = new_stack;
+                
+                // Check condition on top of stack
+                let condition = stack.pop()?;
+                if !condition.is_truthy() {
+                    break;
+                }
+            }
+            Ok((stack, ctx))
+        })
+    }));
 }
 
 #[cfg(test)]

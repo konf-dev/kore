@@ -1,5 +1,7 @@
 # The Kore Philosophy
 
+> **STATUS: ✅ ACTIVE** - These principles guide current development.
+
 ## The Five Principles
 
 These principles guide every decision in Kore - from the smallest tool to the largest workflow. They are embedded in the genesis prompt and must be followed at every level.

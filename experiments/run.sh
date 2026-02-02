@@ -66,20 +66,20 @@ echo "  Output: ${EXPERIMENT_DIR}"
 echo "═══════════════════════════════════════════════════════════════════════"
 echo ""
 
-# Run agent in Docker
+# Run agent in Docker with full sandbox capabilities
 START_TIME=$(date +%s)
 
-# Note: We use --network=host for simplicity with local ollama
-# In production, use proper networking
+# Network: bridge (default) - has internet access but isolated from host localhost
+# No --network=host means container can't access host's localhost/127.0.0.1
+# Agent runs as root inside container, can apt install, npm install, etc.
 docker run --rm \
     --name "kore-${EXPERIMENT_ID}" \
-    --network=host \
-    -v "${EXPERIMENT_DIR}/workspace:/mnt/workspace" \
-    -v "${EXPERIMENT_DIR}/logs:/mnt/logs" \
-    -v "${EXPERIMENT_DIR}/prompt.md:/mnt/prompt.md:ro" \
-    -e "KORE_WORKSPACE=/mnt/workspace" \
-    -e "KORE_LOGS=/mnt/logs" \
-    -e "KORE_PROMPT=/mnt/prompt.md" \
+    -v "${EXPERIMENT_DIR}/workspace:/workspace" \
+    -v "${EXPERIMENT_DIR}/logs:/logs" \
+    -v "${EXPERIMENT_DIR}/prompt.md:/prompt.md:ro" \
+    -e "KORE_WORKSPACE=/workspace" \
+    -e "KORE_LOGS=/logs" \
+    -e "KORE_PROMPT=/prompt.md" \
     -e "KORE_GOAL=${GOAL}" \
     -e "OPENAI_API_KEY=${OPENAI_API_KEY}" \
     -e "OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}" \

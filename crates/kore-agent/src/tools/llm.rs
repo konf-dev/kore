@@ -76,7 +76,9 @@ async fn call_openai(base_url: &str, api_key: &str, system: &str, user: &str) ->
         "messages": messages
     });
     
-    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+    // Handle base URL - strip /v1 suffix if present to avoid duplication
+    let base = base_url.trim_end_matches('/').trim_end_matches("/v1");
+    let url = format!("{}/v1/chat/completions", base);
     
     let response = client
         .post(&url)

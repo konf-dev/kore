@@ -1,5 +1,10 @@
 # Kore Development Plan
 
+> **STATUS: VISION DOCUMENT**
+> 
+> This is the original development plan. Current work has taken a simpler path.
+> For current state, see [../README.md](../README.md) and [../crates/kore-agent/README.md](../crates/kore-agent/README.md)
+
 ## Project Timeline
 
 **Duration**: 7 weeks  

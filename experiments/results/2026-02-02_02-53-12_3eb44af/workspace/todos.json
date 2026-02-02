@@ -1,0 +1,14 @@
+[
+    {
+        "task": "Buy groceries",
+        "completed": true
+    },
+    {
+        "task": "Finish Kore project",
+        "completed": false
+    },
+    {
+        "task": "Call mom",
+        "completed": false
+    }
+]

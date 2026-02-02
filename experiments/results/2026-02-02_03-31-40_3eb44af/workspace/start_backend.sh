@@ -1,0 +1,1 @@
+nohup python3 kore_dashboard/backend/app.py > server.log 2>&1 &

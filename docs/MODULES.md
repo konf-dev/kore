@@ -1,5 +1,15 @@
 # Kore Module Architecture
 
+> **STATUS: VISION DOCUMENT**
+> 
+> This describes the full planned module architecture. Current implementation:
+> - kore-lang: ✅ Implemented
+> - kore-agent: ✅ Implemented (simplified)
+> - kore-workflow: ⬜ Planned
+> - kore-checkpoint: ⬜ Planned
+> - kore-authoring: ⬜ Planned
+> - kore-genesis: ⬜ Planned
+
 ## Design Principles for Modules
 
 1. **Layered Abstraction**: Higher layers depend on lower layers, never the reverse

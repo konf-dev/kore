@@ -51,19 +51,28 @@ Kore is a minimal, stack-based programming language designed for composable tool
 | `over` | `(a b -- a b a)` | Copy second to top |
 | `rot` | `(a b c -- b c a)` | Rotate three |
 
-## Turing Completeness
+## Components
 
-Kore is Turing complete through tool composition. Tools can be composed from other tools, enabling recursion:
+| Crate | Purpose |
+|-------|---------|
+| `kore` | Core runtime - parser, executor, types |
+| `kore-agent` | Autonomous LLM agent with experiment tracking |
+| `kore-workflow` | Concurrent workflow execution |
 
+## Quick Start: Agent
+
+```bash
+cd experiments
+export OPENAI_API_KEY="your-key"
+export OPENAI_BASE_URL="https://your-llm-api"
+
+# Run an experiment
+./run.sh prompts/v1-genesis.md "Create a notes folder" qwen2.5-32b
+
+# Results in experiments/results/<timestamp>/
 ```
-# Factorial via recursive tool composition
-define "factorial" (
-    dup 1 <=
-    (drop 1)
-    (dup 1 - factorial *)
-    if
-)
-```
+
+See [crates/kore-agent/README.md](crates/kore-agent/README.md) for details.
 
 ## Error Handling
 
@@ -80,36 +89,15 @@ dup is-error
 if
 ```
 
-## Usage
-
-```rust
-use kore::{Context, Stack, Op, execute, register_builtins};
-
-#[tokio::main]
-async fn main() {
-    let mut ctx = Context::new();
-    register_builtins(&mut ctx).await;
-    
-    let stack = Stack::new();
-    let ops = vec![
-        Op::push(5),
-        Op::push(3),
-        Op::call("add"),
-    ];
-    
-    let (result, _) = execute(&ops, stack, ctx).await.unwrap();
-    println!("{:?}", result.values()); // [8]
-}
-```
-
 ## Design for Agentic AI
 
 Kore is designed with AI agents in mind:
 
-- **Visibility**: Agents can inspect what tools are available, what they consume/produce
+- **Visibility**: Agents can inspect what tools are available
 - **Control**: Explicit error handling lets agents decide how to recover
 - **Simplicity**: Small surface area is easier to learn and reason about
 - **Safety**: Capability system prevents unauthorized operations
+- **Reproducibility**: Experiment system captures all inputs/outputs
 
 ## License
 

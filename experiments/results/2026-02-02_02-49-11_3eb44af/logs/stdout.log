@@ -1,0 +1,7 @@
+[01:49:12.188] 🚀 Goal: Build a complete todo list application: 1) Create a Python script todo.py with functions to add, list, complete, and delete todos 2) Store todos in a JSON file 3) Add 3 sample todos 4) List them 5) Mark one as complete 6) List again to verify
+[01:49:12.188] 🔄 Iteration 1
+[01:49:12.188] 🤔 Calling LLM...
+[01:49:12.302] ❌ LLM call failed: OpenAI API error 400 Bad Request: {"error":{"message":"google/gemini-2.5-flash-preview is not a valid model ID","code":400},"user_id":"user_395oEOMJhE2Ge091G7dIk6iW9S1"}
+[01:49:17.303] 🔄 Iteration 2
+[01:49:17.304] 🤔 Calling LLM...
+[01:49:17.415] ❌ LLM call failed: OpenAI API error 400 Bad Request: {"error":{"message":"google/gemini-2.5-flash-preview is not a valid model ID","code":400},"user_id":"user_395oEOMJhE2Ge091G7dIk6iW9S1"}

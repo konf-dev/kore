@@ -76,13 +76,26 @@ async fn main() {
         
         trace.response(&response);
         
-        // Parse response as kore code - NO extraction, NO cleaning
-        // If LLM outputs bad format, parser error goes to trace, LLM learns
-        let code = response.trim();
+        // Parse <think> and <code> blocks
+        let (thinking, code) = parse_response(&response);
         
-        match Op::parse(code) {
+        // Log thinking if present (goes to trace for context)
+        if let Some(think) = &thinking {
+            trace.think(think);
+        }
+        
+        // Get code to execute
+        let code = match code {
+            Some(c) => c,
+            None => {
+                // No <code> block - use whole response (backwards compat)
+                response.trim().to_string()
+            }
+        };
+        
+        match Op::parse(&code) {
             Ok(ops) => {
-                trace.code(code);
+                trace.code(&code);
                 
                 // Execute
                 match execute(&ops, stack.clone(), ctx.clone()).await {
@@ -99,7 +112,7 @@ async fn main() {
             }
             Err(e) => {
                 // Parse error - this goes to trace, LLM sees it next iteration
-                trace.error(&format!("Parse error: {} | Input was: {}", e, truncate(code, 100)));
+                trace.error(&format!("Parse error: {} | Input was: {}", e, truncate(&code, 100)));
             }
         }
         
@@ -144,4 +157,32 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Parse response into <think> and <code> blocks
+fn parse_response(response: &str) -> (Option<String>, Option<String>) {
+    let mut thinking = None;
+    let mut code = None;
+    
+    // Extract <think>...</think>
+    if let Some(start) = response.find("<think>") {
+        if let Some(end) = response.find("</think>") {
+            let content = response[start + 7..end].trim();
+            if !content.is_empty() {
+                thinking = Some(content.to_string());
+            }
+        }
+    }
+    
+    // Extract <code>...</code>
+    if let Some(start) = response.find("<code>") {
+        if let Some(end) = response.find("</code>") {
+            let content = response[start + 6..end].trim();
+            if !content.is_empty() {
+                code = Some(content.to_string());
+            }
+        }
+    }
+    
+    (thinking, code)
 }

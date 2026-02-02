@@ -1,0 +1,7 @@
+
+> kore-dashboard-frontend@0.1.0 start
+> react-scripts start 21
+
+Could not find a required file.
+  Name: index.html
+  Searched in: /workspace/kore_dashboard/frontend/public

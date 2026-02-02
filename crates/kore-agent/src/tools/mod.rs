@@ -66,6 +66,7 @@ pub fn all_tools() -> Vec<Tool> {
     tools.push(introspection::tool_help_tool());
     
     // Helpers
+    tools.push(helpers::get_tool());
     tools.push(helpers::now_tool());
     tools.push(helpers::uuid_tool());
     tools.push(helpers::json_parse_tool());

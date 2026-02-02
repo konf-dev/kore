@@ -80,7 +80,7 @@ impl Trace {
         };
         
         let ts = event.timestamp.format("%H:%M:%S%.3f");
-        let msg = truncate(message, 150);
+        let msg = truncate(message, 500);
         println!("[{}] {} {}", ts, icon, msg);
         
         // Write to file (JSON lines)
@@ -108,6 +108,10 @@ impl Trace {
     
     pub fn thinking(&mut self) {
         self.log(EventKind::Think, "Calling LLM...");
+    }
+    
+    pub fn think(&mut self, reasoning: &str) {
+        self.log(EventKind::Think, &format!("Reasoning: {}", reasoning));
     }
     
     pub fn response(&mut self, text: &str) {
@@ -146,7 +150,7 @@ impl Trace {
                     EventKind::Error => "ERROR",
                     EventKind::Done => "DONE",
                 };
-                format!("[{}] {}", kind, truncate(&e.message, 80))
+                format!("[{}] {}", kind, truncate(&e.message, 300))
             })
             .collect::<Vec<_>>()
             .join("\n")

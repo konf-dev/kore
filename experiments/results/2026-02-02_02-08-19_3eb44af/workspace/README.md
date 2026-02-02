@@ -1,0 +1,1 @@
+# Simple Python Project\nThis project contains a simple script that prints 'Hello World'.\n\n## Usage\nRun `python src/hello.py` to see the message.

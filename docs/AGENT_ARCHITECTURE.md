@@ -1,5 +1,15 @@
 # Kore Agent Architecture
 
+> **STATUS: PARTIAL IMPLEMENTATION**
+> 
+> This document describes the full vision. Current implementation:
+> - ✅ Layer 1-4: Stack, Control, Data, I/O (in kore-lang)
+> - ✅ Layer 5: LLM tools (llm, llm-system)
+> - ✅ Layer 6-8: Network, Files, Shell (basic)
+> - ⬜ Layer 9-12: Workflow, Checkpointing, Introspection, Context (planned)
+> 
+> For current working state, see [../crates/kore-agent/README.md](../crates/kore-agent/README.md)
+
 ## Vision
 
 An autonomous agent system where **nothing is special**. Agents, supervisors, memory, checkpointing - all are workflows composed from stateless tools.

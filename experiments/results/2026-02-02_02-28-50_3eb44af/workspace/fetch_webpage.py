@@ -1,0 +1,1 @@
+import requests\nresponse = requests.get('http://example.com')\nwith open('webpage.html', 'w') as f:\n    f.write(response.text)

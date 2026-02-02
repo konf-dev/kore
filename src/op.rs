@@ -108,12 +108,16 @@ impl Op {
             // String literal with double quotes
             else if token.starts_with('"') && token.ends_with('"') && token.len() >= 2 {
                 let s = &token[1..token.len() - 1];
-                ops.push(Op::push(s.to_string()));
+                // Handle escape sequences
+                let s = unescape(s);
+                ops.push(Op::push(s));
             }
             // String literal with single quotes
             else if token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2 {
                 let s = &token[1..token.len() - 1];
-                ops.push(Op::push(s.to_string()));
+                // Handle escape sequences
+                let s = unescape(s);
+                ops.push(Op::push(s));
             }
             // Tool name (anything else)
             else {
@@ -158,12 +162,17 @@ impl Op {
                         }
                     }
                 }
-                // Double quote - read until closing quote
+                // Double quote - read until closing quote (handle escaped quotes)
                 '"' => {
                     current.push(c);
                     while let Some(c2) = chars.next() {
                         current.push(c2);
-                        if c2 == '"' {
+                        if c2 == '\\' {
+                            // Escape sequence - consume next char
+                            if let Some(c3) = chars.next() {
+                                current.push(c3);
+                            }
+                        } else if c2 == '"' {
                             break;
                         }
                     }
@@ -181,6 +190,34 @@ impl Op {
 
         tokens
     }
+}
+
+/// Unescape string escape sequences like \n, \t, \\
+fn unescape(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => result.push('\n'),
+                Some('t') => result.push('\t'),
+                Some('r') => result.push('\r'),
+                Some('\\') => result.push('\\'),
+                Some('"') => result.push('"'),
+                Some('\'') => result.push('\''),
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    
+    result
 }
 
 

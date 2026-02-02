@@ -1,5 +1,13 @@
 # Kore: Autonomous Agent Substrate Architecture
 
+> **STATUS: VISION DOCUMENT**
+> 
+> This describes the full vision. Current implementation:
+> - ✅ kore-lang: Stack-based language runtime
+> - ✅ kore-agent: Autonomous agent with LLM, file, shell tools
+> - ⬜ kore-workflow: Concurrent workflow system (planned)
+> - ⬜ kore-genesis: Self-evolution (planned)
+
 ## Vision
 
 **Kore** is a minimal, stack-based runtime designed to be the substrate for autonomous, self-evolving AI agents. The goal is to create a system where:

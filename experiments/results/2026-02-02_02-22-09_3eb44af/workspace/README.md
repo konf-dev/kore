@@ -1,0 +1,1 @@
+This is a Python project that prints Hello World.

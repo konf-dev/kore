@@ -1,5 +1,10 @@
 # Context Flow in Kore
 
+> **STATUS: DESIGN DOCUMENT**
+> 
+> This describes the ideal context flow. Current implementation uses simple file-based tracing.
+> See [../crates/kore-agent/README.md](../crates/kore-agent/README.md) for current approach.
+
 ## Core Principle
 
 > **Every operation must carry full context from input through everything it called.**

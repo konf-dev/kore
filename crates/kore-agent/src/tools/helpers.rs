@@ -1,6 +1,28 @@
-//! Helper tools: now, uuid, json-parse, json-format
+//! Helper tools: now, uuid, json-parse, json-format, get
 
 use kore::{Context, Stack, Tool, Value};
+
+/// get: (map key -- value)
+pub fn get_tool() -> Tool {
+    Tool::native("get", "(map:Map key:Text -- value:Any)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.as_text()?.to_string();
+            let map = stack.pop()?;
+            
+            match map {
+                Value::Map(m) => {
+                    let value = m.get(&key).cloned().unwrap_or(Value::Null);
+                    stack.push(value)?;
+                }
+                _ => {
+                    return Err(kore::Error::Runtime(format!("get: expected Map, got {:?}", map)));
+                }
+            }
+            Ok((stack, ctx))
+        })
+    })
+    .with_doc("Get a value from a map by key. Returns null if key not found.")
+}
 
 /// now: (-- timestamp)
 pub fn now_tool() -> Tool {
