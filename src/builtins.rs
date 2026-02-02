@@ -73,8 +73,8 @@
 //! - `uuid`: Generate UUID v4
 //! - `random`: Random float 0.0-1.0
 //!
-//! ## OS: System Info (3)
-//! - `pid`, `cwd`, `args`
+//! ## OS: System Info (5)
+//! - `pid`, `cwd`, `args`, `exit`, `version`
 //!
 //! ## OS: Module Loading (1)
 //! - `load`: Execute a .kore file
@@ -88,7 +88,7 @@
 //! ## Data: JSON (2)
 //! - `json-parse`, `json-encode`
 //!
-//! **Total: 108 primitives**
+//! **Total: 110 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -1392,6 +1392,22 @@ pub async fn register_builtins(ctx: &mut Context) {
                 .map(Value::Text)
                 .collect();
             stack.push(Value::List(args))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // exit: (code -- ) - exit the process with given exit code
+    dict.register(Tool::native("exit", "(code:Int -- )", |mut stack: Stack, _ctx: Context| {
+        Box::pin(async move {
+            let code = stack.pop()?.as_int()?;
+            std::process::exit(code as i32);
+        })
+    }));
+
+    // version: ( -- text) - get Kore version string
+    dict.register(Tool::native("version", "( -- v:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            stack.push(Value::Text("0.1.0".to_string()))?;
             Ok((stack, ctx))
         })
     }));
