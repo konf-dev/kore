@@ -3,11 +3,12 @@
 //! These are language primitives, not library functions.
 //! Each tool does exactly one thing. LLMs are first-class citizens.
 //!
-//! ## Execution (4)
+//! ## Execution (5)
 //! - `call`: Run a quote
 //! - `try`: Run a quote, capture errors as Error values
 //! - `if`: Conditional execution
 //! - `loop`: Repeat until false on stack
+//! - `def`: Define a new tool from a quote
 //!
 //! ## Error inspection (2)
 //! - `is-error`: Check if a value is an Error
@@ -34,9 +35,9 @@
 //! - `str-concat`, `str-trim`, `str-find`, `str-starts`, `str-ends`
 //! - `str-replace`, `char-code`, `code-char`
 //!
-//! ## List (9)
+//! ## List (10)
 //! - `list-len`, `list-get`, `list-set`, `list-push`, `list-pop`
-//! - `list-slice`, `list-concat`, `list-reverse`, `list-empty`
+//! - `list-slice`, `list-concat`, `list-reverse`, `list-empty`, `collect`
 //!
 //! ## Map (7)
 //! - `map-get`, `map-set`, `map-has`, `map-del`
@@ -52,7 +53,7 @@
 //! ## Combinators (6)
 //! - `map`, `filter`, `fold`, `each`, `times`, `while`
 //!
-//! **Total: 75 primitives**
+//! **Total: 77 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -211,6 +212,24 @@ pub async fn register_builtins(ctx: &mut Context) {
                     break;
                 }
             }
+            Ok((stack, ctx))
+        })
+    }));
+
+    // def: (name quote -- ) - define a new tool
+    dict.register(Tool::native("def", "(name:Text body:Quote -- )", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let body = stack.pop()?.into_quote()?;
+            let name = stack.pop()?.into_text()?;
+            
+            // Create composed tool from quote
+            let tool = Tool::composed(&name, None, body);
+            
+            // Register in dictionary
+            let mut dict = ctx.dict.write().await;
+            dict.register(tool);
+            drop(dict);
+            
             Ok((stack, ctx))
         })
     }));
@@ -657,6 +676,23 @@ pub async fn register_builtins(ctx: &mut Context) {
         })
     }));
 
+    // collect: (n -- l) - collect n items from stack into list
+    dict.register(Tool::native("collect", "(n:Int -- l:List)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let n = stack.pop()?.into_int()?;
+            if n < 0 {
+                return Err(crate::error::Error::Runtime("collect count must be non-negative".into()));
+            }
+            let mut items = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                items.push(stack.pop()?);
+            }
+            items.reverse(); // Stack order is reversed
+            stack.push(Value::List(items))?;
+            Ok((stack, ctx))
+        })
+    }));
+
     // === Map ===
     // Key-value stores. String keys only.
 
@@ -1000,17 +1036,19 @@ pub async fn register_builtins(ctx: &mut Context) {
     }));
 
     // while: (cond-quote body-quote -- ) - while cond returns true, execute body
+    // The condition quote should push a bool. That bool is consumed.
     dict.register(Tool::native("while", "(cond:Quote body:Quote -- )", |mut stack: Stack, ctx: Context| {
         Box::pin(async move {
             let body = stack.pop()?.into_quote()?;
             let cond = stack.pop()?.into_quote()?;
             
             loop {
-                // Evaluate condition
-                let (cond_stack, _) = execute(&cond, stack.clone(), ctx.clone()).await?;
-                let should_continue = cond_stack.values().last()
-                    .map(|v| v.is_truthy())
-                    .unwrap_or(false);
+                // Evaluate condition on current stack
+                let (mut cond_stack, _) = execute(&cond, stack, ctx.clone()).await?;
+                
+                // Pop the condition result
+                let should_continue = cond_stack.pop()?.is_truthy();
+                stack = cond_stack;
                 
                 if !should_continue {
                     break;

@@ -139,6 +139,18 @@ impl Op {
 
         while let Some(c) = chars.next() {
             match c {
+                // Comment - skip until end of line
+                '#' => {
+                    if !current.is_empty() {
+                        tokens.push(std::mem::take(&mut current));
+                    }
+                    // Skip until newline
+                    while let Some(c2) = chars.next() {
+                        if c2 == '\n' {
+                            break;
+                        }
+                    }
+                }
                 // Whitespace - end current token
                 ' ' | '\t' | '\n' | '\r' => {
                     if !current.is_empty() {
