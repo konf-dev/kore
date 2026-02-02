@@ -1,0 +1,47 @@
+# Module Tools
+# ONE thing: module loading and management
+#
+# Wraps: load
+
+# import: (path -- ) - alias for load
+"import" [load] def
+
+# require: (path -- ) - load if exists, else error
+"require" [
+    dup fs-exists
+    [load]
+    ["Module not found: " swap str-concat println]
+    if
+] def
+
+# === Standard library paths ===
+
+# use-core: ( -- ) - load all core libs
+"use-core" [
+    "lib/core/string.kore" load
+    "lib/core/list.kore" load
+    "lib/core/map.kore" load
+] def
+
+# use-os: ( -- ) - load all OS libs
+"use-os" [
+    "lib/os/fs.kore" load
+    "lib/os/shell.kore" load
+    "lib/os/io.kore" load
+    "lib/os/time.kore" load
+] def
+
+# use-compiler: ( -- ) - load compiler
+"use-compiler" [
+    "lib/compiler/tokenizer.kore" load
+    "lib/compiler/parser.kore" load
+    "lib/compiler/codegen.kore" load
+    "lib/compiler/compiler.kore" load
+] def
+
+# use-all: ( -- ) - load everything
+"use-all" [
+    use-core
+    use-os
+    use-compiler
+] def

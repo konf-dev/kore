@@ -1,0 +1,51 @@
+# Shell Tools
+# ONE thing: run shell commands ergonomically
+#
+# Wraps: exec
+
+# sh: (cmd -- output) - alias for exec
+"sh" [exec] def
+
+# run: (cmd -- ) - run command, print output
+"run" [exec println] def
+
+# lines: (cmd -- list) - run command, return lines
+"lines" [exec "\n" str-split] def
+
+# which: (name -- path) - find executable path
+"which" ["which " swap str-concat exec str-trim] def
+
+# pwd: ( -- path) - current directory
+"pwd" ["pwd" exec str-trim] def
+
+# cd: (path -- ) - change directory (for subsequent exec calls)
+# Note: This doesn't actually change the process cwd, 
+# but you can use it with exec: "cd /tmp && ls" exec
+"cd" [drop] def  # no-op, use in command strings instead
+
+# cat: (path -- text) - like unix cat
+"cat" [fs-read] def
+
+# head: (path n -- text) - first n lines
+"head" [
+    swap fs-read "\n" str-split  # n lines
+    swap 0 swap list-slice       # first n
+    "\n" str-join
+] def
+
+# tail: (path n -- text) - last n lines  
+"tail" [
+    swap fs-read "\n" str-split  # n lines
+    dup list-len                 # n lines len
+    rot sub                      # lines start
+    swap list-len list-slice     # last n
+    "\n" str-join
+] def
+
+# grep: (pattern path -- list) - lines containing pattern
+"grep" [
+    fs-read "\n" str-split  # pattern lines
+    swap                    # lines pattern
+    [over swap str-find 0 ge] filter  # lines with pattern
+    swap drop
+] def

@@ -1,0 +1,38 @@
+# I/O Tools
+# ONE thing: input/output operations
+#
+# Wraps: print, println
+
+# say: (text -- ) - alias for println
+"say" [println] def
+
+# log: (text -- ) - print with timestamp
+"log" [
+    now to-text "[" swap str-concat "] " str-concat
+    swap str-concat println
+] def
+
+# debug: (value -- value) - print value and pass through
+"debug" [
+    dup to-text println
+] def
+
+# trace: (label value -- value) - print label: value and pass through
+"trace" [
+    over ": " str-concat
+    over to-text str-concat println
+    swap drop
+] def
+
+# nl: ( -- ) - print newline
+"nl" ["" println] def
+
+# hr: ( -- ) - print horizontal rule
+"hr" ["----------------------------------------" println] def
+
+# banner: (text -- ) - print text in a banner
+"banner" [
+    hr
+    println
+    hr
+] def

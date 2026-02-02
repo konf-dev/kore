@@ -1,0 +1,70 @@
+# File System Tools
+# ONE thing: ergonomic file operations
+#
+# Wraps: fs-read, fs-write, fs-append, fs-exists, fs-list, fs-rm, fs-mkdir
+
+# read: (path -- text) - alias for fs-read
+"read" [fs-read] def
+
+# write: (path text -- ) - alias for fs-write  
+"write" [fs-write] def
+
+# append: (path text -- ) - alias for fs-append
+"append" [fs-append] def
+
+# exists?: (path -- bool) - alias for fs-exists
+"exists?" [fs-exists] def
+
+# ls: (path -- list) - alias for fs-list
+"ls" [fs-list] def
+
+# rm: (path -- ) - alias for fs-rm
+"rm" [fs-rm] def
+
+# mkdir: (path -- ) - alias for fs-mkdir
+"mkdir" [fs-mkdir] def
+
+# === Convenience tools ===
+
+# touch: (path -- ) - create empty file if not exists
+"touch" [
+    dup fs-exists not
+    [dup "" fs-write]
+    []
+    if
+    drop
+] def
+
+# copy: (src dst -- ) - copy file
+"copy" [
+    swap fs-read  # dst content
+    fs-write
+] def
+
+# move: (src dst -- ) - move file
+"move" [
+    over over copy  # src dst (copy done)
+    drop fs-rm      # remove src
+] def
+
+# read-lines: (path -- list) - read file as lines
+"read-lines" [
+    fs-read "\n" str-split
+] def
+
+# write-lines: (path lines -- ) - write lines to file
+"write-lines" [
+    "\n" str-join fs-write
+] def
+
+# ls-files: (path -- list) - list only files (not dirs)
+"ls-files" [
+    fs-list
+    [dup str-len 1 sub str-get "/" eq not] filter
+] def
+
+# ls-dirs: (path -- list) - list only directories
+"ls-dirs" [
+    fs-list
+    [dup str-len 1 sub str-get "/" eq] filter
+] def

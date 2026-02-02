@@ -1,0 +1,43 @@
+# Time Tools
+# ONE thing: time operations
+#
+# Wraps: now, sleep
+
+# timestamp: ( -- ms) - alias for now
+"timestamp" [now] def
+
+# wait: (ms -- ) - alias for sleep
+"wait" [sleep] def
+
+# wait-sec: (sec -- ) - sleep for seconds
+"wait-sec" [1000 mul sleep] def
+
+# measure: (quote -- ms) - measure execution time
+"measure" [
+    now swap    # start quote
+    call        # execute
+    now swap    # start end -> end start
+    sub         # end - start
+] def
+
+# elapsed: (start -- ms) - time since start
+"elapsed" [now swap sub] def
+
+# seconds: (ms -- sec) - convert ms to seconds
+"seconds" [1000 div] def
+
+# minutes: (ms -- min) - convert ms to minutes  
+"minutes" [60000 div] def
+
+# format-duration: (ms -- text) - human readable duration
+"format-duration" [
+    dup 60000 lt
+    [1000 div to-text "s" str-concat]
+    [
+        dup 3600000 lt
+        [60000 div to-text "m" str-concat]
+        [3600000 div to-text "h" str-concat]
+        if
+    ]
+    if
+] def
