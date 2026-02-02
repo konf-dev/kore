@@ -1,5 +1,4 @@
 use kore::{Context, register_builtins, Op, Stack, execute};
-use kore::context::TenantId;
 
 #[tokio::main]
 async fn main() {
@@ -8,7 +7,7 @@ async fn main() {
     
     // Check if dup exists
     let dict = ctx.dict.read().await;
-    let tools = dict.list(&TenantId::default());
+    let tools = dict.list();
     println!("Registered tools: {:?}", tools);
     drop(dict);
     

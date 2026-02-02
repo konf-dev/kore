@@ -8,7 +8,7 @@ pub fn list_tools_tool() -> Tool {
         Box::pin(async move {
             let names: Vec<Value> = {
                 let dict = ctx.dict.read().await;
-                dict.list(&ctx.tenant)
+                dict.list()
                     .into_iter()
                     .map(|k| Value::Text(k))
                     .collect()
@@ -28,7 +28,7 @@ pub fn tool_help_tool() -> Tool {
             
             let result = {
                 let dict = ctx.dict.read().await;
-                dict.get(&name, &ctx.tenant)
+                dict.get(&name)
             };
             
             match result {

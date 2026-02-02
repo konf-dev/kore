@@ -166,7 +166,7 @@ pub async fn register_builtins(ctx: &mut Context) {
             let quote = stack.pop()?.into_quote()?;
             
             loop {
-                let (new_stack, new_ctx) = execute(&quote, stack, ctx.clone()).await?;
+                let (new_stack, _) = execute(&quote, stack, ctx.clone()).await?;
                 stack = new_stack;
                 
                 // Check condition on top of stack

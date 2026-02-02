@@ -36,7 +36,7 @@ async fn execute_op(op: &Op, mut stack: Stack, ctx: Context) -> Result<(Stack, C
         // Call a tool by name
         Op::Call(name) => {
             let dict = ctx.dict.read().await;
-            let tool = dict.get(name, &ctx.tenant)?;
+            let tool = dict.get(name)?;
             drop(dict); // Release lock before executing
 
             // Validate inputs if tool has an effect
@@ -116,7 +116,7 @@ mod tests {
         let mut dict = ctx.dict.write().await;
 
         // dup: (a -- a a)
-        dict.register_global(Tool::native("dup", "", |mut stack: Stack, ctx: Context| {
+        dict.register(Tool::native("dup", "", |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let v = stack.pop()?;
                 stack.push(v.clone())?;
@@ -126,7 +126,7 @@ mod tests {
         }));
 
         // add: (a b -- a+b)
-        dict.register_global(Tool::native("add", "", |mut stack: Stack, ctx: Context| {
+        dict.register(Tool::native("add", "", |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let b = stack.pop()?.as_int()?;
                 let a = stack.pop()?.as_int()?;
@@ -136,7 +136,7 @@ mod tests {
         }));
 
         // drop: (a -- )
-        dict.register_global(Tool::native("drop", "", |mut stack: Stack, ctx: Context| {
+        dict.register(Tool::native("drop", "", |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 stack.pop()?;
                 Ok((stack, ctx))
@@ -144,7 +144,7 @@ mod tests {
         }));
 
         // div: (a b -- a/b)
-        dict.register_global(Tool::native("div", "", |mut stack: Stack, ctx: Context| {
+        dict.register(Tool::native("div", "", |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let b = stack.pop()?.as_int()?;
                 let a = stack.pop()?.as_int()?;
@@ -157,12 +157,12 @@ mod tests {
         }));
 
         // call: run a quote
-        dict.register_global(Tool::native("call", "", |stack: Stack, ctx: Context| {
+        dict.register(Tool::native("call", "", |stack: Stack, ctx: Context| {
             Box::pin(async move { call_quote(stack, ctx).await })
         }));
 
         // catch: error handling
-        dict.register_global(Tool::native("catch", "", |stack: Stack, ctx: Context| {
+        dict.register(Tool::native("catch", "", |stack: Stack, ctx: Context| {
             Box::pin(async move { catch_error(stack, ctx).await })
         }));
 
@@ -255,7 +255,7 @@ mod tests {
         // Register a composed tool: math/double = dup add
         {
             let mut dict = ctx.dict.write().await;
-            dict.register_global(Tool::composed(
+            dict.register(Tool::composed(
                 "math/double",
                 Some(Effect::parse("(n:Num -- result:Num)").unwrap()),
                 vec![Op::call("dup"), Op::call("add")],
