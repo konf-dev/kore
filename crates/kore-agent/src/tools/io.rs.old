@@ -1,0 +1,94 @@
+//! I/O tools: print, read-line, env-get, goal-done
+
+use kore::{Context, Stack, Tool, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+
+// Global flag for goal completion (simple approach)
+pub static GOAL_DONE: AtomicBool = AtomicBool::new(false);
+pub static GOAL_MESSAGE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Reset goal state
+pub fn reset_goal_state() {
+    GOAL_DONE.store(false, Ordering::SeqCst);
+    *GOAL_MESSAGE.lock().unwrap() = None;
+}
+
+/// Check if goal is done
+pub fn is_goal_done() -> bool {
+    GOAL_DONE.load(Ordering::SeqCst)
+}
+
+/// Get goal message
+pub fn get_goal_message() -> Option<String> {
+    GOAL_MESSAGE.lock().unwrap().clone()
+}
+
+/// env-get: (key -- value)
+pub fn env_get_tool() -> Tool {
+    Tool::native("env-get", "(key:Text -- value:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let key = stack.pop()?.as_text()?.to_string();
+            let value = std::env::var(&key).unwrap_or_default();
+            stack.push(Value::Text(value))?;
+            Ok((stack, ctx))
+        })
+    })
+    .with_doc("Read an environment variable. Returns empty string if not set.")
+}
+
+/// print: (value --)
+pub fn print_tool() -> Tool {
+    Tool::native("print", "(value:Any --)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let value = stack.pop()?;
+            println!("{}", format_value(&value));
+            Ok((stack, ctx))
+        })
+    })
+    .with_doc("Print a value to stdout.")
+}
+
+/// goal-done: (message --) - Signal goal completion
+pub fn goal_done_tool() -> Tool {
+    Tool::native("goal-done", "(message:Text --)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let message = stack.pop()?.as_text()?.to_string();
+            println!("🎉 GOAL COMPLETE: {}", message);
+            GOAL_DONE.store(true, Ordering::SeqCst);
+            *GOAL_MESSAGE.lock().unwrap() = Some(message);
+            Ok((stack, ctx))
+        })
+    })
+    .with_doc("Signal that the goal is complete. Stops the autonomous loop.")
+}
+
+/// read-line: (-- text)
+pub fn read_line_tool() -> Tool {
+    Tool::native("read-line", "(-- input:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)
+                .map_err(|e| kore::Error::Runtime(e.to_string()))?;
+            stack.push(Value::Text(input.trim().to_string()))?;
+            Ok((stack, ctx))
+        })
+    })
+    .with_doc("Read a line from stdin.")
+}
+
+/// Format value for printing
+pub fn format_value(value: &Value) -> String {
+    match value {
+        Value::Text(s) => s.clone(),
+        Value::Int(i) => i.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Null => "null".to_string(),
+        Value::List(l) => format!("{:?}", l),
+        Value::Map(m) => serde_json::to_string(m).unwrap_or_else(|_| format!("{:?}", m)),
+        Value::Quote(ops) => format!("({})", ops.iter().map(|o| format!("{:?}", o)).collect::<Vec<_>>().join(" ")),
+        Value::Handle(h) => format!("<handle:{}>", h.id),
+        Value::Error(e) => format!("Error[{}]: {}", e.code, e.message),
+    }
+}

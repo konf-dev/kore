@@ -22,11 +22,12 @@ COPY --from=builder /build/target/release/kore-agent /usr/local/bin/kore-agent
 # Create non-root user
 RUN useradd -m -s /bin/bash kore
 USER kore
-WORKDIR /home/kore
 
-# No volumes mounted, no hardware access
-# Only outbound network via bridge
+# Working directory is the mounted workspace
+WORKDIR /mnt/workspace
 
-ENV ANTHROPIC_API_KEY=""
+# All config via environment variables
+# Required: KORE_PROMPT, KORE_GOAL, OPENAI_API_KEY
+# Optional: KORE_WORKSPACE=/mnt/workspace, KORE_LOGS=/mnt/logs
 
 ENTRYPOINT ["kore-agent"]

@@ -1,0 +1,312 @@
+//! Trace - Observable execution history
+//!
+//! The trace is:
+//! 1. Printed to stdout (for docker log observation)
+//! 2. Stored in memory (for LLM context)
+//! 3. Persisted to file (for recovery)
+//!
+//! The trace IS the memory. LLM reads trace to know what happened.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// A single trace event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Event {
+    /// When this happened
+    pub timestamp: DateTime<Utc>,
+    
+    /// Event type
+    pub kind: EventKind,
+    
+    /// Human-readable message
+    pub message: String,
+    
+    /// Optional structured data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+/// Types of trace events
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum EventKind {
+    /// Agent started
+    Start,
+    /// Goal set
+    Goal,
+    /// Thinking (LLM call started)
+    Think,
+    /// LLM response received
+    Response,
+    /// Code extracted from response
+    Code,
+    /// Executing code
+    Execute,
+    /// Execution succeeded
+    Success,
+    /// Execution failed
+    Error,
+    /// File operation
+    File,
+    /// Shell command
+    Shell,
+    /// HTTP request
+    Http,
+    /// Checkpoint saved
+    Checkpoint,
+    /// User input received
+    Input,
+    /// Agent output
+    Output,
+    /// Iteration marker
+    Iteration,
+    /// Agent stopped
+    Stop,
+}
+
+impl fmt::Display for EventKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            EventKind::Start => "START",
+            EventKind::Goal => "GOAL",
+            EventKind::Think => "THINK",
+            EventKind::Response => "RESPONSE",
+            EventKind::Code => "CODE",
+            EventKind::Execute => "EXEC",
+            EventKind::Success => "OK",
+            EventKind::Error => "ERROR",
+            EventKind::File => "FILE",
+            EventKind::Shell => "SHELL",
+            EventKind::Http => "HTTP",
+            EventKind::Checkpoint => "CHECKPOINT",
+            EventKind::Input => "INPUT",
+            EventKind::Output => "OUTPUT",
+            EventKind::Iteration => "ITER",
+            EventKind::Stop => "STOP",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// The execution trace - accumulates events
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Trace {
+    /// All events in order
+    events: Vec<Event>,
+    
+    /// Current iteration number
+    iteration: u32,
+    
+    /// Maximum events to keep in memory (older ones are still in file)
+    max_memory_events: usize,
+}
+
+impl Trace {
+    /// Create a new empty trace
+    pub fn new() -> Self {
+        Self {
+            events: Vec::new(),
+            iteration: 0,
+            max_memory_events: 100,
+        }
+    }
+    
+    /// Add an event to the trace
+    pub fn event(&mut self, kind: EventKind, message: impl Into<String>) {
+        self.event_with_data(kind, message, None);
+    }
+    
+    /// Add an event with structured data
+    pub fn event_with_data(
+        &mut self, 
+        kind: EventKind, 
+        message: impl Into<String>,
+        data: Option<serde_json::Value>,
+    ) {
+        let event = Event {
+            timestamp: Utc::now(),
+            kind: kind.clone(),
+            message: message.into(),
+            data,
+        };
+        
+        // Print to stdout for docker logs
+        self.print_event(&event);
+        
+        // Store in memory
+        self.events.push(event);
+        
+        // Trim old events if too many
+        if self.events.len() > self.max_memory_events {
+            let excess = self.events.len() - self.max_memory_events;
+            self.events.drain(0..excess);
+        }
+    }
+    
+    /// Print event to stdout in a structured format
+    fn print_event(&self, event: &Event) {
+        let ts = event.timestamp.format("%H:%M:%S%.3f");
+        let icon = match event.kind {
+            EventKind::Start => "🚀",
+            EventKind::Goal => "🎯",
+            EventKind::Think => "🤔",
+            EventKind::Response => "💬",
+            EventKind::Code => "📝",
+            EventKind::Execute => "⚡",
+            EventKind::Success => "✓",
+            EventKind::Error => "❌",
+            EventKind::File => "📁",
+            EventKind::Shell => "🖥️",
+            EventKind::Http => "🌐",
+            EventKind::Checkpoint => "💾",
+            EventKind::Input => "📥",
+            EventKind::Output => "📤",
+            EventKind::Iteration => "🔄",
+            EventKind::Stop => "🛑",
+        };
+        
+        // Truncate long messages for display
+        let msg = if event.message.len() > 200 {
+            format!("{}...", &event.message[..200])
+        } else {
+            event.message.clone()
+        };
+        
+        println!("[{}] {} {:8} {}", ts, icon, event.kind, msg);
+    }
+    
+    /// Start a new iteration
+    pub fn next_iteration(&mut self) -> u32 {
+        self.iteration += 1;
+        self.event(EventKind::Iteration, format!("Iteration {}", self.iteration));
+        self.iteration
+    }
+    
+    /// Get current iteration
+    pub fn iteration(&self) -> u32 {
+        self.iteration
+    }
+    
+    /// Get recent events for LLM context
+    pub fn recent_events(&self, count: usize) -> &[Event] {
+        let start = self.events.len().saturating_sub(count);
+        &self.events[start..]
+    }
+    
+    /// Format trace for LLM context (compact, readable)
+    pub fn format_for_llm(&self, max_events: usize) -> String {
+        let mut out = String::new();
+        
+        for event in self.recent_events(max_events) {
+            let ts = event.timestamp.format("%H:%M:%S");
+            out.push_str(&format!("[{}] {}: {}\n", ts, event.kind, event.message));
+        }
+        
+        out
+    }
+    
+    /// Format full context for LLM including trace
+    pub fn build_llm_context(&self, goal: &str, _stack_state: &str, workspace_info: &str) -> String {
+        let mut ctx = String::new();
+        
+        ctx.push_str(&format!("GOAL: {}\n", goal));
+        ctx.push_str(&format!("ITERATION: {}\n\n", self.iteration));
+        
+        if !workspace_info.is_empty() && workspace_info.contains(|c| c != ' ' && c != '\n') {
+            ctx.push_str("WORKSPACE FILES:\n");
+            ctx.push_str(workspace_info);
+            ctx.push_str("\n");
+        }
+        
+        // Only include last 5 relevant events (skip THINK, RESPONSE, ITER)
+        ctx.push_str("RECENT ACTIONS:\n");
+        let relevant: Vec<_> = self.events.iter()
+            .filter(|e| matches!(e.kind, 
+                EventKind::Code | EventKind::Success | EventKind::Error | EventKind::Goal
+            ))
+            .collect();
+        let recent = relevant.iter().rev().take(5).rev();
+        for event in recent {
+            let status = match event.kind {
+                EventKind::Success => "OK",
+                EventKind::Error => "FAILED",
+                EventKind::Code => "RAN",
+                _ => "",
+            };
+            // Truncate messages
+            let msg = if event.message.len() > 60 {
+                format!("{}...", &event.message[..60])
+            } else {
+                event.message.clone()
+            };
+            ctx.push_str(&format!("- {} {}\n", status, msg));
+        }
+        
+        ctx.push_str("\nWHAT IS YOUR NEXT ACTION? Output ```kore code block.\n");
+        ctx.push_str("When goal is complete, call: \"done message\" goal-done\n");
+        
+        ctx
+    }
+    
+    /// Save trace to file
+    pub async fn save(&self, path: &str) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(&self.events)?;
+        tokio::fs::write(path, json).await
+    }
+    
+    /// Load trace from file
+    pub async fn load(path: &str) -> std::io::Result<Self> {
+        let json = tokio::fs::read_to_string(path).await?;
+        let events: Vec<Event> = serde_json::from_str(&json)?;
+        Ok(Self {
+            iteration: events.iter()
+                .filter(|e| e.kind == EventKind::Iteration)
+                .count() as u32,
+            events,
+            max_memory_events: 100,
+        })
+    }
+    
+    /// Append single event to trace file (for persistence)
+    pub async fn append_to_file(&self, path: &str, event: &Event) -> std::io::Result<()> {
+        use tokio::io::AsyncWriteExt;
+        
+        let line = serde_json::to_string(event)? + "\n";
+        
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .await?;
+        
+        file.write_all(line.as_bytes()).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn trace_accumulates_events() {
+        let mut trace = Trace::new();
+        trace.event(EventKind::Start, "Agent started");
+        trace.event(EventKind::Goal, "Test goal");
+        
+        assert_eq!(trace.events.len(), 2);
+        assert_eq!(trace.events[0].kind, EventKind::Start);
+    }
+    
+    #[test]
+    fn trace_formats_for_llm() {
+        let mut trace = Trace::new();
+        trace.event(EventKind::Execute, "42 print");
+        trace.event(EventKind::Success, "Printed 42");
+        
+        let formatted = trace.format_for_llm(10);
+        assert!(formatted.contains("EXEC"));
+        assert!(formatted.contains("42 print"));
+    }
+}

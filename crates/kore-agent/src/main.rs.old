@@ -1,0 +1,395 @@
+//! Kore Agent - Autonomous LLM-driven agent
+//!
+//! An agent is just a workflow using tools. Nothing special.
+//! The trace flows through everything - it's observable AND the LLM's memory.
+
+mod tools;
+mod trace;
+
+use kore::{Context, Stack, Op, execute, register_builtins};
+use trace::{Trace, EventKind};
+use std::io::{Write, BufRead};
+
+/// Load system prompt from file or use embedded default
+fn load_system_prompt() -> String {
+    // Try to load from file first
+    if let Ok(content) = std::fs::read_to_string("genesis-prompt.md") {
+        return content;
+    }
+    
+    // Focused prompt for smaller LLMs
+    r#"You are Kore, an autonomous agent. You run kore code to accomplish goals.
+
+KORE IS STACK-BASED - push values LEFT TO RIGHT, then tool:
+- "arg1" "arg2" tool  means: push arg1, push arg2, call tool
+
+TOOLS (args are in stack order - FIRST arg pushed first):
+- "text" print                    Print text
+- list-tools                      List all tools
+- "path" dir-list                 List directory
+- "path" dir-create               Create directory
+- "path" file-read                Read file
+- "path" "content" file-write     Write (path FIRST, content SECOND)
+- "cmd" shell                     Run shell command
+- "message" goal-done             Mark goal complete and STOP
+
+CRITICAL: file-write takes PATH first, CONTENT second!
+  CORRECT: "hello.txt" "Hello world" file-write
+  WRONG:   "Hello world" "hello.txt" file-write
+
+RULES:
+1. Reply ONLY with ```kore code block
+2. ONE line only
+3. NO control flow (no if/else/while)
+4. NO comments, NO parentheses
+5. Call goal-done when finished!
+
+EXAMPLES:
+```kore
+"Hello!" print
+```
+```kore
+"notes" dir-create
+```
+```kore
+"notes/log.txt" "Entry one" file-write
+```
+```kore
+"Created notes folder with log.txt" goal-done
+```
+
+Read the trace. Do ONE action. Call goal-done when complete.
+"#.to_string()
+}
+
+/// Extract kore code from LLM response
+fn extract_code(response: &str) -> Option<String> {
+    // Look for ```kore ... ``` or ``` ... ```
+    let re_kore = regex::Regex::new(r"```kore\s*\n([\s\S]*?)\n```").ok()?;
+    let re_plain = regex::Regex::new(r"```\s*\n([\s\S]*?)\n```").ok()?;
+    
+    let raw_code = if let Some(caps) = re_kore.captures(response) {
+        caps[1].trim().to_string()
+    } else if let Some(caps) = re_plain.captures(response) {
+        caps[1].trim().to_string()
+    } else {
+        return None;
+    };
+    
+    // Strip comment lines (# ...) and empty lines
+    let clean_code: Vec<&str> = raw_code
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && !trimmed.starts_with('#')
+        })
+        .collect();
+    
+    if clean_code.is_empty() {
+        None
+    } else {
+        Some(clean_code.join("\n"))
+    }
+}
+
+/// Validate code before execution - reject common LLM mistakes
+fn validate_code(code: &str) -> Result<(), String> {
+    // Reject multi-line code (take only first line)
+    if code.lines().count() > 1 {
+        return Err("Multi-line code not allowed. Use ONE line.".to_string());
+    }
+    
+    // Reject control flow keywords
+    let bad_keywords = ["if", "then", "else", "while", "for", "define", "fn", "lambda"];
+    for kw in &bad_keywords {
+        // Check for keyword as whole word
+        let pattern = format!(r"\b{}\b", kw);
+        if regex::Regex::new(&pattern).map(|r| r.is_match(code)).unwrap_or(false) {
+            return Err(format!("'{}' is not a kore tool. No control flow allowed.", kw));
+        }
+    }
+    
+    // Reject parentheses (grouping)
+    if code.contains('(') || code.contains(')') {
+        return Err("Parentheses not allowed in kore. No grouping.".to_string());
+    }
+    
+    // Reject tools that don't exist (common hallucinations)
+    let fake_tools = ["file-create", "file-open", "file-close", "dir-open", "create-file", "create-dir"];
+    for tool in &fake_tools {
+        if code.contains(tool) {
+            return Err(format!("'{}' is not a tool. Use file-write or dir-create.", tool));
+        }
+    }
+    
+    Ok(())
+}
+
+/// Get workspace file listing
+fn list_workspace() -> String {
+    let workspace = tools::workspace_path("");
+    let mut out = String::new();
+    
+    if let Ok(entries) = std::fs::read_dir(&workspace) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+            if is_dir {
+                out.push_str(&format!("  {}/\n", name));
+            } else {
+                // Show file size
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                out.push_str(&format!("  {} ({} bytes)\n", name, size));
+            }
+        }
+    }
+    
+    if out.is_empty() {
+        out.push_str("  (empty)\n");
+    }
+    
+    out
+}
+
+/// Setup directories
+fn setup_workspace() {
+    let workspace = tools::workspace_path("");
+    let checkpoints = tools::checkpoint_path("");
+    let _ = std::fs::create_dir_all(&workspace);
+    let _ = std::fs::create_dir_all(&checkpoints);
+}
+
+#[tokio::main]
+async fn main() {
+    // Initialize
+    let mut ctx = Context::new();
+    register_builtins(&mut ctx).await;
+    tools::register_all(&mut ctx).await;
+    
+    setup_workspace();
+    
+    // Create trace
+    let mut trace = Trace::new();
+    trace.event(EventKind::Start, "Kore Agent v0.2.0 starting");
+    
+    // Get goal from env or args
+    let goal = std::env::var("KORE_GOAL")
+        .unwrap_or_else(|_| {
+            std::env::args().nth(1).unwrap_or_else(|| {
+                "Await instructions from the user.".to_string()
+            })
+        });
+    
+    trace.event(EventKind::Goal, &goal);
+    
+    // Check for LLM API key
+    let has_llm = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false)
+        || std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+    
+    let mut stack = Stack::new();
+    
+    if has_llm {
+        run_autonomous(&mut stack, &mut ctx, &mut trace, &goal).await;
+    } else {
+        trace.event(EventKind::Error, "No LLM API key - running in REPL mode");
+        eprintln!("Set OPENAI_API_KEY or ANTHROPIC_API_KEY for autonomous mode\n");
+        run_repl(&mut stack, &mut ctx, &mut trace).await;
+    }
+}
+
+/// Run autonomous agent loop
+async fn run_autonomous(
+    stack: &mut Stack, 
+    ctx: &mut Context, 
+    trace: &mut Trace,
+    goal: &str,
+) {
+    let system_prompt = load_system_prompt();
+    let trace_file = tools::workspace_path("trace.jsonl");
+    
+    // Reset goal state
+    tools::io::reset_goal_state();
+    
+    loop {
+        let iteration = trace.next_iteration();
+        
+        // Build context for LLM
+        let stack_state = format!("{:?}", stack.values());
+        let workspace_info = list_workspace();
+        let user_context = trace.build_llm_context(goal, &stack_state, &workspace_info);
+        
+        trace.event(EventKind::Think, format!("Calling LLM (iter {})", iteration));
+        
+        // Call LLM
+        match tools::llm::call_llm(&system_prompt, &user_context).await {
+            Ok(response) => {
+                // Log response (truncated)
+                let response_preview = if response.len() > 100 {
+                    format!("{}...", &response[..100])
+                } else {
+                    response.clone()
+                };
+                trace.event(EventKind::Response, response_preview);
+                
+                // Extract and execute code
+                if let Some(code) = extract_code(&response) {
+                    // Take only the first line if multi-line
+                    let first_line = code.lines().next().unwrap_or(&code).to_string();
+                    trace.event(EventKind::Code, &first_line);
+                    
+                    // Validate before execution
+                    if let Err(validation_err) = validate_code(&first_line) {
+                        trace.event(EventKind::Error, format!("Invalid: {}", validation_err));
+                        // Skip execution - the error is in the trace for next iteration
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        continue;
+                    }
+                    
+                    trace.event(EventKind::Execute, "Running extracted code");
+                    
+                    match Op::parse(&first_line) {
+                        Ok(ops) => {
+                            match execute(&ops, stack.clone(), ctx.clone()).await {
+                                Ok((new_stack, new_ctx)) => {
+                                    let result = if new_stack.is_empty() {
+                                        "(stack empty)".to_string()
+                                    } else {
+                                        format!("{:?}", new_stack.values())
+                                    };
+                                    trace.event(EventKind::Success, format!("Stack: {}", result));
+                                    *stack = new_stack;
+                                    *ctx = new_ctx;
+                                    
+                                    // Check if goal-done was called
+                                    if tools::io::is_goal_done() {
+                                        let msg = tools::io::get_goal_message()
+                                            .unwrap_or_else(|| "Goal achieved".to_string());
+                                        trace.event(EventKind::Stop, format!("Goal done: {}", msg));
+                                        // Save final trace
+                                        let _ = trace.save(trace_file.to_str().unwrap_or("trace.jsonl")).await;
+                                        return;
+                                    }
+                                }
+                                Err(e) => {
+                                    trace.event(EventKind::Error, format!("Execution: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            trace.event(EventKind::Error, format!("Parse: {}", e));
+                        }
+                    }
+                } else {
+                    // No code block - LLM is just responding
+                    trace.event(EventKind::Output, response);
+                }
+                
+                // Persist trace periodically
+                if iteration % 5 == 0 {
+                    if let Err(e) = trace.save(trace_file.to_str().unwrap_or("trace.jsonl")).await {
+                        eprintln!("Warning: Failed to save trace: {}", e);
+                    }
+                    trace.event(EventKind::Checkpoint, format!("Trace saved (iter {})", iteration));
+                }
+            }
+            Err(e) => {
+                trace.event(EventKind::Error, format!("LLM call failed: {}", e));
+                
+                // Back off on errors
+                trace.event(EventKind::Think, "Retrying in 5 seconds...");
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
+        }
+        
+        // Small delay between iterations
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+}
+
+/// Run interactive REPL with tracing
+async fn run_repl(
+    stack: &mut Stack,
+    ctx: &mut Context,
+    trace: &mut Trace,
+) {
+    println!("╔══════════════════════════════════════╗");
+    println!("║         Kore Agent v0.2.0            ║");
+    println!("║  REPL Mode (no LLM)                  ║");
+    println!("║  Type 'quit' to exit                 ║");
+    println!("╚══════════════════════════════════════╝\n");
+    
+    loop {
+        print!("kore> ");
+        std::io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        if std::io::stdin().lock().read_line(&mut input).is_err() {
+            break;
+        }
+        
+        let input = input.trim();
+        
+        if input.is_empty() {
+            continue;
+        }
+        
+        if input == "quit" || input == "exit" {
+            trace.event(EventKind::Stop, "User requested exit");
+            println!("Goodbye!");
+            break;
+        }
+        
+        if input == "stack" {
+            println!("Stack: {:?}", stack.values());
+            continue;
+        }
+        
+        if input == "trace" {
+            println!("{}", trace.format_for_llm(20));
+            continue;
+        }
+        
+        if input == "tools" {
+            let dict = ctx.dict.read().await;
+            let mut names = dict.list(&ctx.tenant);
+            names.sort();
+            for name in names {
+                println!("  {}", name);
+            }
+            continue;
+        }
+        
+        // Log input
+        trace.event(EventKind::Input, input);
+        
+        // Parse and execute
+        match Op::parse(input) {
+            Ok(ops) => {
+                trace.event(EventKind::Execute, input);
+                
+                match execute(&ops, stack.clone(), ctx.clone()).await {
+                    Ok((new_stack, new_ctx)) => {
+                        *stack = new_stack;
+                        *ctx = new_ctx;
+                        
+                        if !stack.is_empty() {
+                            let result = format!("{:?}", stack.values());
+                            trace.event(EventKind::Success, &result);
+                            println!("→ {}", result);
+                        } else {
+                            trace.event(EventKind::Success, "(ok)");
+                        }
+                    }
+                    Err(e) => {
+                        trace.event(EventKind::Error, format!("{}", e));
+                        eprintln!("❌ Error: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                trace.event(EventKind::Error, format!("Parse: {}", e));
+                eprintln!("❌ Parse error: {}", e);
+            }
+        }
+    }
+}
