@@ -3,13 +3,14 @@
 //! These are language primitives, not library functions.
 //! Each tool does exactly one thing. LLMs are first-class citizens.
 //!
-//! ## Execution (6)
+//! ## Execution (7)
 //! - `call`: Run a quote
 //! - `try`: Run a quote, capture errors as Error values
 //! - `if`: Conditional execution
 //! - `loop`: Repeat until false on stack
 //! - `def`: Define a new tool from a quote
 //! - `words`: List all tool names
+//! - `describe`: Get tool signature
 //!
 //! ## Error inspection (4)
 //! - `is-error`: Check if a value is an Error
@@ -88,7 +89,7 @@
 //! ## Data: JSON (2)
 //! - `json-parse`, `json-encode`
 //!
-//! **Total: 110 primitives**
+//! **Total: 111 primitives**
 
 use crate::context::Context;
 use crate::executor::execute;
@@ -307,6 +308,23 @@ pub async fn register_builtins(ctx: &mut Context) {
                 .collect();
             drop(dict);
             stack.push(Value::List(names))?;
+            Ok((stack, ctx))
+        })
+    }));
+
+    // describe: (name -- signature) - get the signature of a tool
+    dict.register(Tool::native("describe", "(name:Text -- sig:Text)", |mut stack: Stack, ctx: Context| {
+        Box::pin(async move {
+            let name = stack.pop()?.into_text()?;
+            let dict = ctx.dict.read().await;
+            let tool = dict.get(&name)?;
+            drop(dict);
+            
+            let sig = match &tool.effect {
+                Some(effect) => format!("{} {}", name, effect),
+                None => format!("{} (unknown signature)", name),
+            };
+            stack.push(Value::Text(sig))?;
             Ok((stack, ctx))
         })
     }));

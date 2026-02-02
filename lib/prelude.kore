@@ -101,3 +101,14 @@
 # assert-not-null: (v msg -- ) - assert value is not null
 "assert-not-null" [swap is-null not swap assert] def
 
+# -- System info --
+
+# sys-info: ( -- map) - get system information
+"sys-info" [
+    map-empty
+    "version" version map-set
+    "pid" pid map-set
+    "cwd" cwd map-set
+    "tool-count" words list-len map-set
+] def
+
