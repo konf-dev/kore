@@ -1,16 +1,39 @@
 //! # Kore - The Fundamental Runtime
 //!
-//! Kore is a minimal, stack-based execution engine where everything is a tool.
+//! Kore is a minimal, stack-based execution engine built on three postulates:
 //!
-//! ## Core Concepts
+//! ## The Three Postulates
+//!
+//! **Postulate 1: Everything is a Tool**
+//! ```text
+//! Tool : Stack → Stack
+//! ```
+//! Every operation, from arithmetic to I/O, is a tool that transforms a stack.
+//!
+//! **Postulate 2: Tools Transform Stacks**
+//! ```text
+//! execute(t, s) = s'
+//! ```
+//! Tools consume values from the stack and produce values onto the stack.
+//!
+//! **Postulate 3: Composition is Concatenation**  
+//! ```text
+//! (f ; g)(s) = g(f(s))
+//! ```
+//! Running tools in sequence is function composition, written by concatenation.
+//!
+//! ## Algebraic Foundations
+//!
+//! - **[algebra::CapSet]**: Capability lattice with ≤, ∧, ∨, attenuate
+//! - **[algebra::Res]**: Resource monoid with +, split (conservation law)
+//! - **[algebra::Trace]**: Execution traces (monoid under concatenation)
+//!
+//! ## Core Types
 //!
 //! - **[Value]**: 10 types - Null, Bool, Int, Float, Text, List, Map, Quote, Handle, Error
 //! - **[Stack]**: LIFO data structure for passing values between tools
-//! - **[Op]**: 4 operations - Push, Call, Quote, If
-//! - **[Effect]**: Type signatures that describe what a tool consumes and produces
-//! - **[Tool]**: Either native (Rust function) or composed (sequence of Ops)
-//! - **[Context]**: Execution environment with dictionary, identity, and capabilities
-//! - **[execute]**: The execution loop
+//! - **[Op]**: 2 operations - Push, Call (that's it!)
+//! - **[Context]**: Execution sandbox with capabilities and resources
 //!
 //! ## Quick Example
 //!
@@ -36,27 +59,22 @@
 //!
 //! ## Design Principles
 //!
-//! 1. **Minimal**: 4 operations, 10 types, ~200 lines of core logic
-//! 2. **Predictable**: No hidden state, no magic, no surprises
-//! 3. **Secure**: Capability-based access control built in
+//! 1. **Minimal**: 2 operations (Push, Call), 10 types, ~200 lines of core logic
+//! 2. **Formal**: Built on algebraic structures (lattice, monoid, category)
+//! 3. **Secure**: Capability-based access control, resource conservation
 //! 4. **Composable**: Tools are the only abstraction
 //!
-//! ## Built-in Tools
+//! ## Core Primitives (~50)
 //!
-//! Kore includes 9 built-in tools that make it a complete language:
-//!
-//! | Tool | Effect | Purpose |
-//! |------|--------|---------|
-//! | `call` | `(quote -- ...)` | Run a quote |
-//! | `try` | `(quote -- value-or-error)` | Run, capture errors as values |
-//! | `is-error` | `(value -- bool)` | Check if value is an Error |
-//! | `unwrap` | `(value-or-error -- value)` | Extract or stop if Error |
-//! | `dup` | `(a -- a a)` | Duplicate top value |
-//! | `drop` | `(a -- )` | Remove top value |
-//! | `swap` | `(a b -- b a)` | Swap top two |
-//! | `over` | `(a b -- a b a)` | Copy second to top |
-//! | `rot` | `(a b c -- b c a)` | Rotate top three |
+//! Stack, arithmetic, comparison, logic, control, definition, data,
+//! capability, resource, spawn, error, and trace operations.
+//! Everything else is in the stdlib.
 
+// Algebraic foundations (new!)
+pub mod algebra;
+pub mod core;
+
+// Existing modules
 pub mod builtins;
 pub mod capabilities;
 pub mod context;
@@ -71,6 +89,9 @@ pub mod stack;
 pub mod storage;
 pub mod tool;
 pub mod value;
+
+// Re-export algebra types
+pub use algebra::{Cap, CapSet, Res, Trace, TraceStep};
 
 // Re-export main types for convenience
 pub use builtins::register_builtins;

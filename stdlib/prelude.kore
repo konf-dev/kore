@@ -1,0 +1,201 @@
+# Kore Prelude
+# Essential composed tools loaded by default.
+#
+# These tools are composed from the ~50 core primitives.
+# There's no magic - they're just programs.
+
+# ============================================================
+# STACK COMBINATORS
+# ============================================================
+
+# dupd: duplicate second item (a b -- a a b)
+[ swap dup rot ] "dupd" def
+
+# nip2: remove top two items (a b c -- a)
+[ drop drop ] "nip2" def
+
+# 2dup: duplicate top pair (a b -- a b a b)
+[ over over ] "2dup" def
+
+# 2drop: drop top pair (a b -- )
+[ drop drop ] "2drop" def
+
+# 2swap: swap top two pairs (a b c d -- c d a b)
+[ rot [ rot ] dip ] "2swap" def
+
+# dip: apply quote below top (a q -- ... a)
+# Temporarily moves top aside, runs quote, puts top back
+[ swap [ call ] dip swap ] "dip" def
+
+# keep: apply quote and keep value (a q -- ... a)
+[ over [ call ] dip ] "keep" def
+
+# bi: apply two quotes to same value (a q1 q2 -- r1 r2)
+[ [ keep ] dip call ] "bi" def
+
+# tri: apply three quotes to same value (a q1 q2 q3 -- r1 r2 r3)
+[ [ [ keep ] dip keep ] dip call ] "tri" def
+
+# ============================================================
+# BOOLEAN
+# ============================================================
+
+# true constant
+[ 1 0 eq not ] "true" def
+
+# false constant
+[ 1 0 eq ] "false" def
+
+# bool: convert to boolean
+[ [ true ] [ false ] if ] "bool" def
+
+# ============================================================
+# ARITHMETIC HELPERS
+# ============================================================
+
+# inc: increment by 1
+[ 1 add ] "inc" def
+
+# dec: decrement by 1
+[ 1 sub ] "dec" def
+
+# zero?: is it zero?
+[ 0 eq ] "zero?" def
+
+# pos?: is it positive?
+[ 0 gt ] "pos?" def
+
+# neg?: is it negative?
+[ 0 lt ] "neg?" def
+
+# even?: is it even?
+[ 2 mod 0 eq ] "even?" def
+
+# odd?: is it odd?
+[ 2 mod 0 ne ] "odd?" def
+
+# square: x^2
+[ dup mul ] "square" def
+
+# cube: x^3
+[ dup dup mul mul ] "cube" def
+
+# ============================================================
+# COMPARISON HELPERS
+# ============================================================
+
+# between?: (x lo hi -- bool) is x in [lo, hi]?
+[ rot dup rot ge [ swap le ] dip and ] "between?" def
+
+# clamp: (x lo hi -- x') clamp x to [lo, hi]
+[ rot min max ] "clamp" def
+
+# ============================================================
+# CONTROL FLOW
+# ============================================================
+
+# when: conditional execution (cond q -- )
+# Runs q only if cond is true
+[ swap [ call ] [ drop ] if ] "when" def
+
+# unless: negative conditional (cond q -- )
+# Runs q only if cond is false
+[ swap [ drop ] [ call ] if ] "unless" def
+
+# times: repeat n times (n q -- )
+# Runs q exactly n times
+[
+    swap
+    [ dup 0 gt ]
+    [ 1 sub swap dup dip swap ]
+    loop
+    2drop
+] "times" def
+
+# while: loop with condition (pred body -- )
+# Runs body while pred returns true
+[
+    swap
+    [ dup call ]
+    [ swap dup [ call ] dip swap ]
+    loop
+    2drop
+] "while" def
+
+# ============================================================
+# LIST BASICS (composed from core)
+# ============================================================
+
+# empty?: is list empty?
+[ 0 list eq ] "empty?" def
+
+# singleton: make single-element list (a -- [a])
+[ 1 list ] "singleton" def
+
+# pair: make two-element list (a b -- [a b])
+[ 2 list ] "pair" def
+
+# triple: make three-element list (a b c -- [a b c])
+[ 3 list ] "triple" def
+
+# first: get first element (list -- elem)
+[ 0 swap list-get ] "first" def
+
+# second: get second element (list -- elem)
+[ 1 swap list-get ] "second" def
+
+# third: get third element (list -- elem)
+[ 2 swap list-get ] "third" def
+
+# last: get last element (list -- elem)
+[ dup list-len 1 sub swap list-get ] "last" def
+
+# ============================================================
+# MAP BASICS (composed from core)
+# ============================================================
+
+# has-key?: check if map has key (map key -- bool)
+[ swap map-get null eq not ] "has-key?" def
+
+# ============================================================
+# ERROR HELPERS
+# ============================================================
+
+# error?: is it an error?
+[ is-error ] "error?" def
+
+# ok?: is it not an error?
+[ is-error not ] "ok?" def
+
+# assert: fail if condition is false (cond msg -- )
+[ swap not [ fail ] when drop ] "assert" def
+
+# ============================================================
+# EXPORTS (what gets loaded by default)
+# ============================================================
+
+[
+    # Stack
+    "dupd" "nip2" "2dup" "2drop" "2swap" "dip" "keep" "bi" "tri"
+    
+    # Boolean
+    "true" "false" "bool"
+    
+    # Arithmetic
+    "inc" "dec" "zero?" "pos?" "neg?" "even?" "odd?" "square" "cube"
+    
+    # Comparison
+    "between?" "clamp"
+    
+    # Control
+    "when" "unless" "times" "while"
+    
+    # List
+    "empty?" "singleton" "pair" "triple" "first" "second" "third" "last"
+    
+    # Map
+    "has-key?"
+    
+    # Error
+    "error?" "ok?" "assert"
+] export

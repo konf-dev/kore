@@ -1,0 +1,301 @@
+# Kore List Library
+# Composed list manipulation tools.
+#
+# Requires: prelude
+
+# ============================================================
+# LIST CONSTRUCTION
+# ============================================================
+
+# range: (start end -- list) create list [start..end)
+[
+    swap
+    0 list  # accumulator
+    [ 2dup lt ]
+    [
+        # (start end acc -- ...)
+        rot dup
+        # (end acc start start)
+        [ swap list-push swap ] dip
+        inc
+        rot
+        # (start' end acc')
+    ]
+    loop
+    nip nip
+] "range" def
+
+# repeat: (x n -- list) create list with n copies of x
+[
+    0 list  # accumulator
+    swap
+    [ dup 0 gt ]
+    [
+        1 sub
+        swap
+        rot dup [ swap list-push ] dip
+        rot
+    ]
+    loop
+    drop drop
+] "repeat" def
+
+# ============================================================
+# LIST ACCESS
+# ============================================================
+
+# len: list length (list -- n)
+[ list-len ] "len" def
+
+# nth: (list n -- elem) get nth element
+[ swap list-get ] "nth" def
+
+# head: first element (list -- elem)
+[ first ] "head" def
+
+# tail: all but first (list -- list)
+[ 1 list-slice-from ] "tail" def
+
+# init: all but last (list -- list)
+[ dup list-len 1 sub 0 swap list-slice ] "init" def
+
+# take: (list n -- list) first n elements
+[ 0 swap list-slice ] "take" def
+
+# drop: (list n -- list) skip first n elements
+[ list-slice-from ] "drop-n" def
+
+# ============================================================
+# LIST PREDICATES
+# ============================================================
+
+# null?: is list empty?
+[ empty? ] "null?" def
+
+# elem?: (list x -- bool) is x in list?
+[
+    swap false swap
+    [ dup empty? not ]
+    [
+        dup first
+        [ rot ] dip
+        rot eq
+        [ drop true swap ] when
+        tail
+    ]
+    loop
+    drop
+] "elem?" def
+
+# ============================================================
+# LIST TRANSFORMATION
+# ============================================================
+
+# reverse: reverse a list (list -- list)
+[
+    0 list  # accumulator
+    swap
+    [ dup empty? not ]
+    [
+        dup first
+        rot swap list-push-front
+        swap tail
+    ]
+    loop
+    drop
+] "reverse" def
+
+# concat: (list1 list2 -- list) concatenate lists
+[ list-concat ] "concat" def
+
+# flatten: flatten one level (list-of-lists -- list)
+[
+    0 list
+    swap
+    [ dup empty? not ]
+    [
+        dup first
+        rot swap list-concat
+        swap tail
+    ]
+    loop
+    drop
+] "flatten" def
+
+# ============================================================
+# HIGHER ORDER
+# ============================================================
+
+# map: (list q -- list) apply q to each element
+[
+    swap
+    0 list  # accumulator
+    swap
+    [ dup empty? not ]
+    [
+        dup first
+        # (q acc list elem)
+        rot rot
+        # (list elem q acc)
+        [ rot dup [ call ] dip ] dip
+        # (list q result acc)
+        swap list-push
+        # (list q acc')
+        rot rot
+        # (q acc' list)
+        tail
+        rot
+        # (list q acc')
+        swap
+        # (list acc' q)
+        rot
+    ]
+    loop
+    drop swap drop
+] "map" def
+
+# filter: (list q -- list) keep elements where q returns true
+[
+    swap
+    0 list  # accumulator
+    swap
+    [ dup empty? not ]
+    [
+        dup first
+        # (q acc list elem)
+        rot rot
+        # (list elem q acc)
+        [ swap dup rot dup [ call ] dip swap ] dip
+        # (list elem q bool acc)
+        rot
+        # (list elem bool acc q)
+        [ swap [ list-push ] [ drop ] if ] dip
+        # (list acc' q)
+        rot
+        # (acc' q list)
+        tail
+        # (acc' q list')
+        rot rot
+    ]
+    loop
+    drop swap drop
+] "filter" def
+
+# fold: (list init q -- result) fold left with initial value
+# q signature: (acc elem -- acc')
+[
+    rot
+    [ dup empty? not ]
+    [
+        dup first
+        rot rot
+        # (list elem q acc)
+        [ swap call ] dip
+        # (list q acc')
+        swap rot
+        tail rot
+    ]
+    loop
+    drop drop
+] "fold" def
+
+# reduce: (list q -- result) fold without initial value
+# Uses first element as initial
+[
+    swap dup first swap tail
+    rot fold
+] "reduce" def
+
+# any?: (list q -- bool) does any element satisfy q?
+[ false [ or ] fold ] "any-with" def
+
+# all?: (list q -- bool) do all elements satisfy q?
+[ true [ and ] fold ] "all-with" def
+
+# ============================================================
+# SEARCHING
+# ============================================================
+
+# find: (list q -- elem/null) find first element satisfying q
+[
+    swap null swap
+    [ dup empty? not ]
+    [
+        dup first
+        rot rot
+        [ swap dup rot dup [ call ] dip swap ] dip
+        # (found elem q bool list')
+        rot [ drop swap drop swap ] [ drop rot tail rot ] if
+        [ dup null eq not ] dip swap
+        [ drop 0 list ] when
+    ]
+    loop
+    drop drop
+] "find" def
+
+# position: (list q -- n/-1) find index of first match
+[
+    swap 0 swap
+    [ dup empty? not ]
+    [
+        dup first
+        [ rot rot [ rot dup [ call ] dip rot ] dip ] dip
+        # After this mess: (list q bool idx elem)
+        drop
+        [ drop 0 list rot drop 1 sub ] [ swap 1 add swap ] if
+        swap tail swap
+    ]
+    loop
+    drop drop
+] "position" def
+
+# ============================================================
+# SORTING
+# ============================================================
+
+# sort: sort list (list -- list)
+# Simple quicksort implementation
+[
+    dup list-len 2 lt
+    [ ]
+    [
+        dup first swap tail
+        # (pivot rest)
+        over [ swap lt ] dip
+        swap
+        2dup [ swap [ swap lt ] dip filter ] dip
+        swap [ swap [ swap ge ] dip filter ] dip
+        # (lo hi pivot)
+        [ sort ] dip
+        [ sort ] dip
+        1 list swap concat swap concat
+    ]
+    if
+] "sort" def
+
+# ============================================================
+# EXPORTS
+# ============================================================
+
+[
+    # Construction
+    "range" "repeat"
+    
+    # Access
+    "len" "nth" "head" "tail" "init" "take" "drop-n"
+    
+    # Predicates
+    "null?" "elem?"
+    
+    # Transformation
+    "reverse" "concat" "flatten"
+    
+    # Higher order
+    "map" "filter" "fold" "reduce" "any-with" "all-with"
+    
+    # Searching
+    "find" "position"
+    
+    # Sorting
+    "sort"
+] export
