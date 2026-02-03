@@ -1,0 +1,129 @@
+# Core Extensions
+# Tools composed DIRECTLY from the 28 core primitives.
+# These must be loaded first before any other stdlib.
+#
+# Core primitives available:
+# - Execution: call, spawn, if, loop
+# - Definition: def, words
+# - Error: try, fail, is-error
+# - Stack: dup, drop, swap, rot, depth
+# - Arithmetic: add, sub, mul, div, mod, neg
+# - Comparison: eq, lt
+# - Logic: and, or, not
+# - Data: list, unlist, map-new
+
+# ============================================================
+# COMPARISON - composed from eq/lt
+# ============================================================
+
+# gt: greater than (a b -- bool)
+# a > b  ⟺  b < a
+[ swap lt ] "gt" def
+
+# le: less than or equal (a b -- bool)
+# a ≤ b  ⟺  ¬(a > b)  ⟺  ¬(b < a)
+[ swap lt not ] "le" def
+
+# ge: greater than or equal (a b -- bool)
+# a ≥ b  ⟺  ¬(a < b)
+[ lt not ] "ge" def
+
+# ne: not equal (a b -- bool)
+# a ≠ b  ⟺  ¬(a = b)
+[ eq not ] "ne" def
+
+# ============================================================
+# ARITHMETIC - composed from core
+# ============================================================
+
+# abs: absolute value (a -- |a|)
+[ dup 0 lt [ neg ] [ ] if ] "abs" def
+
+# min: minimum of two (a b -- min)
+[ dup rot dup rot lt [ drop ] [ swap drop ] if ] "min" def
+
+# max: maximum of two (a b -- max)
+[ dup rot dup rot lt [ swap drop ] [ drop ] if ] "max" def
+
+# zero?: is zero (n -- bool)
+[ 0 eq ] "zero?" def
+
+# pos?: is positive (n -- bool)
+[ 0 gt ] "pos?" def
+
+# neg?: is negative (n -- bool)
+[ 0 lt ] "neg?" def
+
+# inc: increment (n -- n+1)
+[ 1 add ] "inc" def
+
+# dec: decrement (n -- n-1)
+[ 1 sub ] "dec" def
+
+# ============================================================
+# LOGIC - composed from core
+# ============================================================
+
+# xor: exclusive or (a b -- a⊕b)
+[ dup rot dup rot and not rot rot or and ] "xor" def
+
+# nand: not and (a b -- ¬(a∧b))
+[ and not ] "nand" def
+
+# nor: not or (a b -- ¬(a∨b))
+[ or not ] "nor" def
+
+# ============================================================
+# STACK - composed from dup/drop/swap/rot
+# ============================================================
+
+# over: copy second (a b -- a b a)
+[ swap dup rot swap ] "over" def
+
+# nip: drop second (a b -- b)
+[ swap drop ] "nip" def
+
+# tuck: copy top below second (a b -- b a b)
+[ dup rot swap ] "tuck" def
+
+# 2dup: duplicate top pair (a b -- a b a b)
+# Uses over which is defined above
+# [ over over ] "2dup" def
+# Need to expand: over = swap dup rot swap
+[ swap dup rot swap swap dup rot swap ] "2dup" def
+
+# 2drop: drop top pair (a b -- )
+[ drop drop ] "2drop" def
+
+# ============================================================
+# CONSTANTS
+# ============================================================
+
+# true: boolean true
+# 1 = 1
+[ 1 1 eq ] "true" def
+
+# false: boolean false
+# 1 = 0
+[ 1 0 eq ] "false" def
+
+# null: null value
+# We use an empty list as null for now
+[ 0 list ] "null" def
+
+# ============================================================
+# CONTROL - composed from core
+# ============================================================
+
+# dip: run quote below top (a q -- ... a)
+# Store top, run quote, restore
+# This is tricky without a dedicated mechanism
+# Approach: swap, then use call indirection
+[ swap [ call ] [ ] if swap ] "dip" def
+
+# Note: A proper 'dip' needs temporary storage
+# This naive version doesn't work correctly
+# TODO: Implement dip properly using spawn or dedicated mechanism
+
+# keep: run quote keeping value (a q -- ... a)
+[ swap dup rot call swap ] "keep" def

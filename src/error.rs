@@ -74,6 +74,13 @@ pub enum Error {
 
     #[error("I/O error: {0}")]
     IoError(String),
+
+    // Linear type errors (for resource safety)
+    #[error("Linear value cannot be duplicated: {0}")]
+    LinearDuplicate(String),
+
+    #[error("Linear value cannot be discarded: {0}")]
+    LinearDiscard(String),
 }
 
 impl Error {
@@ -120,6 +127,8 @@ impl Error {
             Self::HttpError(_) => "E_HTTP",
             Self::ShellError(_) => "E_SHELL",
             Self::IoError(_) => "E_IO",
+            Self::LinearDuplicate(_) => "E_LINEAR_DUP",
+            Self::LinearDiscard(_) => "E_LINEAR_DROP",
         }
     }
 }

@@ -257,6 +257,23 @@ impl CapSet {
     pub fn len(&self) -> usize {
         self.caps.len()
     }
+
+    /// Create from a Capabilities struct
+    pub fn from_capabilities(caps: &crate::capabilities::Capabilities) -> Self {
+        let cap_strings = caps.list();
+        Self::from_caps(cap_strings.into_iter().map(Cap::new))
+    }
+
+    /// Convert to a Capabilities struct
+    pub fn to_capabilities(&self) -> crate::capabilities::Capabilities {
+        let cap_str = self
+            .caps
+            .iter()
+            .map(|c| c.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        crate::capabilities::Capabilities::parse(&cap_str)
+    }
 }
 
 impl fmt::Display for CapSet {

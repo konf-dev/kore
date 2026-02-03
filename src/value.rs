@@ -1,12 +1,46 @@
-//! Value types - the 10 types that can exist on the stack
+//! Value types - the core types that can exist on the stack
+//!
+//! # Design
+//! 
+//! 10 base types + 1 extension wrapper for future pillars (Tensor, Fiber, etc.)
 
 use crate::error::{Error, Result};
 use crate::op::Op;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::Arc;
 
-/// The 10 value types in Konf Stack
+/// Extension kinds for the Ext variant
+pub mod ext {
+    /// Tensor: differentiable multi-dimensional array
+    pub const TENSOR: u8 = 0;
+    /// Fiber: reified computation (paused execution)
+    pub const FIBER: u8 = 1;
+    /// Linear: value that cannot be duplicated or discarded
+    pub const LINEAR: u8 = 2;
+    /// Distribution: probability distribution
+    pub const DIST: u8 = 3;
+}
+
+/// Extended value - wraps any value with kind + metadata
+#[derive(Debug, Clone)]
+pub struct ExtValue {
+    /// Extension kind (see ext module for constants)
+    pub kind: u8,
+    /// The wrapped value
+    pub data: Box<Value>,
+    /// Optional metadata
+    pub meta: Option<IndexMap<String, Value>>,
+}
+
+impl PartialEq for ExtValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.data == other.data
+    }
+}
+
+/// The 11 value types in Kore (10 base + 1 extension wrapper)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Value {
@@ -39,6 +73,10 @@ pub enum Value {
 
     /// Captured error
     Error(Box<ErrorValue>),
+
+    /// Extension value: tensor, fiber, linear, distribution, etc.
+    #[serde(skip)]
+    Ext(Arc<ExtValue>),
 }
 
 /// Opaque handle to a resource (secrets, connections, files)
@@ -78,6 +116,84 @@ impl Value {
             Value::Quote(_) => "Quote",
             Value::Handle(_) => "Handle",
             Value::Error(_) => "Error",
+            Value::Ext(e) => match e.kind {
+                ext::TENSOR => "Tensor",
+                ext::FIBER => "Fiber",
+                ext::LINEAR => "Linear",
+                ext::DIST => "Distribution",
+                _ => "Ext",
+            },
+        }
+    }
+
+    // === Extension predicates ===
+
+    /// Check if this is a linear value (cannot be duplicated or discarded)
+    pub fn is_linear(&self) -> bool {
+        matches!(self, Value::Ext(e) if e.kind == ext::LINEAR)
+    }
+
+    /// Check if this is a tensor value
+    pub fn is_tensor(&self) -> bool {
+        matches!(self, Value::Ext(e) if e.kind == ext::TENSOR)
+    }
+
+    /// Check if this is a fiber value
+    pub fn is_fiber(&self) -> bool {
+        matches!(self, Value::Ext(e) if e.kind == ext::FIBER)
+    }
+
+    /// Check if this is a distribution value
+    pub fn is_dist(&self) -> bool {
+        matches!(self, Value::Ext(e) if e.kind == ext::DIST)
+    }
+
+    // === Extension constructors ===
+
+    /// Create a Tensor value
+    pub fn tensor(data: Value, meta: Option<IndexMap<String, Value>>) -> Self {
+        Value::Ext(Arc::new(ExtValue {
+            kind: ext::TENSOR,
+            data: Box::new(data),
+            meta,
+        }))
+    }
+
+    /// Create a Fiber value
+    pub fn fiber(data: Value, meta: Option<IndexMap<String, Value>>) -> Self {
+        Value::Ext(Arc::new(ExtValue {
+            kind: ext::FIBER,
+            data: Box::new(data),
+            meta,
+        }))
+    }
+
+    /// Create a Linear value (non-duplicable, non-discardable)
+    pub fn linear(data: Value) -> Self {
+        Value::Ext(Arc::new(ExtValue {
+            kind: ext::LINEAR,
+            data: Box::new(data),
+            meta: None,
+        }))
+    }
+
+    /// Create a Distribution value
+    pub fn distribution(data: Value, meta: Option<IndexMap<String, Value>>) -> Self {
+        Value::Ext(Arc::new(ExtValue {
+            kind: ext::DIST,
+            data: Box::new(data),
+            meta,
+        }))
+    }
+
+    /// Access extension value
+    pub fn as_ext(&self) -> Result<&ExtValue> {
+        match self {
+            Value::Ext(e) => Ok(e.as_ref()),
+            _ => Err(Error::TypeError {
+                expected: "Ext".into(),
+                got: self.type_name().into(),
+            }),
         }
     }
 
@@ -264,6 +380,7 @@ impl Value {
             Value::Quote(q) => !q.is_empty(),
             Value::Handle(_) => true,
             Value::Error(_) => true,
+            Value::Ext(_) => true, // Extensions are truthy by default
         }
     }
 }
@@ -299,6 +416,16 @@ impl fmt::Display for Value {
             Value::Quote(ops) => write!(f, "[quote: {} ops]", ops.len()),
             Value::Handle(h) => write!(f, "<handle:{:?}:{}>", h.kind, h.id),
             Value::Error(e) => write!(f, "<error:{}:{}>", e.code, e.message),
+            Value::Ext(e) => {
+                let kind_name = match e.kind {
+                    ext::TENSOR => "tensor",
+                    ext::FIBER => "fiber",
+                    ext::LINEAR => "linear",
+                    ext::DIST => "dist",
+                    k => return write!(f, "<ext:{}>", k),
+                };
+                write!(f, "<{}:{}>", kind_name, e.data)
+            }
         }
     }
 }
@@ -384,5 +511,67 @@ mod tests {
         assert_eq!(Value::Int(42).as_int().unwrap(), 42);
         assert_eq!(Value::Int(42).as_float().unwrap(), 42.0); // Int promotes
         assert!(Value::Text("hello".into()).as_int().is_err());
+    }
+
+    // === Extension type tests ===
+
+    #[test]
+    fn test_tensor_creation() {
+        let data = Value::List(vec![
+            Value::Float(1.0),
+            Value::Float(2.0),
+            Value::Float(3.0),
+        ]);
+        let tensor = Value::tensor(data.clone(), None);
+        assert!(tensor.is_tensor());
+        assert!(!tensor.is_linear());
+        assert!(!tensor.is_fiber());
+        assert_eq!(tensor.type_name(), "Tensor");
+    }
+
+    #[test]
+    fn test_linear_creation() {
+        let inner = Value::Text("unique-resource".into());
+        let linear = Value::linear(inner);
+        assert!(linear.is_linear());
+        assert!(!linear.is_tensor());
+        assert_eq!(linear.type_name(), "Linear");
+    }
+
+    #[test]
+    fn test_fiber_creation() {
+        let state = Value::Map(IndexMap::new());
+        let fiber = Value::fiber(state, None);
+        assert!(fiber.is_fiber());
+        assert!(!fiber.is_linear());
+        assert_eq!(fiber.type_name(), "Fiber");
+    }
+
+    #[test]
+    fn test_distribution_creation() {
+        let params = Value::Map(IndexMap::new());
+        let dist = Value::distribution(params, None);
+        assert!(dist.is_dist());
+        assert_eq!(dist.type_name(), "Distribution");
+    }
+
+    #[test]
+    fn test_ext_value_display() {
+        let tensor = Value::tensor(Value::Int(42), None);
+        let s = format!("{}", tensor);
+        assert!(s.contains("tensor"));
+    }
+
+    #[test]
+    fn test_ext_arc_sharing() {
+        let tensor = Value::tensor(Value::List(vec![Value::Float(1.0)]), None);
+        let tensor2 = tensor.clone();
+        
+        // Both should share the same Arc
+        if let (Value::Ext(a), Value::Ext(b)) = (&tensor, &tensor2) {
+            assert!(Arc::ptr_eq(a, b), "Arc should be shared after clone");
+        } else {
+            panic!("Expected Ext");
+        }
     }
 }

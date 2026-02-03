@@ -4,11 +4,13 @@
 //! work together correctly. Follows the Three Postulates.
 
 use kore::{Context, Stack, Op, Value, execute, register_builtins};
+use kore::stdlib::load_prelude;
 
 /// Helper to run a program and get the final stack
 async fn run(ops: Vec<Op>) -> Vec<Value> {
     let mut ctx = Context::new();
     register_builtins(&mut ctx).await;
+    load_prelude(&ctx).await.expect("prelude should load");
     let stack = Stack::new();
     let (result, _) = execute(&ops, stack, ctx).await.unwrap();
     result.values().to_vec()
@@ -18,6 +20,7 @@ async fn run(ops: Vec<Op>) -> Vec<Value> {
 async fn run_expect_error(ops: Vec<Op>) -> String {
     let mut ctx = Context::new();
     register_builtins(&mut ctx).await;
+    load_prelude(&ctx).await.expect("prelude should load");
     let stack = Stack::new();
     match execute(&ops, stack, ctx).await {
         Err(e) => e.to_string(),
@@ -424,4 +427,67 @@ async fn stack_based_calculator() {
     ]).await;
     
     assert_eq!(result, vec![Value::Int(35)]);
+}
+
+// ============================================================================
+// LINEAR TYPE ENFORCEMENT
+// ============================================================================
+
+#[tokio::test]
+async fn linear_value_cannot_be_duplicated() {
+    // Create a linear value and try to dup it - should fail
+    let linear = Value::linear(Value::Text("unique-resource".into()));
+    
+    let mut ctx = Context::new();
+    register_builtins(&mut ctx).await;
+    
+    let mut stack = Stack::new();
+    stack.push(linear).unwrap();
+    
+    let ops = vec![Op::call("dup")];
+    let result = execute(&ops, stack, ctx).await;
+    
+    match result {
+        Ok(_) => panic!("Expected error but got success"),
+        Err(err) => {
+            assert!(err.to_string().contains("cannot be duplicated") || 
+                    err.code() == "E_LINEAR_DUP",
+                    "Unexpected error: {}", err);
+        }
+    }
+}
+
+#[tokio::test]
+async fn linear_value_cannot_be_discarded() {
+    // Create a linear value and try to drop it - should fail
+    let linear = Value::linear(Value::Text("unique-resource".into()));
+    
+    let mut ctx = Context::new();
+    register_builtins(&mut ctx).await;
+    
+    let mut stack = Stack::new();
+    stack.push(linear).unwrap();
+    
+    let ops = vec![Op::call("drop")];
+    let result = execute(&ops, stack, ctx).await;
+    
+    match result {
+        Ok(_) => panic!("Expected error but got success"),
+        Err(err) => {
+            assert!(err.to_string().contains("cannot be discarded") || 
+                    err.code() == "E_LINEAR_DROP",
+                    "Unexpected error: {}", err);
+        }
+    }
+}
+
+#[tokio::test]
+async fn regular_values_can_still_be_duplicated() {
+    // Normal values should still dup fine
+    let result = run(vec![
+        Op::push(42),
+        Op::call("dup"),
+    ]).await;
+    
+    assert_eq!(result, vec![Value::Int(42), Value::Int(42)]);
 }

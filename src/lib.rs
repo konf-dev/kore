@@ -35,74 +35,59 @@
 //! - **[Op]**: 2 operations - Push, Call (that's it!)
 //! - **[Context]**: Execution sandbox with capabilities and resources
 //!
-//! ## Quick Example
+//! ## Architecture
 //!
-//! ```ignore
-//! use kore::{Context, Stack, Op, Value, execute};
-//!
-//! #[tokio::main]
-//! async fn main() {
-//!     let ctx = Context::new();
-//!     let stack = Stack::new();
-//!     
-//!     // Program: push 5, push 3, call "add"
-//!     let ops = vec![
-//!         Op::push(5),
-//!         Op::push(3),
-//!         Op::call("add"),
-//!     ];
-//!     
-//!     let (result, _) = execute(&ops, stack, ctx).await.unwrap();
-//!     assert_eq!(result.values()[0].as_int().unwrap(), 8);
-//! }
-//! ```
+//! - **Core** (27 primitives): Irreducible operations in `src/core/`
+//! - **Stdlib**: Composed tools in `stdlib/*.kore`
+//! - **Capability Tools**: External tools requiring permissions in `src/cap/`
 //!
 //! ## Design Principles
 //!
-//! 1. **Minimal**: 2 operations (Push, Call), 10 types, ~200 lines of core logic
+//! 1. **Minimal**: 2 operations (Push, Call), 10 types, 27 core primitives
 //! 2. **Formal**: Built on algebraic structures (lattice, monoid, category)
 //! 3. **Secure**: Capability-based access control, resource conservation
 //! 4. **Composable**: Tools are the only abstraction
-//!
-//! ## Core Primitives (~50)
-//!
-//! Stack, arithmetic, comparison, logic, control, definition, data,
-//! capability, resource, spawn, error, and trace operations.
-//! Everything else is in the stdlib.
+//! 5. **Machine-readable**: Every tool has queryable manifest
 
-// Algebraic foundations (new!)
+// Algebraic foundations
 pub mod algebra;
+
+// Core: 57 irreducible primitives
 pub mod core;
 
-// Existing modules
+// Capability tools: OS, network, storage
+pub mod cap;
+
+// Legacy builtins (to be removed)
 pub mod builtins;
+
+// Fundamental types
 pub mod capabilities;
 pub mod context;
-pub mod effect;
 pub mod error;
 pub mod executor;
-pub mod lookahead;  // Runtime optimization
 pub mod memory;
 pub mod meta;
 pub mod op;
 pub mod resources;
 pub mod stack;
-pub mod stdlib;  // NEW: stdlib loader
 pub mod storage;
 pub mod tool;
 pub mod value;
+
+// Optional modules
+pub mod effect;
+pub mod lookahead;
+pub mod stdlib;
 
 // Re-export algebra types
 pub use algebra::{Cap, CapSet, Res, Trace, TraceStep};
 
 // Re-export main types for convenience
-pub use builtins::register_builtins;
 pub use capabilities::Capabilities;
 pub use context::Context;
-pub use effect::{Effect, Type};
 pub use error::{Error, Result};
 pub use executor::{execute, ExecFuture};
-pub use lookahead::execute_with_lookahead;
 pub use memory::Memory;
 pub use op::Op;
 pub use resources::{ResourceQuota, Resources};
@@ -110,3 +95,8 @@ pub use stack::Stack;
 pub use storage::Storage;
 pub use tool::Tool;
 pub use value::{ErrorValue, Handle, HandleKind, Value};
+
+// Registration functions
+pub use core::register_core;
+pub use cap::register_cap;
+pub use builtins::register_builtins;

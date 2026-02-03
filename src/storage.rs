@@ -66,6 +66,7 @@ impl Storage {
             Value::Quote(ops) => 1 + ops.len() as u64,
             Value::Handle(_) => 1,
             Value::Error(_) => 1,
+            Value::Ext(e) => 1 + Self::value_units(&e.data),
         }
     }
 

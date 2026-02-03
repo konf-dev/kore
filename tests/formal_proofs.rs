@@ -17,7 +17,7 @@
 //! - Resource Monoid: add, split with conservation
 //! - Trace Monoid: concat with identity
 
-use kore::algebra::{Cap, CapSet, Res, Trace, TraceStep};
+use kore::algebra::{CapSet, Res, Trace, TraceStep};
 
 // ============================================================================
 // CAPABILITY LATTICE PROOFS
@@ -74,7 +74,7 @@ mod capability_lattice {
     fn proof_leq_transitive() {
         let a = CapSet::parse("fs:read:/home/user");
         let b = CapSet::parse("fs:read:/home");
-        let c = CapSet::parse("fs:*");
+        let _c = CapSet::parse("fs:*");
 
         // a ≤ b (more specific path is weaker)
         // b ≤ c (read is weaker than wildcard)
@@ -395,7 +395,7 @@ mod trace_monoid {
 // ============================================================================
 
 mod postulates {
-    use super::*;
+    
 
     /// Proof: Postulate 1 - Everything is a Tool
     /// Every operation produces Stack → Stack
@@ -412,9 +412,11 @@ mod postulates {
         // only contains tools with this signature.
         use kore::core::CORE_PRIMITIVES;
         
-        // All 51 primitives are tools
-        assert_eq!(CORE_PRIMITIVES.len(), 51, 
-            "We have exactly 51 core primitives");
+        // All 75 primitives are tools (expanded with combinators + over + dip + type checks + string ops)
+        // 4 execution + 2 definition + 3 error + 7 stack + 6 arithmetic + 2 comparison + 3 logic + 3 data
+        // + 13 string + 8 list + 6 map + 14 type + 4 combinators
+        assert_eq!(CORE_PRIMITIVES.len(), 75, 
+            "We have exactly 75 core primitives");
         
         // Each one is documented with a stack effect signature
         // (verified in FORMAL_ARCHITECTURE.md)
@@ -472,7 +474,7 @@ mod spawn_safety {
     fn proof_spawn_attenuates_caps() {
         // Parent has broad capabilities
         let parent_caps = CapSet::parse("fs:read,fs:write,net:connect,exec");
-        let parent_res = Res::new(1000, 500, 2000, 100);
+        let _parent_res = Res::new(1000, 500, 2000, 100);
 
         // Create a mock spawn scenario
         let requested_caps = CapSet::parse("fs:read,net:connect");

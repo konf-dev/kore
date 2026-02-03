@@ -10,11 +10,13 @@
 //! - P3: Composition is Concatenation
 
 use kore::{Context, Stack, Op, Value, execute, register_builtins, Tool};
+use kore::stdlib::load_prelude;
 
 /// Helper to run a program and get the final stack
 async fn run(ops: Vec<Op>) -> Vec<Value> {
     let mut ctx = Context::new();
     register_builtins(&mut ctx).await;
+    load_prelude(&ctx).await.expect("prelude should load");
     let stack = Stack::new();
     let (result, _) = execute(&ops, stack, ctx).await.unwrap();
     result.values().to_vec()
@@ -25,6 +27,7 @@ async fn run(ops: Vec<Op>) -> Vec<Value> {
 async fn run_with_tools(ops: Vec<Op>, tools: Vec<Tool>) -> Vec<Value> {
     let mut ctx = Context::new();
     register_builtins(&mut ctx).await;
+    load_prelude(&ctx).await.expect("prelude should load");
     for tool in tools {
         ctx.dict.write().await.register(tool);
     }

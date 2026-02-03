@@ -2,16 +2,59 @@
 
 **The fundamental runtime for agentic AI.**
 
-Kore is a minimal, stack-based programming language designed for composable tool orchestration. It provides exactly what's needed for agents to compose, execute, and reason about tools—nothing more.
+Kore is a minimal, stack-based programming language built on three postulates. It provides exactly what's needed for agents to compose, execute, and reason about tools—nothing more.
 
-## Philosophy
+## The Three Postulates
 
-1. **Minimal**: 4 operations, 10 types, 9 built-in tools
-2. **Predictable**: No hidden state, no magic, explicit error handling
-3. **Secure**: Capability-based access control
-4. **Composable**: Tools are the only abstraction
+**Postulate 1: Everything is a Tool**
+```
+Tool : Stack → Stack
+```
+Every operation is a tool that transforms a stack.
 
-## The Language
+**Postulate 2: Tools Transform Stacks**
+```
+execute(t, s) = s'
+```
+Tools consume values from the stack and produce values onto the stack.
+
+**Postulate 3: Composition is Concatenation**
+```
+(f ; g)(s) = g(f(s))
+```
+Running tools in sequence is function composition.
+
+## Architecture
+
+### Three Tiers
+
+```
+┌─────────────────────────────────────────────┐
+│           Capability Tools (cap/)            │
+│  File I/O, Network, Shell - require perms    │
+├─────────────────────────────────────────────┤
+│              Stdlib (.kore)                  │
+│  Composed tools: gt, over, map, filter, etc  │
+├─────────────────────────────────────────────┤
+│            Core (28 primitives)              │
+│  Irreducible operations in Rust              │
+└─────────────────────────────────────────────┘
+```
+
+### 28 Core Primitives
+
+| Category | Primitives |
+|----------|------------|
+| **Execution** (4) | `call`, `spawn`, `if`, `loop` |
+| **Definition** (2) | `def`, `words` |
+| **Error** (3) | `try`, `fail`, `is-error` |
+| **Stack** (5) | `dup`, `drop`, `swap`, `rot`, `depth` |
+| **Arithmetic** (6) | `add`, `sub`, `mul`, `div`, `mod`, `neg` |
+| **Comparison** (2) | `eq`, `lt` |
+| **Logic** (3) | `and`, `or`, `not` |
+| **Data** (3) | `list`, `unlist`, `map-new` |
+
+Everything else is composed from these.
 
 ### 10 Value Types
 
@@ -24,80 +67,86 @@ Kore is a minimal, stack-based programming language designed for composable tool
 | Text | `"hello"` | Strings |
 | List | `[1, 2, 3]` | Ordered collections |
 | Map | `{"a": 1}` | Key-value pairs |
-| Quote | `(add 1)` | Deferred code |
+| Quote | `[ add 1 ]` | Deferred code |
 | Handle | `@file:123` | External resources |
 | Error | `Error(...)` | Captured failures |
 
-### 4 Operations
+### 2 Operations
 
 | Op | Effect | Description |
 |----|--------|-------------|
 | Push | `( -- value)` | Put a value on the stack |
 | Call | `(... -- ...)` | Look up and run a tool |
-| Quote | `( -- quote)` | Capture ops as a value |
-| If | `(bool -- )` | Conditional execution |
 
-### 9 Built-in Tools
+That's it. Conditionals (`if`) and quotations are tools, not special syntax.
 
-| Tool | Effect | Purpose |
-|------|--------|---------|
-| `call` | `(quote -- ...)` | Run a quote |
-| `try` | `(quote -- value-or-error)` | Run, capture errors |
-| `is-error` | `(value -- bool)` | Check if Error |
-| `unwrap` | `(value-or-error -- value)` | Extract or stop |
-| `dup` | `(a -- a a)` | Duplicate top |
-| `drop` | `(a -- )` | Remove top |
-| `swap` | `(a b -- b a)` | Swap top two |
-| `over` | `(a b -- a b a)` | Copy second to top |
-| `rot` | `(a b c -- b c a)` | Rotate three |
+## Example
 
-## Components
+```kore
+# Define factorial
+[ dup 1 le 
+  [ drop 1 ] 
+  [ dup 1 sub factorial mul ] 
+  if 
+] "factorial" def
 
-| Crate | Purpose |
-|-------|---------|
-| `kore` | Core runtime - parser, executor, types |
-| `kore-agent` | Autonomous LLM agent with experiment tracking |
-| `kore-workflow` | Concurrent workflow execution |
+# Compute 5!
+5 factorial
+# Stack: [120]
+```
 
-## Quick Start: Agent
+## Algebraic Foundations
+
+Kore is built on formal algebraic structures:
+
+- **CapSet**: Capability lattice with ≤, ∧, ∨ (only attenuation, no escalation)
+- **Res**: Resource monoid (conservation law: resources can split but never increase)
+- **Trace**: Execution trace monoid (append-only audit log)
+
+The `spawn` primitive enforces:
+```
+spawn(q, caps', res') where caps' ≤ caps and res' ≤ res
+```
+
+## Design Principles
+
+1. **Minimal**: 2 ops, 10 types, 28 primitives
+2. **Formal**: Built on lattice, monoid, category theory
+3. **Secure**: Capability-based access, resource conservation
+4. **Composable**: Tools are the only abstraction
+5. **Machine-readable**: Every tool has queryable manifest
+
+## Quick Start
 
 ```bash
-cd experiments
-export OPENAI_API_KEY="your-key"
-export OPENAI_BASE_URL="https://your-llm-api"
+# Run tests
+cargo test
 
-# Run an experiment
-./run.sh prompts/v1-genesis.md "Create a notes folder" qwen2.5-32b
+# Run core tests only
+cargo test core::
 
-# Results in experiments/results/<timestamp>/
+# Check all 28 primitives
+cargo test proof_postulate_1_everything_is_tool
 ```
 
-See [crates/kore-agent/README.md](crates/kore-agent/README.md) for details.
-
-## Error Handling
-
-Errors are values, not exceptions. This gives agents full visibility:
+## File Structure
 
 ```
-# Try something that might fail
-(risky-operation) try
+src/
+├── core/           # 28 irreducible primitives
+│   ├── mod.rs      # register_core()
+│   ├── execution.rs
+│   ├── arithmetic.rs
+│   └── ...
+├── algebra.rs      # CapSet, Res, Trace
+├── executor.rs     # Main execution loop
+└── ...
 
-# Check if it failed
-dup is-error
-(handle-error)
-(unwrap continue-with-result)
-if
+stdlib/
+├── core-extensions.kore  # gt, le, ge, over, nip, etc.
+├── prelude.kore         # Higher-level helpers
+└── list.kore            # List operations
 ```
-
-## Design for Agentic AI
-
-Kore is designed with AI agents in mind:
-
-- **Visibility**: Agents can inspect what tools are available
-- **Control**: Explicit error handling lets agents decide how to recover
-- **Simplicity**: Small surface area is easier to learn and reason about
-- **Safety**: Capability system prevents unauthorized operations
-- **Reproducibility**: Experiment system captures all inputs/outputs
 
 ## License
 

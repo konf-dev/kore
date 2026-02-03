@@ -234,5 +234,6 @@ fn format_value(v: &kore::Value) -> String {
         kore::Value::Quote(ops) => format!("[...{} ops]", ops.len()),
         kore::Value::Handle(h) => format!("<handle:{:?}:{}>", h.kind, h.id),
         kore::Value::Error(e) => format!("Error({}: {})", e.code, e.message),
+        kore::Value::Ext(e) => format!("<ext:{}:{}>", e.kind, format_value(&e.data)),
     }
 }

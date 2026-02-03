@@ -9,10 +9,12 @@ use kore::op::Op;
 use kore::stack::Stack;
 use kore::value::Value;
 use kore::builtins::register_builtins;
+use kore::stdlib::load_prelude;
 
 async fn setup() -> Context {
     let mut ctx = Context::new();
     register_builtins(&mut ctx).await;
+    load_prelude(&ctx).await.expect("prelude should load");
     ctx
 }
 
@@ -475,7 +477,7 @@ async fn map_vals() {
 #[tokio::test]
 async fn type_of() {
     let result = run(vec![Op::push(42), Op::call("type-of")]).await;
-    assert_eq!(result, vec![Value::Text("Int".into())]);
+    assert_eq!(result, vec![Value::Text("int".into())]);  // lowercase type names
 }
 
 #[tokio::test]

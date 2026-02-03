@@ -23,10 +23,6 @@
 # 2swap: swap top two pairs (a b c d -- c d a b)
 [ rot [ rot ] dip ] "2swap" def
 
-# dip: apply quote below top (a q -- ... a)
-# Temporarily moves top aside, runs quote, puts top back
-[ swap [ call ] dip swap ] "dip" def
-
 # keep: apply quote and keep value (a q -- ... a)
 [ over [ call ] dip ] "keep" def
 
@@ -48,6 +44,26 @@
 
 # bool: convert to boolean
 [ [ true ] [ false ] if ] "bool" def
+
+# ============================================================
+# COMPARISON OPERATORS
+# (Composed from primitives: eq, lt)
+# ============================================================
+
+# gt: greater than (a b -- bool)
+[ swap lt ] "gt" def
+
+# le: less-than-or-equal (a b -- bool)
+[ 2dup lt [ 2drop true ] [ eq ] if ] "le" def
+
+# ge: greater-than-or-equal (a b -- bool)
+[ swap le ] "ge" def
+
+# ne: not equal (a b -- bool)
+[ eq not ] "ne" def
+
+# neq: alias for ne
+[ ne ] "neq" def
 
 # ============================================================
 # ARITHMETIC HELPERS
@@ -102,29 +118,20 @@
 # Runs q only if cond is false
 [ swap [ drop ] [ call ] if ] "unless" def
 
-# times: repeat n times (n q -- )
-# Runs q exactly n times
-[
-    swap
-    [ dup 0 gt ]
-    [ 1 sub swap dup dip swap ]
-    loop
-    2drop
-] "times" def
-
-# while: loop with condition (pred body -- )
-# Runs body while pred returns true
-[
-    swap
-    [ dup call ]
-    [ swap dup [ call ] dip swap ]
-    loop
-    2drop
-] "while" def
+# Note: times and while are native tools with special stack semantics
 
 # ============================================================
 # LIST BASICS (composed from core)
 # ============================================================
+
+# collect: alias for list (n -- list)
+[ list ] "collect" def
+
+# list-empty: create empty list ( -- list)
+[ 0 list ] "list-empty" def
+
+# to-list: wrap single value in list (a -- [a])
+[ 1 list ] "to-list" def
 
 # empty?: is list empty?
 [ 0 list eq ] "empty?" def
@@ -153,6 +160,9 @@
 # ============================================================
 # MAP BASICS (composed from core)
 # ============================================================
+
+# map-empty: alias for map-new ( -- map)
+[ map-new ] "map-empty" def
 
 # has-key?: check if map has key (map key -- bool)
 [ swap map-get null eq not ] "has-key?" def
