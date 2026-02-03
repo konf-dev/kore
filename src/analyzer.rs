@@ -5,6 +5,22 @@
 //! - Unbalanced conditionals: if-branches with different effects  
 //!
 //! Uses the Effect algebra from types.rs for correct composition.
+//!
+//! ## Limitations
+//!
+//! **Control flow effects are approximations:**
+//! - `call`, `if`, `times`, `while`: Effect depends on quote contents
+//! - `dip`: Executes quote then restores one value - complex effect
+//! - `try`: May push error or success result
+//!
+//! The analyzer uses conservative approximations for these cases.
+//! Unknown tools are assumed to push 1 value.
+//!
+//! ## Mathematical Foundation
+//!
+//! Effect composition: `compose((a,b), (c,d)) = if b >= c then (a, b-c+d) else (a+c-b, d)`
+//! 
+//! This formula is proven correct and implemented in types.rs.
 
 use crate::op::Op;
 use crate::types::Effect;
@@ -265,6 +281,13 @@ impl Analyzer {
             // Memory
             "mem-get" | "rom-get" => (1, 1),
             "mem-set" | "rom-set" => (2, 0),
+            "mem-keys" | "rom-keys" => (0, 1),
+            "mem-del" | "rom-del" => (1, 0),
+            
+            // Trace (pure, stateless)
+            "trace-new" => (0, 1),
+            "trace-step" => (2, 1), // name trace -- trace'
+            "trace-fingerprint" => (1, 1),
             
             // I/O
             "print" | "println" => (1, 0),
@@ -272,16 +295,16 @@ impl Analyzer {
             "fs-write" => (2, 0),
             "json-parse" | "json-encode" => (1, 1),
             
-            // Control
-            "call" => (1, 0), // quote --, effect depends on quote
-            "if" => (3, 0),   // cond then else --
-            "times" => (2, 0),
-            "while" => (2, 0),
-            "when" | "unless" => (2, 0),
-            "loop" => (1, 0),
-            "spawn" => (1, 1),
-            "try" => (1, 1),
-            "fail" => (1, 0),
+            // Control - effects are approximations (actual effect depends on quote contents)
+            "call" => (1, 0), // quote --, actual effect depends on quote
+            "if" => (3, 0),   // cond then else --, branches may push
+            "times" => (2, 0), // n quote --
+            "while" => (2, 0), // cond-q body-q --
+            "when" | "unless" => (2, 0), // cond quote --
+            "loop" => (1, 0), // quote --
+            "spawn" => (3, 1), // quote caps ratio -- result
+            "try" => (1, 1),  // quote -- result (approx, may push error)
+            "fail" => (1, 0), // msg -- (never returns)
             
             // Definition
             "def" => (2, 0),

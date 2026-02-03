@@ -357,14 +357,20 @@ mod trace_tools {
         let ctx = setup().await;
         let stack = Stack::new();
 
-        // Just verify trace-step doesn't fail
+        // trace-step is now pure: (name trace -- trace')
         let ops = vec![
-            Op::Push(Value::Text("test-op".into())),
-            Op::call("trace-step"),
+            Op::call("trace-new"),  // -- []
+            Op::Push(Value::Text("test-op".into())), // [] "test-op"
+            Op::call("swap"),       // "test-op" []
+            Op::call("trace-step"), // -- [{tool: "test-op", time: ...}]
         ];
 
         let (result, _) = execute(&ops, stack, ctx).await.unwrap();
-        assert!(result.is_empty(), "trace-step consumes its argument");
+        assert_eq!(result.depth(), 1, "trace-step returns trace");
+        
+        // Check it's a list with one step
+        let trace = result.values()[0].clone().into_list().unwrap();
+        assert_eq!(trace.len(), 1, "trace should have one step");
     }
 
     #[tokio::test]
@@ -372,9 +378,13 @@ mod trace_tools {
         let ctx = setup().await;
         let stack = Stack::new();
 
-        // Get a fingerprint
+        // trace-fingerprint is now pure: (trace -- hash)
         let ops = vec![
-            Op::call("trace-fingerprint"),
+            Op::call("trace-new"),  // -- []
+            Op::Push(Value::Text("op1".into())),
+            Op::call("swap"),
+            Op::call("trace-step"), // -- [step1]
+            Op::call("trace-fingerprint"), // -- hash
         ];
 
         let (result, _) = execute(&ops, stack, ctx).await.unwrap();
