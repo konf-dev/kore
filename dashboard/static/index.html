@@ -3,682 +3,591 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kore Benchmark Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Kore Dashboard</title>
     <style>
-        .log-kore { border-left: 3px solid #22c55e; }
-        .log-baseline { border-left: 3px solid #3b82f6; }
-        .log-system { border-left: 3px solid #a855f7; }
-        .log-error { border-left: 3px solid #ef4444; }
-        pre { white-space: pre-wrap; word-wrap: break-word; }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-        .status-running { background: #22c55e; animation: pulse 1s infinite; }
-        .status-paused { background: #f59e0b; }
-        .status-stopped { background: #6b7280; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0a0a0a;
+            --surface: #111;
+            --surface-2: #1a1a1a;
+            --border: #222;
+            --text: #e5e5e5;
+            --text-dim: #666;
+            --accent: #10b981;
+            --accent-dim: #064e3b;
+            --warn: #f59e0b;
+            --error: #ef4444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+        .mono { font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace; }
+        
+        /* Layout */
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .grid { display: grid; gap: 16px; }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        @media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+        
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            z-index: 100;
+        }
+        .logo { font-size: 18px; font-weight: 600; letter-spacing: -0.5px; }
+        .logo span { color: var(--accent); }
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 13px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+        .status-dot.running { background: var(--accent); animation: pulse 2s infinite; }
+        .status-dot.paused { background: var(--warn); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-body { padding: 16px; }
+        .card-body.no-pad { padding: 0; }
+        
+        /* Stats */
+        .stat { text-align: center; padding: 16px; }
+        .stat-value { font-size: 32px; font-weight: 600; color: var(--accent); }
+        .stat-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-top: 4px; }
+        
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: var(--accent); color: #000; }
+        .btn-primary:hover { background: #34d399; }
+        .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: var(--border); }
+        .btn-danger { background: var(--error); color: #fff; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-group { display: flex; gap: 8px; }
+        
+        /* Tool List */
+        .tool-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.1s;
+        }
+        .tool-item:last-child { border-bottom: none; }
+        .tool-item:hover { background: var(--surface-2); cursor: pointer; }
+        .tool-name { font-weight: 500; font-size: 14px; }
+        .tool-stats { display: flex; gap: 16px; font-size: 12px; color: var(--text-dim); }
+        .tool-stats span { display: flex; align-items: center; gap: 4px; }
+        .tool-stats .calls { color: var(--accent); }
+        .tool-stats .fails { color: var(--error); }
+        .tool-sig { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+        
+        /* Tags */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .tag-ok { background: var(--accent-dim); color: var(--accent); }
+        .tag-warn { background: #78350f; color: var(--warn); }
+        .tag-error { background: #7f1d1d; color: var(--error); }
+        
+        /* Input */
+        .input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+        }
+        .input:focus { outline: none; border-color: var(--accent); }
+        textarea.input { resize: vertical; min-height: 80px; }
+        
+        /* Logs */
+        .logs {
+            font-family: 'SF Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            padding: 16px;
+            background: var(--bg);
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        /* Tabs */
+        .tabs { display: flex; border-bottom: 1px solid var(--border); }
+        .tab {
+            padding: 12px 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-dim);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent); border-color: var(--accent); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Agent Status */
+        .agent-status { padding: 16px; }
+        .agent-status h3 { font-size: 14px; margin-bottom: 8px; }
+        .agent-status p { color: var(--text-dim); font-size: 13px; margin-bottom: 12px; }
+        .capabilities { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .capability {
+            padding: 4px 10px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        /* Empty State */
+        .empty { padding: 32px; text-align: center; color: var(--text-dim); font-size: 13px; }
+        
+        /* Modal */
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: hidden;
+        }
+        .modal-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-body { padding: 16px; overflow-y: auto; max-height: 60vh; }
+        .close { cursor: pointer; font-size: 20px; color: var(--text-dim); }
+        .close:hover { color: var(--text); }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen">
-    <!-- Header -->
-    <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
-        <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
-                <h1 class="text-2xl font-bold text-green-400">⚡ Kore Benchmark</h1>
-                <div id="status-badge" class="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-700 text-sm">
-                    <span class="status-dot status-stopped"></span>
-                    <span>Stopped</span>
-                </div>
+<body>
+    <header>
+        <div class="logo"><span>◆</span> Kore</div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <div class="status-pill">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Stopped</span>
             </div>
-            <div class="flex gap-2">
-                <button onclick="startExperiment()" id="btn-start" 
-                    class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded font-medium transition">
-                    ▶ Start
-                </button>
-                <button onclick="pauseExperiment()" id="btn-pause" disabled
-                    class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded font-medium transition disabled:opacity-50">
-                    ⏸ Pause
-                </button>
-                <button onclick="resumeExperiment()" id="btn-resume" disabled
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium transition disabled:opacity-50">
-                    ⏵ Resume
-                </button>
-                <button onclick="stopExperiment()" id="btn-stop" disabled
-                    class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded font-medium transition disabled:opacity-50">
-                    ⏹ Stop
-                </button>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="btn-start" onclick="start()">Start</button>
+                <button class="btn btn-secondary" id="btn-pause" onclick="pause()" disabled>Pause</button>
+                <button class="btn btn-danger" id="btn-stop" onclick="stop()" disabled>Stop</button>
             </div>
         </div>
     </header>
 
-    <div class="flex h-[calc(100vh-73px)]">
-        <!-- Left Panel: Task Input & History -->
-        <div class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-            <!-- Task Input -->
-            <div class="p-4 border-b border-gray-700">
-                <h2 class="text-sm font-semibold text-gray-400 mb-2">SEND TASK</h2>
-                <textarea id="task-input" rows="4" 
-                    placeholder="Enter task for both agents..."
-                    class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm resize-none focus:border-green-500 focus:outline-none"></textarea>
-                <button onclick="sendTask()" id="btn-send"
-                    class="mt-2 w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded font-medium transition disabled:opacity-50">
-                    📤 Send Task
-                </button>
-                
-                <!-- Quick Tasks -->
-                <div class="mt-3">
-                    <p class="text-xs text-gray-500 mb-2">Quick tasks:</p>
-                    <div class="flex flex-wrap gap-1">
-                        <button onclick="quickTask('Create hello.txt with Hello World')" 
-                            class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">hello.txt</button>
-                        <button onclick="quickTask('Create two files: a.txt and b.txt')" 
-                            class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">two files</button>
-                        <button onclick="quickTask('List all files in /mnt (Kore) or /workspace (Baseline)')" 
-                            class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">list files</button>
-                        <button onclick="quickTask('Create config.json with {\"name\": \"test\", \"version\": 1}')" 
-                            class="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">JSON</button>
-                    </div>
+    <div class="container">
+        <!-- Stats Row -->
+        <div class="grid grid-4" style="margin-bottom: 16px;">
+            <div class="card">
+                <div class="stat">
+                    <div class="stat-value" id="stat-tools">0</div>
+                    <div class="stat-label">Tools</div>
                 </div>
             </div>
-
-            <!-- Task History -->
-            <div class="flex-1 overflow-auto p-4">
-                <h2 class="text-sm font-semibold text-gray-400 mb-2">TASK HISTORY</h2>
-                <div id="task-history" class="space-y-2 text-sm">
-                    <p class="text-gray-500 italic">No tasks yet</p>
+            <div class="card">
+                <div class="stat">
+                    <div class="stat-value" id="stat-calls">0</div>
+                    <div class="stat-label">Total Calls</div>
                 </div>
             </div>
-
-            <!-- Completion Status -->
-            <div id="completion-panel" class="p-4 border-t border-gray-700 hidden">
-                <h2 class="text-sm font-semibold text-gray-400 mb-2">COMPLETION</h2>
-                <div class="flex gap-4">
-                    <div class="flex items-center gap-2">
-                        <span id="kore-check" class="text-gray-500">○</span>
-                        <span class="text-green-400">Kore</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span id="baseline-check" class="text-gray-500">○</span>
-                        <span class="text-blue-400">Baseline</span>
-                    </div>
+            <div class="card">
+                <div class="stat">
+                    <div class="stat-value" id="stat-iteration">0</div>
+                    <div class="stat-label">Iteration</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="stat">
+                    <div class="stat-value" id="stat-success">-</div>
+                    <div class="stat-label">Success Rate</div>
                 </div>
             </div>
         </div>
 
-        <!-- Main Content -->
-        <div class="flex-1 flex flex-col">
-            <!-- Tabs -->
-            <div class="flex bg-gray-800 border-b border-gray-700">
-                <button onclick="showTab('chat')" id="tab-chat" 
-                    class="px-6 py-3 text-sm font-medium border-b-2 border-green-500 text-green-400">
-                    💬 Chat
-                </button>
-                <button onclick="showTab('logs')" id="tab-logs"
-                    class="px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
-                    📜 Live Logs
-                </button>
-                <button onclick="showTab('files')" id="tab-files"
-                    class="px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
-                    📁 Files
-                </button>
-                <button onclick="showTab('prompts')" id="tab-prompts"
-                    class="px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
-                    📝 Prompts
-                </button>
-            </div>
-
-            <!-- Tab Content -->
-            <!-- Chat Tab -->
-            <div id="content-chat" class="flex-1 flex">
-                <!-- Kore Chat -->
-                <div class="flex-1 border-r border-gray-700 flex flex-col">
-                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                        <span class="text-green-400 font-medium">🔥 Chat with Kore</span>
-                        <button onclick="clearChat('kore')" class="text-xs text-gray-400 hover:text-red-400">🗑 Clear</button>
-                    </div>
-                    <div id="chat-kore" class="flex-1 overflow-auto p-4 space-y-3 bg-gray-950">
-                        <p class="text-gray-500 text-center text-sm">Start the experiment and send a message...</p>
-                    </div>
-                    <div class="p-3 bg-gray-800 border-t border-gray-700">
-                        <div class="flex gap-2">
-                            <input type="text" id="chat-input-kore" placeholder="Message Kore agent..."
-                                class="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm focus:border-green-500 focus:outline-none"
-                                onkeypress="if(event.key==='Enter')sendChat('kore')">
-                            <button onclick="sendChat('kore')" 
-                                class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium">Send</button>
-                        </div>
-                    </div>
+        <div class="grid grid-2">
+            <!-- Left Column: Tools -->
+            <div class="card">
+                <div class="card-header">
+                    <span>Agent Tools</span>
+                    <button class="btn btn-secondary" onclick="refreshStorage()" style="padding: 4px 8px; font-size: 11px;">Refresh</button>
                 </div>
-                <!-- Baseline Chat -->
-                <div class="flex-1 flex flex-col">
-                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                        <span class="text-blue-400 font-medium">🐍 Chat with Baseline</span>
-                        <button onclick="clearChat('baseline')" class="text-xs text-gray-400 hover:text-red-400">🗑 Clear</button>
-                    </div>
-                    <div id="chat-baseline" class="flex-1 overflow-auto p-4 space-y-3 bg-gray-950">
-                        <p class="text-gray-500 text-center text-sm">Start the experiment and send a message...</p>
-                    </div>
-                    <div class="p-3 bg-gray-800 border-t border-gray-700">
-                        <div class="flex gap-2">
-                            <input type="text" id="chat-input-baseline" placeholder="Message Baseline agent..."
-                                class="flex-1 bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                                onkeypress="if(event.key==='Enter')sendChat('baseline')">
-                            <button onclick="sendChat('baseline')" 
-                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium">Send</button>
-                        </div>
-                    </div>
+                <div class="card-body no-pad" id="tools-list">
+                    <div class="empty">No tools yet. Start an experiment to begin.</div>
                 </div>
             </div>
 
-            <div id="content-logs" class="flex-1 hidden flex">
-                <!-- Kore Logs -->
-                <div class="flex-1 border-r border-gray-700 flex flex-col">
-                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                        <span class="text-green-400 font-medium">🔥 Kore Agent</span>
-                        <button onclick="refreshLogs('kore')" class="text-xs text-gray-400 hover:text-white">↻ Refresh</button>
-                    </div>
-                    <pre id="logs-kore" class="flex-1 overflow-auto p-4 text-xs bg-gray-950 font-mono text-gray-300">Waiting for experiment to start...</pre>
+            <!-- Right Column: Status & Logs -->
+            <div class="card">
+                <div class="tabs">
+                    <div class="tab active" onclick="showTab('status')">Status</div>
+                    <div class="tab" onclick="showTab('logs')">Logs</div>
+                    <div class="tab" onclick="showTab('chat')">Chat</div>
                 </div>
-                <!-- Baseline Logs -->
-                <div class="flex-1 flex flex-col">
-                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-                        <span class="text-blue-400 font-medium">🐍 Baseline Agent</span>
-                        <button onclick="refreshLogs('baseline')" class="text-xs text-gray-400 hover:text-white">↻ Refresh</button>
-                    </div>
-                    <pre id="logs-baseline" class="flex-1 overflow-auto p-4 text-xs bg-gray-950 font-mono text-gray-300">Waiting for experiment to start...</pre>
-                </div>
-            </div>
-
-            <div id="content-files" class="flex-1 hidden flex">
-                <!-- Kore Files -->
-                <div class="flex-1 border-r border-gray-700 flex flex-col">
-                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700">
-                        <span class="text-green-400 font-medium">🔥 Kore Files</span>
-                    </div>
-                    <div id="files-kore" class="flex-1 overflow-auto p-4">
-                        <p class="text-gray-500">No files yet</p>
+                
+                <div id="tab-status" class="tab-content active">
+                    <div class="agent-status" id="agent-status">
+                        <div class="empty">Agent status will appear here once running.</div>
                     </div>
                 </div>
-                <!-- Baseline Files -->
-                <div class="flex-1 flex flex-col">
-                    <div class="bg-gray-800 px-4 py-2 border-b border-gray-700">
-                        <span class="text-blue-400 font-medium">🐍 Baseline Files</span>
+                
+                <div id="tab-logs" class="tab-content">
+                    <div class="logs" id="logs-content">Waiting for experiment...</div>
+                </div>
+                
+                <div id="tab-chat" class="tab-content">
+                    <div style="padding: 16px;">
+                        <textarea class="input" id="chat-input" placeholder="Send a message to the agent..."></textarea>
+                        <button class="btn btn-primary" onclick="sendChat()" style="margin-top: 8px; width: 100%;">Send</button>
                     </div>
-                    <div id="files-baseline" class="flex-1 overflow-auto p-4">
-                        <p class="text-gray-500">No files yet</p>
-                    </div>
+                    <div id="chat-messages" style="padding: 0 16px 16px;"></div>
                 </div>
             </div>
+        </div>
 
-            <div id="content-prompts" class="flex-1 hidden flex flex-col">
-                <div class="bg-gray-800 px-4 py-2 border-b border-gray-700 flex gap-2">
-                    <select id="prompt-select" onchange="loadPrompt()" 
-                        class="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm">
-                        <option value="">Select a prompt file...</option>
-                    </select>
+        <!-- Run Info -->
+        <div class="card" style="margin-top: 16px;">
+            <div class="card-header">
+                <span>Experiment</span>
+                <span id="run-id" class="mono" style="font-size: 11px; color: var(--text-dim);">-</span>
+            </div>
+            <div class="card-body" style="padding: 12px 16px;">
+                <div style="display: flex; gap: 24px; font-size: 13px;">
+                    <div><span style="color: var(--text-dim);">Model:</span> <span id="model-name">-</span></div>
+                    <div><span style="color: var(--text-dim);">Mode:</span> <span id="mode-name">-</span></div>
+                    <div><span style="color: var(--text-dim);">Container:</span> <span id="container-name" class="mono">-</span></div>
                 </div>
-                <pre id="prompt-content" class="flex-1 overflow-auto p-4 text-sm bg-gray-950 font-mono text-gray-300">Select a prompt file to view</pre>
             </div>
         </div>
     </div>
 
-    <!-- File Viewer Modal -->
-    <div id="file-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
-        <div class="bg-gray-800 rounded-lg w-3/4 max-h-[80vh] flex flex-col">
-            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                <h3 id="modal-filename" class="font-medium">File</h3>
-                <button onclick="closeModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+    <!-- Tool Detail Modal -->
+    <div class="modal" id="tool-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="modal-title" class="mono">Tool</span>
+                <span class="close" onclick="closeModal()">&times;</span>
             </div>
-            <pre id="modal-content" class="flex-1 overflow-auto p-4 text-sm font-mono"></pre>
+            <div class="modal-body">
+                <pre id="modal-content" class="mono" style="font-size: 12px; white-space: pre-wrap;"></pre>
+            </div>
         </div>
     </div>
 
     <script>
-        let currentTab = 'chat';
-        let completionInterval = null;
-        let logsInterval = null;
-        let chatPolling = { kore: null, baseline: null };
+        let currentTab = 'status';
+        let pollInterval = null;
 
-        // Tab switching
-        function showTab(tab) {
-            currentTab = tab;
-            ['chat', 'logs', 'files', 'prompts'].forEach(t => {
-                document.getElementById(`content-${t}`).classList.toggle('hidden', t !== tab);
-                document.getElementById(`content-${t}`).classList.toggle('flex', t === tab);
-                document.getElementById(`tab-${t}`).classList.toggle('border-green-500', t === tab);
-                document.getElementById(`tab-${t}`).classList.toggle('text-green-400', t === tab);
-                document.getElementById(`tab-${t}`).classList.toggle('border-transparent', t !== tab);
-                document.getElementById(`tab-${t}`).classList.toggle('text-gray-400', t !== tab);
-            });
-            
-            if (tab === 'files') refreshFiles();
-            if (tab === 'prompts') loadPromptList();
-            if (tab === 'chat') { loadChatHistory('kore'); loadChatHistory('baseline'); }
-        }
-
-        // API calls
-        async function api(endpoint, method = 'GET', body = null) {
+        // API helper
+        async function api(path, method = 'GET', body = null) {
             const opts = { method, headers: { 'Content-Type': 'application/json' } };
             if (body) opts.body = JSON.stringify(body);
-            const res = await fetch(`/api/${endpoint}`, opts);
+            const res = await fetch('/api/' + path, opts);
             return res.json();
+        }
+
+        // Tab switching
+        function showTab(name) {
+            currentTab = name;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab:nth-child(${name === 'status' ? 1 : name === 'logs' ? 2 : 3})`).classList.add('active');
+            document.getElementById('tab-' + name).classList.add('active');
+            if (name === 'logs') refreshLogs();
         }
 
         // Status update
         async function updateStatus() {
-            try {
-                const status = await api('status');
-                const badge = document.getElementById('status-badge');
-                const dot = badge.querySelector('.status-dot');
-                const text = badge.querySelector('span:last-child');
-                
-                dot.className = 'status-dot';
-                if (status.running && !status.paused) {
-                    dot.classList.add('status-running');
-                    const koreIcon = status.kore_running ? '🟢' : '🔴';
-                    const baseIcon = status.baseline_running ? '🟢' : '🔴';
-                    text.textContent = `Running ${koreIcon}K ${baseIcon}B (${status.run_id || 'unknown'})`;
-                } else if (status.paused) {
-                    dot.classList.add('status-paused');
-                    text.textContent = 'Paused';
-                } else {
-                    dot.classList.add('status-stopped');
-                    text.textContent = 'Stopped';
-                }
+            const data = await api('status');
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            
+            dot.className = 'status-dot';
+            if (data.running && !data.paused) {
+                dot.classList.add('running');
+                text.textContent = 'Running';
+            } else if (data.paused) {
+                dot.classList.add('paused');
+                text.textContent = 'Paused';
+            } else {
+                text.textContent = 'Stopped';
+            }
 
-                document.getElementById('btn-start').disabled = status.running && !status.paused;
-                document.getElementById('btn-pause').disabled = !status.running || status.paused;
-                document.getElementById('btn-resume').disabled = !status.paused;
-                document.getElementById('btn-stop').disabled = !status.running;
-                document.getElementById('btn-send').disabled = !status.running || status.paused;
+            document.getElementById('btn-start').disabled = data.running && !data.paused;
+            document.getElementById('btn-pause').disabled = !data.running || data.paused;
+            document.getElementById('btn-stop').disabled = !data.running;
+            
+            document.getElementById('run-id').textContent = data.run_id || '-';
+            document.getElementById('model-name').textContent = data.model || '-';
+            document.getElementById('mode-name').textContent = data.kore_only ? 'Kore Only' : 'Kore vs Baseline';
+            document.getElementById('container-name').textContent = data.kore?.container || '-';
+        }
 
-                // Update task history
-                if (status.task_history && status.task_history.length > 0) {
-                    const historyDiv = document.getElementById('task-history');
-                    historyDiv.innerHTML = status.task_history.map((t, i) => `
-                        <div class="bg-gray-900 rounded p-2 text-xs">
-                            <div class="text-gray-400 mb-1">#${i+1} - ${new Date(t.sent_at).toLocaleTimeString()}</div>
-                            <div class="text-white mb-1">${t.task.substring(0, 50)}${t.task.length > 50 ? '...' : ''}</div>
-                            <div class="flex gap-2">
-                                <span class="${t.kore_done ? 'text-green-400' : 'text-gray-500'}">${t.kore_done ? '✓' : '○'} Kore</span>
-                                <span class="${t.baseline_done ? 'text-blue-400' : 'text-gray-500'}">${t.baseline_done ? '✓' : '○'} Baseline</span>
-                            </div>
+        // Storage/Tools
+        async function refreshStorage() {
+            const data = await api('storage');
+            const list = document.getElementById('tools-list');
+            
+            if (data.error || !data.rom?.keys || Object.keys(data.rom.keys).length === 0) {
+                list.innerHTML = '<div class="empty">No tools yet. Start an experiment to begin.</div>';
+                document.getElementById('stat-tools').textContent = '0';
+                document.getElementById('stat-calls').textContent = '0';
+                document.getElementById('stat-success').textContent = '-';
+                return;
+            }
+
+            const tools = Object.entries(data.rom.keys).filter(([k, v]) => v.type === 'tool');
+            const totalCalls = tools.reduce((sum, [k, v]) => sum + (v.calls || 0), 0);
+            const totalFails = tools.reduce((sum, [k, v]) => sum + (v.failures || 0), 0);
+            const successRate = totalCalls > 0 ? Math.round((totalCalls - totalFails) / totalCalls * 100) : 100;
+
+            document.getElementById('stat-tools').textContent = tools.length;
+            document.getElementById('stat-calls').textContent = totalCalls;
+            document.getElementById('stat-success').textContent = successRate + '%';
+
+            if (tools.length === 0) {
+                list.innerHTML = '<div class="empty">No tools yet.</div>';
+                return;
+            }
+
+            list.innerHTML = tools.sort((a, b) => (b[1].calls || 0) - (a[1].calls || 0)).map(([key, info]) => {
+                const statusClass = info.status === 'ok' ? 'tag-ok' : info.status === 'warn' ? 'tag-warn' : 'tag-error';
+                return `
+                    <div class="tool-item" onclick="viewTool('${key}')">
+                        <div>
+                            <div class="tool-name">${info.name || key}</div>
+                            ${info.sig ? `<div class="tool-sig mono">${esc(info.sig)}</div>` : ''}
                         </div>
-                    `).reverse().join('');
-                }
-            } catch (e) {
-                console.error('Status update failed:', e);
-            }
-        }
-
-        // Experiment controls with feedback
-        async function startExperiment() {
-            const model = prompt('Model to use:', 'google/gemini-2.5-flash-preview');
-            if (!model) return;
-            
-            const btn = document.getElementById('btn-start');
-            btn.textContent = '⏳ Starting...';
-            btn.disabled = true;
-            
-            try {
-                const result = await api('start', 'POST', { model });
-                if (result.status === 'started') {
-                    showNotification(`✅ Started! Kore: ${result.kore_running ? 'OK' : 'FAIL'}, Baseline: ${result.baseline_running ? 'OK' : 'FAIL'}`, 'success');
-                    startPolling();
-                }
-            } catch (e) {
-                showNotification(`❌ Start failed: ${e.message}`, 'error');
-            }
-            btn.textContent = '▶ Start';
-            updateStatus();
-        }
-
-        async function pauseExperiment() {
-            const btn = document.getElementById('btn-pause');
-            btn.textContent = '⏳ Pausing...';
-            
-            try {
-                const result = await api('pause', 'POST');
-                showNotification(`⏸ Paused. Kore stopped: ${result.kore_stopped}, Baseline stopped: ${result.baseline_stopped}`, 'info');
-                stopPolling();
-            } catch (e) {
-                showNotification(`❌ Pause failed: ${e.message}`, 'error');
-            }
-            btn.textContent = '⏸ Pause';
-            updateStatus();
-        }
-
-        async function resumeExperiment() {
-            const btn = document.getElementById('btn-resume');
-            btn.textContent = '⏳ Resuming...';
-            
-            try {
-                const result = await api('resume', 'POST');
-                showNotification(`▶ Resumed. Kore: ${result.kore_running ? 'OK' : 'FAIL'}, Baseline: ${result.baseline_running ? 'OK' : 'FAIL'}`, 'success');
-                startPolling();
-            } catch (e) {
-                showNotification(`❌ Resume failed: ${e.message}`, 'error');
-            }
-            btn.textContent = '⏵ Resume';
-            updateStatus();
-        }
-
-        async function stopExperiment() {
-            if (!confirm('Stop experiment and remove containers?')) return;
-            
-            const btn = document.getElementById('btn-stop');
-            btn.textContent = '⏳ Stopping...';
-            
-            try {
-                const result = await api('stop', 'POST');
-                showNotification(`⏹ Stopped. Kore removed: ${result.kore_removed}, Baseline removed: ${result.baseline_removed}`, 'info');
-                stopPolling();
-            } catch (e) {
-                showNotification(`❌ Stop failed: ${e.message}`, 'error');
-            }
-            btn.textContent = '⏹ Stop';
-            updateStatus();
-        }
-        
-        function showNotification(message, type = 'info') {
-            const colors = {
-                success: 'bg-green-600',
-                error: 'bg-red-600',
-                info: 'bg-blue-600'
-            };
-            const notif = document.createElement('div');
-            notif.className = `fixed top-4 right-4 ${colors[type]} text-white px-4 py-2 rounded shadow-lg z-50 animate-pulse`;
-            notif.textContent = message;
-            document.body.appendChild(notif);
-            setTimeout(() => notif.remove(), 4000);
-        }
-
-        // Task sending
-        async function sendTask() {
-            const task = document.getElementById('task-input').value.trim();
-            if (!task) return;
-            
-            await api('task', 'POST', { task });
-            document.getElementById('task-input').value = '';
-            document.getElementById('completion-panel').classList.remove('hidden');
-            updateStatus();
-        }
-
-        function quickTask(task) {
-            document.getElementById('task-input').value = task;
-        }
-
-        // Logs
-        async function refreshLogs(agent) {
-            try {
-                const data = await api(`logs/${agent}?lines=100`);
-                const el = document.getElementById(`logs-${agent}`);
-                if (data.error) {
-                    el.textContent = `⚠️ ${data.logs}`;
-                    el.classList.add('text-yellow-400');
-                } else {
-                    el.textContent = data.logs || '(no output yet)';
-                    el.classList.remove('text-yellow-400');
-                    if (data.container) {
-                        // Show container name in header
-                        const header = el.parentElement.querySelector('.font-medium');
-                        if (header && !header.textContent.includes('(')) {
-                            header.textContent += ` (${data.container})`;
-                        }
-                    }
-                }
-                // Auto-scroll to bottom
-                el.scrollTop = el.scrollHeight;
-            } catch (e) {
-                document.getElementById(`logs-${agent}`).textContent = `Error: ${e.message}`;
-            }
-        }
-
-        // Files
-        async function refreshFiles() {
-            for (const agent of ['kore', 'baseline']) {
-                const data = await api(`files/${agent}`);
-                const container = document.getElementById(`files-${agent}`);
-                
-                if (data.files && data.files.length > 0) {
-                    container.innerHTML = data.files.map(f => `
-                        <div class="flex items-center justify-between py-2 px-3 hover:bg-gray-800 rounded cursor-pointer"
-                             onclick="viewFile('${agent}', '${f.name}')">
-                            <span class="font-mono text-sm">${f.name}</span>
-                            <span class="text-xs text-gray-500">${f.size} bytes</span>
+                        <div class="tool-stats">
+                            <span class="calls">${info.calls || 0} calls</span>
+                            ${info.failures > 0 ? `<span class="fails">${info.failures} fails</span>` : ''}
+                            <span class="tag ${statusClass}">${info.status || 'ok'}</span>
                         </div>
-                    `).join('');
-                } else {
-                    container.innerHTML = '<p class="text-gray-500">No files yet</p>';
-                }
-            }
+                    </div>
+                `;
+            }).join('');
         }
 
-        async function viewFile(agent, filename) {
-            const data = await api(`file/${agent}/${filename}`);
-            document.getElementById('modal-filename').textContent = `${agent}/${filename}`;
-            document.getElementById('modal-content').textContent = data.content;
-            document.getElementById('file-modal').classList.remove('hidden');
-            document.getElementById('file-modal').classList.add('flex');
+        async function viewTool(key) {
+            const data = await api('storage/rom/' + key);
+            document.getElementById('modal-title').textContent = key;
+            document.getElementById('modal-content').textContent = JSON.stringify(data.content, null, 2);
+            document.getElementById('tool-modal').classList.add('active');
         }
 
         function closeModal() {
-            document.getElementById('file-modal').classList.add('hidden');
-            document.getElementById('file-modal').classList.remove('flex');
+            document.getElementById('tool-modal').classList.remove('active');
         }
 
-        // Prompts
-        async function loadPromptList() {
-            const data = await api('prompts');
-            const select = document.getElementById('prompt-select');
-            select.innerHTML = '<option value="">Select a prompt file...</option>' +
-                data.prompts.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
-        }
-
-        async function loadPrompt() {
-            const name = document.getElementById('prompt-select').value;
-            if (!name) return;
+        // Agent Status
+        async function refreshAgentStatus() {
+            const data = await api('agent-status');
+            const el = document.getElementById('agent-status');
             
-            const data = await api(`prompt/${name}`);
-            document.getElementById('prompt-content').textContent = data.content;
+            if (!data.status) {
+                el.innerHTML = '<div class="empty">Agent hasn\'t reported status yet.</div>';
+                return;
+            }
+
+            const s = data.status;
+            document.getElementById('stat-iteration').textContent = s.iteration || 0;
+
+            el.innerHTML = `
+                <h3>Current Focus</h3>
+                <p>${esc(s.current_focus || 'No focus set')}</p>
+                
+                ${s.growth_notes ? `<h3 style="margin-top: 16px;">Growth Notes</h3><p>${esc(s.growth_notes)}</p>` : ''}
+                
+                ${s.recent_learnings?.length ? `
+                    <h3 style="margin-top: 16px;">Recent Learnings</h3>
+                    <ul style="margin-left: 20px; color: var(--text-dim); font-size: 13px;">
+                        ${s.recent_learnings.map(l => `<li>${esc(l)}</li>`).join('')}
+                    </ul>
+                ` : ''}
+                
+                ${s.capabilities?.length ? `
+                    <h3 style="margin-top: 16px;">Capabilities</h3>
+                    <div class="capabilities">
+                        ${s.capabilities.map(c => `<span class="capability">${esc(c)}</span>`).join('')}
+                    </div>
+                ` : ''}
+                
+                <div style="margin-top: 16px; font-size: 11px; color: var(--text-dim);">
+                    Updated: ${s.updated_at ? new Date(s.updated_at * 1000).toLocaleString() : 'Unknown'}
+                </div>
+            `;
         }
 
-        // Completion checking
-        async function checkCompletion() {
-            const data = await api('completion');
-            document.getElementById('kore-check').textContent = data.kore_done ? '✓' : '○';
-            document.getElementById('kore-check').className = data.kore_done ? 'text-green-400' : 'text-gray-500';
-            document.getElementById('baseline-check').textContent = data.baseline_done ? '✓' : '○';
-            document.getElementById('baseline-check').className = data.baseline_done ? 'text-blue-400' : 'text-gray-500';
+        // Logs
+        async function refreshLogs() {
+            const data = await api('logs/kore?lines=100');
+            document.getElementById('logs-content').textContent = data.logs || '(no logs)';
+        }
+
+        // Chat
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            input.value = '';
+            addChatMessage('You', msg);
+            await api('chat', 'POST', { message: msg, agent: 'kore' });
+            pollForResponse();
+        }
+
+        function addChatMessage(from, text) {
+            const el = document.getElementById('chat-messages');
+            el.innerHTML = `
+                <div style="margin-bottom: 12px;">
+                    <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">${from}</div>
+                    <div style="font-size: 13px;">${esc(text)}</div>
+                </div>
+            ` + el.innerHTML;
+        }
+
+        async function pollForResponse() {
+            for (let i = 0; i < 60; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                const data = await api('chat/kore/response');
+                if (data.done && data.response) {
+                    addChatMessage('Kore', data.response);
+                    break;
+                }
+            }
+        }
+
+        // Controls
+        async function start() {
+            const model = prompt('Model:', 'anthropic/claude-sonnet-4');
+            if (!model) return;
+            document.getElementById('btn-start').disabled = true;
+            await api('start', 'POST', { model, kore_only: true });
+            startPolling();
             updateStatus();
         }
 
-        // Polling
+        async function pause() {
+            await api('pause', 'POST');
+            updateStatus();
+        }
+
+        async function stop() {
+            if (!confirm('Stop experiment?')) return;
+            await api('stop', 'POST');
+            stopPolling();
+            updateStatus();
+            refreshStorage();
+        }
+
         function startPolling() {
             stopPolling();
-            completionInterval = setInterval(checkCompletion, 2000);
-            logsInterval = setInterval(() => {
-                if (currentTab === 'logs') {
-                    refreshLogs('kore');
-                    refreshLogs('baseline');
-                } else if (currentTab === 'files') {
-                    refreshFiles();
-                }
+            pollInterval = setInterval(() => {
+                updateStatus();
+                refreshStorage();
+                refreshAgentStatus();
+                if (currentTab === 'logs') refreshLogs();
             }, 3000);
         }
 
         function stopPolling() {
-            if (completionInterval) clearInterval(completionInterval);
-            if (logsInterval) clearInterval(logsInterval);
+            if (pollInterval) clearInterval(pollInterval);
         }
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) sendTask();
+        // Escape HTML
+        function esc(s) {
+            if (!s) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Keyboard
+        document.addEventListener('keydown', e => {
             if (e.key === 'Escape') closeModal();
+            if (e.key === 'Enter' && e.target.id === 'chat-input' && !e.shiftKey) {
+                e.preventDefault();
+                sendChat();
+            }
         });
 
-        // Chat functions
-        async function sendChat(agent) {
-            const input = document.getElementById(`chat-input-${agent}`);
-            const message = input.value.trim();
-            if (!message) return;
-            
-            // Add user message to UI immediately
-            addChatMessage(agent, 'user', message);
-            input.value = '';
-            
-            try {
-                // Send to API
-                const result = await api('chat', 'POST', { message, agent });
-                if (result.status === 'sent') {
-                    // Start polling for response
-                    startChatPolling(agent);
-                }
-            } catch (e) {
-                addChatMessage(agent, 'assistant', `❌ Error sending message: ${e.message}`);
-            }
-        }
-
-        function addChatMessage(agent, role, content, logs = null) {
-            const container = document.getElementById(`chat-${agent}`);
-            const isUser = role === 'user';
-            const color = agent === 'kore' ? 'green' : 'blue';
-            
-            // Remove placeholder if exists
-            const placeholder = container.querySelector('.text-gray-500.text-center');
-            if (placeholder) placeholder.remove();
-            
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
-            
-            const bubble = document.createElement('div');
-            // Use inline styles for dynamic colors since Tailwind purges unused classes
-            const bgColor = isUser ? '#374151' : (agent === 'kore' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(59, 130, 246, 0.1)');
-            const borderColor = isUser ? '' : (agent === 'kore' ? '1px solid #166534' : '1px solid #1e40af');
-            bubble.style.backgroundColor = bgColor;
-            if (borderColor) bubble.style.border = borderColor;
-            bubble.className = 'max-w-[80%] rounded-lg p-3';
-            
-            const roleLabel = document.createElement('div');
-            roleLabel.className = 'text-xs mb-1';
-            roleLabel.style.color = isUser ? '#9ca3af' : (agent === 'kore' ? '#22c55e' : '#3b82f6');
-            roleLabel.textContent = isUser ? 'You' : (agent === 'kore' ? 'Kore' : 'Baseline');
-            
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'text-sm whitespace-pre-wrap';
-            contentDiv.textContent = content;
-            
-            bubble.appendChild(roleLabel);
-            bubble.appendChild(contentDiv);
-            
-            // Add collapsible logs if present
-            if (logs && !isUser) {
-                const logsToggle = document.createElement('button');
-                logsToggle.className = 'text-xs text-gray-500 hover:text-gray-300 mt-2 block';
-                logsToggle.textContent = '▶ Show execution logs';
-                
-                const logsDiv = document.createElement('pre');
-                logsDiv.className = 'hidden mt-2 p-2 bg-black/50 rounded text-xs overflow-auto max-h-40 text-gray-400';
-                logsDiv.textContent = logs;
-                
-                logsToggle.onclick = () => {
-                    const isHidden = logsDiv.classList.contains('hidden');
-                    logsDiv.classList.toggle('hidden');
-                    logsToggle.textContent = isHidden ? '▼ Hide execution logs' : '▶ Show execution logs';
-                };
-                
-                bubble.appendChild(logsToggle);
-                bubble.appendChild(logsDiv);
-            }
-            
-            msgDiv.appendChild(bubble);
-            container.appendChild(msgDiv);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function startChatPolling(agent) {
-            // Clear existing polling for this agent
-            if (chatPolling[agent]) clearInterval(chatPolling[agent]);
-            
-            // Add "typing" indicator
-            const container = document.getElementById(`chat-${agent}`);
-            let typingDiv = document.getElementById(`typing-${agent}`);
-            if (!typingDiv) {
-                typingDiv = document.createElement('div');
-                typingDiv.id = `typing-${agent}`;
-                typingDiv.className = 'flex justify-start';
-                typingDiv.innerHTML = `
-                    <div class="bg-gray-800 rounded-lg p-3 text-sm text-gray-400">
-                        <span class="animate-pulse">● ● ●</span> ${agent === 'kore' ? 'Kore' : 'Baseline'} is thinking...
-                    </div>
-                `;
-                container.appendChild(typingDiv);
-                container.scrollTop = container.scrollHeight;
-            }
-            
-            let pollCount = 0;
-            const maxPolls = 120; // 3 minutes max (1.5s * 120)
-            
-            // Poll for response
-            chatPolling[agent] = setInterval(async () => {
-                pollCount++;
-                try {
-                    const data = await api(`chat/${agent}/response`);
-                    
-                    // Update typing indicator with poll count
-                    const typing = document.getElementById(`typing-${agent}`);
-                    if (typing) {
-                        typing.querySelector('div').innerHTML = `
-                            <span class="animate-pulse">● ● ●</span> ${agent === 'kore' ? 'Kore' : 'Baseline'} is thinking... (${pollCount}s)
-                        `;
-                    }
-                    
-                    if (data.done && data.response) {
-                        // Remove typing indicator
-                        if (typing) typing.remove();
-                        
-                        // Add response
-                        addChatMessage(agent, 'assistant', data.response, data.logs);
-                        
-                        // Stop polling
-                        clearInterval(chatPolling[agent]);
-                        chatPolling[agent] = null;
-                    } else if (pollCount >= maxPolls) {
-                        // Timeout
-                        if (typing) typing.remove();
-                        addChatMessage(agent, 'assistant', '⏰ Timeout waiting for response. Check the Logs tab for details.');
-                        clearInterval(chatPolling[agent]);
-                        chatPolling[agent] = null;
-                    }
-                } catch (e) {
-                    console.error('Poll error:', e);
-                }
-            }, 1500);
-        }
-
-        async function loadChatHistory(agent) {
-            const data = await api(`chat/${agent}`);
-            const container = document.getElementById(`chat-${agent}`);
-            container.innerHTML = '';
-            
-            if (data.history && data.history.length > 0) {
-                data.history.forEach(msg => {
-                    addChatMessage(agent, msg.role, msg.content, msg.logs);
-                });
-            } else {
-                container.innerHTML = '<p class="text-gray-500 text-center text-sm">Start the experiment and send a message...</p>';
-            }
-        }
-
-        async function clearChat(agent) {
-            if (!confirm(`Clear chat history for ${agent}?`)) return;
-            await api(`chat/${agent}`, 'DELETE');
-            loadChatHistory(agent);
-        }
-
-        // Initial load
+        // Init
         updateStatus();
-        loadPromptList();
+        refreshStorage();
+        refreshAgentStatus();
         setInterval(updateStatus, 5000);
     </script>
 </body>

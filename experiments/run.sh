@@ -74,17 +74,15 @@ START_TIME=$(date +%s)
 # Agent runs as root inside container, can apt install, npm install, etc.
 docker run --rm \
     --name "kore-${EXPERIMENT_ID}" \
-    -v "${EXPERIMENT_DIR}/workspace:/workspace" \
-    -v "${EXPERIMENT_DIR}/logs:/logs" \
-    -v "${EXPERIMENT_DIR}/prompt.md:/prompt.md:ro" \
-    -e "KORE_WORKSPACE=/workspace" \
-    -e "KORE_LOGS=/logs" \
-    -e "KORE_PROMPT=/prompt.md" \
+    -v "${EXPERIMENT_DIR}/workspace:/world" \
+    -v "${EXPERIMENT_DIR}/logs:/mnt" \
+    -v "${EXPERIMENT_DIR}/prompt.md:/opt/kore/genesis-prompt.md:ro" \
     -e "KORE_GOAL=${GOAL}" \
+    -e "KORE_PROMPT=/opt/kore/genesis-prompt.md" \
     -e "OPENAI_API_KEY=${OPENAI_API_KEY}" \
     -e "OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}" \
     -e "OPENAI_MODEL=${MODEL}" \
-    kore-agent 2>&1 | tee "${EXPERIMENT_DIR}/logs/stdout.log"
+    kore-world:latest kore-agent 2>&1 | tee "${EXPERIMENT_DIR}/logs/stdout.log"
 
 EXIT_CODE=${PIPESTATUS[0]}
 END_TIME=$(date +%s)

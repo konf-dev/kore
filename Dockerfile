@@ -66,7 +66,7 @@ COPY --from=builder /build/target/release/kore-agent /usr/local/bin/kore-agent
 # Copy Kore documentation and libraries
 COPY stdlib /opt/kore/stdlib
 COPY lib /opt/kore/lib
-COPY docs/REFERENCE.md /opt/kore/docs/REFERENCE.md
+COPY docs /opt/kore/docs
 COPY PREAMBLE.md /opt/kore/docs/PREAMBLE.md
 COPY genesis-prompt.md /opt/kore/genesis-prompt.md
 COPY examples /opt/kore/examples

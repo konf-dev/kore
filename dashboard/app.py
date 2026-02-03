@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Kore Benchmark Dashboard
-A minimal portal for managing Kore vs Baseline experiments
+Kore Benchmark Dashboard v2
+Robust experiment monitoring with persistent state and auto-recovery
 """
 
 import os
@@ -11,251 +11,381 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
-app = FastAPI(title="Kore Benchmark Dashboard")
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 
-# Configuration
 KORE_ROOT = Path(__file__).parent.parent
 BENCHMARKS_DIR = KORE_ROOT / "benchmarks" / "dashboard"
-PROMPTS_DIR = KORE_ROOT
+STATE_FILE = BENCHMARKS_DIR / ".dashboard_state.json"
 
-# State
+# =============================================================================
+# STATE MANAGEMENT - Persistent & Recoverable
+# =============================================================================
+
 class ExperimentState:
+    """Persistent experiment state with automatic disk sync"""
+    
     def __init__(self):
         self.running = False
         self.paused = False
+        self.kore_only = False
         self.kore_container: Optional[str] = None
         self.baseline_container: Optional[str] = None
         self.current_task: Optional[str] = None
         self.task_history: list = []
         self.run_id: Optional[str] = None
-        self.run_dir: Optional[Path] = None
-        self.chat_history: dict = {"kore": [], "baseline": []}  # Chat history per agent
+        self.model: Optional[str] = None
+        self.chat_history: dict = {"kore": [], "baseline": []}
+    
+    @property
+    def run_dir(self) -> Optional[Path]:
+        """Compute run_dir from run_id"""
+        if self.run_id:
+            return BENCHMARKS_DIR / self.run_id
+        return None
+    
+    def to_dict(self) -> dict:
+        return {
+            "running": self.running,
+            "paused": self.paused,
+            "kore_only": self.kore_only,
+            "kore_container": self.kore_container,
+            "baseline_container": self.baseline_container,
+            "current_task": self.current_task,
+            "task_history": self.task_history,
+            "run_id": self.run_id,
+            "model": self.model,
+            "chat_history": self.chat_history,
+        }
+    
+    def from_dict(self, data: dict):
+        self.running = data.get("running", False)
+        self.paused = data.get("paused", False)
+        self.kore_only = data.get("kore_only", False)
+        self.kore_container = data.get("kore_container")
+        self.baseline_container = data.get("baseline_container")
+        self.current_task = data.get("current_task")
+        self.task_history = data.get("task_history", [])
+        self.run_id = data.get("run_id")
+        self.model = data.get("model")
+        self.chat_history = data.get("chat_history", {"kore": [], "baseline": []})
+    
+    def save(self):
+        """Persist state to disk"""
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(self.to_dict(), indent=2))
+    
+    def load(self):
+        """Load state from disk"""
+        if STATE_FILE.exists():
+            try:
+                self.from_dict(json.loads(STATE_FILE.read_text()))
+            except Exception as e:
+                print(f"Warning: Could not load state: {e}")
+    
+    def reset(self):
+        """Reset to clean state"""
+        self.__init__()
+        self.save()
 
 state = ExperimentState()
 
-# Models
-class TaskRequest(BaseModel):
-    task: str
+# =============================================================================
+# DOCKER HELPERS
+# =============================================================================
 
-class StartRequest(BaseModel):
-    model: str = "google/gemini-2.5-flash-preview"
+def run_cmd(cmd: str, timeout: int = 30) -> tuple[int, str]:
+    """Run shell command with timeout"""
+    try:
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=timeout
+        )
+        return result.returncode, result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "Command timed out"
+    except Exception as e:
+        return -1, str(e)
 
-class ChatRequest(BaseModel):
-    message: str
-    agent: str  # "kore" or "baseline"
+def docker_container_status(name: str) -> dict:
+    """Get detailed container status"""
+    if not name:
+        return {"exists": False, "running": False, "status": "not configured"}
+    
+    code, out = run_cmd(f'docker inspect {name} --format "{{{{.State.Status}}}}" 2>/dev/null')
+    if code != 0:
+        return {"exists": False, "running": False, "status": "not found"}
+    
+    status = out.strip()
+    return {
+        "exists": True,
+        "running": status == "running",
+        "status": status
+    }
 
-# WebSocket connections for live logs
+def docker_kill_all_experiments():
+    """Kill all experiment containers"""
+    run_cmd('docker rm -f $(docker ps -aq --filter "name=kore-dash") 2>/dev/null')
+    run_cmd('docker rm -f $(docker ps -aq --filter "name=base-dash") 2>/dev/null')
+
+def get_env() -> dict:
+    """Load environment variables from .env file"""
+    env_file = KORE_ROOT / ".env"
+    env = os.environ.copy()
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                key, val = line.split("=", 1)
+                env[key.strip()] = val.strip().strip('"').strip("'")
+    return env
+
+# =============================================================================
+# STATE RECOVERY
+# =============================================================================
+
+def recover_state():
+    """Recover state from running containers or disk"""
+    state.load()
+    
+    # Verify containers match saved state
+    if state.kore_container:
+        kore_status = docker_container_status(state.kore_container)
+        if not kore_status["exists"]:
+            # Container gone, check if we can find one
+            code, out = run_cmd('docker ps -a --filter "name=kore-dash" --format "{{.Names}}" | head -1')
+            if out.strip():
+                state.kore_container = out.strip()
+                # Extract run_id from container name
+                if state.kore_container.startswith("kore-dash-"):
+                    date_part = state.kore_container.replace("kore-dash-", "")
+                    # Find matching run directory
+                    for d in BENCHMARKS_DIR.iterdir():
+                        if d.is_dir() and d.name.startswith(date_part):
+                            state.run_id = d.name
+                            break
+        
+        kore_status = docker_container_status(state.kore_container)
+        state.running = kore_status["running"]
+        state.paused = kore_status["exists"] and not kore_status["running"]
+    
+    # Also check baseline
+    if state.baseline_container and not state.kore_only:
+        baseline_status = docker_container_status(state.baseline_container)
+        if not baseline_status["exists"]:
+            state.baseline_container = None
+    
+    state.save()
+    print(f"State recovered: running={state.running}, run_id={state.run_id}")
+
+# =============================================================================
+# LIFESPAN - Auto-recovery on startup
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app):
+    """Startup and shutdown events"""
+    print("🔄 Recovering state...")
+    recover_state()
+    yield
+    print("💾 Saving state...")
+    state.save()
+
+# =============================================================================
+# APP SETUP
+# =============================================================================
+
+app = FastAPI(title="Kore Dashboard", lifespan=lifespan)
+
+# WebSocket connections
 log_connections: list[WebSocket] = []
 
-async def broadcast_log(message: str, source: str = "system"):
-    """Send log message to all connected clients"""
-    data = json.dumps({
-        "timestamp": datetime.now().isoformat(),
-        "source": source,
-        "message": message
-    })
+async def broadcast(msg: str, source: str = "system"):
+    """Broadcast to all WebSocket clients"""
+    data = json.dumps({"timestamp": datetime.now().isoformat(), "source": source, "message": msg})
     for ws in log_connections[:]:
         try:
             await ws.send_text(data)
         except:
             log_connections.remove(ws)
 
-def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str]:
-    """Run shell command"""
-    result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
-    return result.returncode, result.stdout + result.stderr
+# =============================================================================
+# MODELS
+# =============================================================================
 
-def is_container_running(name: str) -> bool:
-    """Check if a Docker container is running"""
-    if not name:
-        return False
-    code, out = run_cmd(f"docker ps -q -f name=^{name}$")
-    return bool(out.strip())
+class StartRequest(BaseModel):
+    model: str = "anthropic/claude-sonnet-4"
+    kore_only: bool = True
 
-def is_container_exists(name: str) -> bool:
-    """Check if a Docker container exists (running or stopped)"""
-    if not name:
-        return False
-    code, out = run_cmd(f"docker ps -aq -f name=^{name}$")
-    return bool(out.strip())
+class TaskRequest(BaseModel):
+    task: str
 
-def get_env():
-    """Load environment variables"""
-    env_file = KORE_ROOT / ".env"
-    env = os.environ.copy()
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if "=" in line and not line.startswith("#"):
-                key, val = line.split("=", 1)
-                env[key.strip()] = val.strip().strip('"')
-    return env
+class ChatRequest(BaseModel):
+    message: str
+    agent: str
 
-# API Routes
-@app.get("/", response_class=HTMLResponse)
+# =============================================================================
+# API ROUTES
+# =============================================================================
+
+@app.get("/")
 async def index():
     return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 @app.get("/api/status")
 async def get_status():
-    """Get current experiment status"""
-    # Actually check Docker container states
-    kore_running = is_container_running(state.kore_container)
-    baseline_running = is_container_running(state.baseline_container)
-    kore_exists = is_container_exists(state.kore_container)
-    baseline_exists = is_container_exists(state.baseline_container)
+    """Get comprehensive experiment status"""
+    kore_status = docker_container_status(state.kore_container)
+    baseline_status = docker_container_status(state.baseline_container) if not state.kore_only else {"exists": False, "running": False, "status": "disabled"}
     
-    # Sync state with actual Docker state
-    if state.running:
-        if not kore_exists and not baseline_exists:
-            # Containers were removed externally
+    # Sync state with reality
+    if state.running and not kore_status["running"]:
+        if kore_status["exists"]:
+            state.paused = True
+        else:
             state.running = False
             state.paused = False
-        elif not kore_running and not baseline_running and kore_exists:
-            # Containers exist but not running = paused
-            state.paused = True
     
     return {
         "running": state.running,
         "paused": state.paused,
-        "kore_running": kore_running,
-        "baseline_running": baseline_running,
-        "kore_container": state.kore_container,
-        "baseline_container": state.baseline_container,
+        "kore_only": state.kore_only,
+        "run_id": state.run_id,
+        "model": state.model,
+        "kore": {
+            "container": state.kore_container,
+            **kore_status
+        },
+        "baseline": {
+            "container": state.baseline_container,
+            **baseline_status
+        },
         "current_task": state.current_task,
-        "task_history": state.task_history,
-        "run_id": state.run_id
+        "task_history": state.task_history[-10:],  # Last 10 tasks
     }
+
+@app.get("/api/experiments")
+async def list_experiments():
+    """List all experiment runs"""
+    experiments = []
+    if BENCHMARKS_DIR.exists():
+        for d in sorted(BENCHMARKS_DIR.iterdir(), reverse=True):
+            if d.is_dir() and not d.name.startswith("."):
+                kore_storage = d / "kore" / ".kore_storage"
+                rom_count = len(list(kore_storage.glob("*.json"))) if kore_storage.exists() else 0
+                experiments.append({
+                    "run_id": d.name,
+                    "active": d.name == state.run_id,
+                    "rom_keys": rom_count,
+                    "has_kore": (d / "kore").exists(),
+                    "has_baseline": (d / "baseline").exists(),
+                })
+    return {"experiments": experiments[:20]}  # Last 20
 
 @app.post("/api/start")
 async def start_experiment(req: StartRequest):
-    """Start new experiment with both agents"""
+    """Start new experiment"""
     if state.running and not state.paused:
-        raise HTTPException(400, "Experiment already running")
+        raise HTTPException(400, "Experiment already running. Stop it first.")
     
     env = get_env()
+    
+    # Create new run
     state.run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    state.run_dir = BENCHMARKS_DIR / state.run_id
-    state.run_dir.mkdir(parents=True, exist_ok=True)
-    (state.run_dir / "kore" / "mnt").mkdir(parents=True, exist_ok=True)
-    (state.run_dir / "baseline").mkdir(parents=True, exist_ok=True)
-    
-    # Make directories writable
-    run_cmd(f"chmod -R 777 {state.run_dir}")
-    
+    state.model = req.model
+    state.kore_only = req.kore_only
     state.kore_container = f"kore-dash-{state.run_id[:10]}"
-    state.baseline_container = f"base-dash-{state.run_id[:10]}"
+    state.baseline_container = f"base-dash-{state.run_id[:10]}" if not req.kore_only else None
+    state.task_history = []
+    state.chat_history = {"kore": [], "baseline": []}
     
-    model = req.model or env.get("KORE_MODEL", "google/gemini-2.5-flash-preview")
-    
-    await broadcast_log(f"Starting experiment {state.run_id}", "system")
-    await broadcast_log(f"Model: {model}", "system")
+    # Create directories
+    run_dir = BENCHMARKS_DIR / state.run_id
+    (run_dir / "kore" / "mnt").mkdir(parents=True, exist_ok=True)
+    if not req.kore_only:
+        (run_dir / "baseline").mkdir(parents=True, exist_ok=True)
+    run_cmd(f"chmod -R 777 {run_dir}")
     
     # Start Kore container
     kore_cmd = f"""docker run -d --name {state.kore_container} \
-        -e "KORE_GOAL=Waiting for task" \
+        -e "KORE_GOAL=Autonomous agent ready" \
         -e "KORE_PERSISTENT=true" \
         -e "KORE_CAPS=all" \
-        -e "KORE_MODEL={model}" \
+        -e "KORE_MODEL={req.model}" \
+        -e "KORE_MAX_ITERATIONS=500" \
         -e "OPENAI_API_KEY={env.get('OPENAI_API_KEY', '')}" \
         -e "OPENAI_BASE_URL={env.get('OPENAI_BASE_URL', '')}" \
-        -v "{state.run_dir}/kore:/world" \
-        -v "{state.run_dir}/kore/mnt:/mnt" \
+        -v "{run_dir}/kore:/world" \
+        -v "{run_dir}/kore/mnt:/mnt" \
         kore-world:latest kore-agent"""
     
     code, out = run_cmd(kore_cmd)
     if code != 0:
-        await broadcast_log(f"Failed to start Kore: {out}", "error")
         raise HTTPException(500, f"Failed to start Kore: {out}")
     
-    await broadcast_log("Kore agent started", "kore")
-    
-    # Start Baseline container
-    baseline_cmd = f"""docker run -d --name {state.baseline_container} \
-        -e "AGENT_GOAL=Waiting for task" \
-        -e "AGENT_PERSISTENT=true" \
-        -e "AGENT_MODEL={model}" \
-        -e "OPENAI_API_KEY={env.get('OPENAI_API_KEY', '')}" \
-        -e "OPENAI_BASE_URL={env.get('OPENAI_BASE_URL', '')}" \
-        -v "{state.run_dir}/baseline:/workspace" \
-        baseline-agent:latest"""
-    
-    code, out = run_cmd(baseline_cmd)
-    if code != 0:
-        await broadcast_log(f"Failed to start Baseline: {out}", "error")
-        raise HTTPException(500, f"Failed to start Baseline: {out}")
-    
-    await broadcast_log("Baseline agent started", "baseline")
-    
-    # Verify containers are actually running
-    await asyncio.sleep(1)  # Give Docker a moment
-    kore_ok = is_container_running(state.kore_container)
-    baseline_ok = is_container_running(state.baseline_container)
-    
-    if not kore_ok or not baseline_ok:
-        # Get logs to see what went wrong
-        kore_logs = run_cmd(f"docker logs {state.kore_container} 2>&1")[1] if not kore_ok else ""
-        baseline_logs = run_cmd(f"docker logs {state.baseline_container} 2>&1")[1] if not baseline_ok else ""
-        error_msg = f"Containers failed to start. Kore: {kore_ok}, Baseline: {baseline_ok}"
-        if kore_logs:
-            error_msg += f"\nKore logs: {kore_logs[-500:]}"
-        if baseline_logs:
-            error_msg += f"\nBaseline logs: {baseline_logs[-500:]}"
-        await broadcast_log(error_msg, "error")
-        raise HTTPException(500, error_msg)
+    # Start baseline if needed
+    if not req.kore_only:
+        baseline_cmd = f"""docker run -d --name {state.baseline_container} \
+            -e "AGENT_GOAL=Waiting for task" \
+            -e "AGENT_PERSISTENT=true" \
+            -e "AGENT_MODEL={req.model}" \
+            -e "AGENT_MAX_ITERATIONS=100" \
+            -e "OPENAI_API_KEY={env.get('OPENAI_API_KEY', '')}" \
+            -e "OPENAI_BASE_URL={env.get('OPENAI_BASE_URL', '')}" \
+            -v "{run_dir}/baseline:/workspace" \
+            baseline-agent:latest"""
+        code, out = run_cmd(baseline_cmd)
+        if code != 0:
+            run_cmd(f"docker rm -f {state.kore_container}")
+            raise HTTPException(500, f"Failed to start Baseline: {out}")
     
     state.running = True
     state.paused = False
-    state.task_history = []
-    state.chat_history = {"kore": [], "baseline": []}  # Clear chat history on new experiment
+    state.save()
     
-    return {
-        "status": "started", 
-        "run_id": state.run_id,
-        "kore_running": kore_ok,
-        "baseline_running": baseline_ok
-    }
+    await broadcast(f"Started experiment {state.run_id}", "system")
+    return {"status": "started", "run_id": state.run_id}
+
+@app.post("/api/stop")
+async def stop_experiment():
+    """Stop and cleanup experiment"""
+    if state.kore_container:
+        run_cmd(f"docker rm -f {state.kore_container}")
+    if state.baseline_container:
+        run_cmd(f"docker rm -f {state.baseline_container}")
+    
+    old_run = state.run_id
+    state.running = False
+    state.paused = False
+    state.kore_container = None
+    state.baseline_container = None
+    state.save()
+    
+    await broadcast(f"Stopped experiment {old_run}", "system")
+    return {"status": "stopped"}
 
 @app.post("/api/pause")
 async def pause_experiment():
-    """Pause experiment (stop containers but keep state)"""
+    """Pause experiment"""
     if not state.running:
         raise HTTPException(400, "No experiment running")
     
-    await broadcast_log("Pausing experiment...", "system")
-    
-    kore_stopped = False
-    baseline_stopped = False
-    
     if state.kore_container:
-        code, out = run_cmd(f"docker stop {state.kore_container}")
-        kore_stopped = code == 0
+        run_cmd(f"docker stop {state.kore_container}")
     if state.baseline_container:
-        code, out = run_cmd(f"docker stop {state.baseline_container}")
-        baseline_stopped = code == 0
-    
-    # Verify they actually stopped
-    kore_running = is_container_running(state.kore_container)
-    baseline_running = is_container_running(state.baseline_container)
-    
-    if kore_running or baseline_running:
-        await broadcast_log(f"Warning: Some containers still running. Kore: {kore_running}, Baseline: {baseline_running}", "error")
+        run_cmd(f"docker stop {state.baseline_container}")
     
     state.paused = True
-    await broadcast_log("Experiment paused - containers stopped", "system")
-    
-    return {
-        "status": "paused",
-        "kore_stopped": not kore_running,
-        "baseline_stopped": not baseline_running
-    }
+    state.save()
+    return {"status": "paused"}
 
 @app.post("/api/resume")
 async def resume_experiment():
@@ -263,354 +393,377 @@ async def resume_experiment():
     if not state.paused:
         raise HTTPException(400, "Experiment not paused")
     
-    await broadcast_log("Resuming experiment...", "system")
-    
     if state.kore_container:
         run_cmd(f"docker start {state.kore_container}")
     if state.baseline_container:
         run_cmd(f"docker start {state.baseline_container}")
     
-    await asyncio.sleep(1)  # Give Docker a moment
-    
-    # Verify they actually started
-    kore_running = is_container_running(state.kore_container)
-    baseline_running = is_container_running(state.baseline_container)
-    
-    if not kore_running or not baseline_running:
-        await broadcast_log(f"Warning: Some containers failed to start. Kore: {kore_running}, Baseline: {baseline_running}", "error")
-    
     state.paused = False
-    await broadcast_log("Experiment resumed", "system")
+    state.running = True
+    state.save()
+    return {"status": "resumed"}
+
+@app.post("/api/attach/{run_id}")
+async def attach_experiment(run_id: str):
+    """Attach to an existing experiment directory"""
+    run_dir = BENCHMARKS_DIR / run_id
+    if not run_dir.exists():
+        raise HTTPException(404, f"Experiment {run_id} not found")
+    
+    # Find any running containers for this run
+    code, out = run_cmd(f'docker ps --filter "name=kore-dash-{run_id[:10]}" --format "{{{{.Names}}}}"')
+    kore_container = out.strip() if out.strip() else None
+    
+    code, out = run_cmd(f'docker ps --filter "name=base-dash-{run_id[:10]}" --format "{{{{.Names}}}}"')
+    baseline_container = out.strip() if out.strip() else None
+    
+    state.run_id = run_id
+    state.kore_container = kore_container
+    state.baseline_container = baseline_container
+    state.kore_only = baseline_container is None
+    state.running = kore_container is not None
+    state.paused = False
+    state.save()
+    
+    return {"status": "attached", "run_id": run_id, "kore_running": kore_container is not None}
+
+# =============================================================================
+# STORAGE API - ROM/RAM monitoring
+# =============================================================================
+
+@app.get("/api/storage")
+async def get_storage():
+    """Get Kore storage status (ROM)"""
+    if not state.run_dir:
+        return {"error": "No experiment", "rom": {"keys": {}, "count": 0, "total_size": 0}}
+    
+    rom_dir = state.run_dir / "kore" / ".kore_storage"
+    rom_keys = {}
+    
+    if rom_dir.exists():
+        for f in rom_dir.iterdir():
+            if f.is_file() and f.suffix == ".json":
+                key = f.stem
+                size = f.stat().st_size
+                try:
+                    content = json.loads(f.read_text())
+                    if isinstance(content, dict) and "body" in content:
+                        # It's a tool definition - extract full stats
+                        meta = content.get("meta", {})
+                        stats = meta.get("stats", {})
+                        rom_keys[key] = {
+                            "type": "tool",
+                            "size": size,
+                            "name": content.get("name", key),
+                            "calls": stats.get("calls", 0),
+                            "failures": stats.get("failures", 0),
+                            "time_ms": stats.get("time_ms", 0),
+                            "status": meta.get("status", "ok"),
+                            "doc": meta.get("doc", ""),
+                            "sig": meta.get("sig", ""),
+                        }
+                    else:
+                        preview = str(content)[:80]
+                        rom_keys[key] = {"type": "value", "size": size, "preview": preview}
+                except:
+                    rom_keys[key] = {"type": "raw", "size": size}
     
     return {
-        "status": "resumed",
-        "kore_running": kore_running,
-        "baseline_running": baseline_running
+        "run_id": state.run_id,
+        "rom": {
+            "path": str(rom_dir),
+            "keys": rom_keys,
+            "count": len(rom_keys),
+            "total_size": sum(v["size"] for v in rom_keys.values())
+        }
     }
 
-@app.post("/api/stop")
-async def stop_experiment():
-    """Stop and clean up experiment"""
-    await broadcast_log("Stopping experiment...", "system")
+@app.get("/api/storage/rom/{key}")
+async def get_rom_key(key: str):
+    """Get content of a ROM key"""
+    if not state.run_dir:
+        raise HTTPException(404, "No experiment")
     
-    kore_removed = False
-    baseline_removed = False
+    rom_file = state.run_dir / "kore" / ".kore_storage" / f"{key}.json"
+    if not rom_file.exists():
+        raise HTTPException(404, f"Key '{key}' not found")
     
-    if state.kore_container:
-        code, out = run_cmd(f"docker rm -f {state.kore_container}")
-        kore_removed = code == 0
-        if kore_removed:
-            state.kore_container = None
-    if state.baseline_container:
-        code, out = run_cmd(f"docker rm -f {state.baseline_container}")
-        baseline_removed = code == 0
-        if baseline_removed:
-            state.baseline_container = None
+    return {"key": key, "content": json.loads(rom_file.read_text())}
+
+@app.get("/api/agent-status")
+async def get_agent_status():
+    """Get agent's self-reported status from /world/status.json"""
+    if not state.run_dir:
+        return {"error": "No experiment", "status": None}
     
-    # Verify removal
-    kore_exists = is_container_exists(state.kore_container) if state.kore_container else False
-    baseline_exists = is_container_exists(state.baseline_container) if state.baseline_container else False
+    status_file = state.run_dir / "kore" / "status.json"
+    if not status_file.exists():
+        return {"error": None, "status": None, "message": "Agent hasn't written status yet"}
     
-    if kore_exists or baseline_exists:
-        await broadcast_log(f"Warning: Some containers still exist. Kore: {kore_exists}, Baseline: {baseline_exists}", "error")
+    try:
+        content = json.loads(status_file.read_text())
+        return {"error": None, "status": content}
+    except Exception as e:
+        return {"error": str(e), "status": None}
+
+@app.get("/api/agent-learnings")
+async def get_agent_learnings():
+    """Get agent's learnings from /world/learnings/"""
+    if not state.run_dir:
+        return {"error": "No experiment", "learnings": {}}
     
-    state.running = False
-    state.paused = False
-    state.current_task = None
+    learnings_dir = state.run_dir / "kore" / "learnings"
+    learnings = {}
     
-    await broadcast_log("Experiment stopped", "system")
+    if learnings_dir.exists():
+        for f in learnings_dir.iterdir():
+            if f.is_file() and f.suffix == ".md":
+                try:
+                    learnings[f.stem] = f.read_text()[:2000]  # First 2000 chars
+                except:
+                    learnings[f.stem] = "(unreadable)"
     
-    return {
-        "status": "stopped",
-        "kore_removed": not kore_exists,
-        "baseline_removed": not baseline_exists
-    }
+    return {"error": None, "learnings": learnings}
+
+# =============================================================================
+# LOGS API
+# =============================================================================
+
+@app.get("/api/logs/{agent}")
+async def get_logs(agent: str, lines: int = 100):
+    """Get container logs"""
+    container = state.kore_container if agent == "kore" else state.baseline_container
+    if not container:
+        return {"logs": f"No {agent} container", "error": True}
+    
+    status = docker_container_status(container)
+    if not status["exists"]:
+        return {"logs": f"Container {container} not found", "error": True}
+    
+    code, out = run_cmd(f"docker logs --tail {lines} {container} 2>&1")
+    return {"logs": out or "(empty)", "error": code != 0, "container": container, "status": status["status"]}
+
+# =============================================================================
+# FILES API
+# =============================================================================
+
+@app.get("/api/files/{agent}")
+async def get_files(agent: str):
+    """List files in agent workspace"""
+    if not state.run_dir:
+        return {"files": [], "error": "No experiment"}
+    
+    if agent == "kore":
+        paths = [state.run_dir / "kore" / "mnt", state.run_dir / "kore"]
+    else:
+        paths = [state.run_dir / "baseline"]
+    
+    files = []
+    for base in paths:
+        if base.exists():
+            for f in base.rglob("*"):
+                if f.is_file() and ".kore_storage" not in str(f):
+                    rel = f.relative_to(state.run_dir / ("kore" if agent == "kore" else "baseline"))
+                    files.append({
+                        "name": str(rel),
+                        "size": f.stat().st_size,
+                        "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+                    })
+    
+    return {"files": sorted(files, key=lambda x: x["name"])}
+
+@app.get("/api/file/{agent}/{filename:path}")
+async def get_file(agent: str, filename: str):
+    """Get file content"""
+    if not state.run_dir:
+        raise HTTPException(404, "No experiment")
+    
+    base = state.run_dir / ("kore" if agent == "kore" else "baseline")
+    filepath = base / filename
+    
+    if not filepath.exists():
+        raise HTTPException(404, "File not found")
+    
+    try:
+        return {"content": filepath.read_text()}
+    except:
+        return {"content": "(binary)", "binary": True}
+
+# =============================================================================
+# TASK & CHAT API
+# =============================================================================
 
 @app.post("/api/task")
 async def send_task(req: TaskRequest):
-    """Send task to both agents"""
+    """Send task to agents via inbox"""
     if not state.running or state.paused:
         raise HTTPException(400, "Experiment not running")
     
     task = req.task.strip()
     state.current_task = task
     
-    await broadcast_log(f"Sending task: {task}", "system")
-    
-    # Clear done files first
     if state.run_dir:
+        # Clear done, write inbox
         (state.run_dir / "kore" / "mnt" / "done.txt").unlink(missing_ok=True)
-        (state.run_dir / "baseline" / "done.txt").unlink(missing_ok=True)
-        
-        # Write to inboxes
         (state.run_dir / "kore" / "mnt" / "inbox.txt").write_text(task)
-        (state.run_dir / "baseline" / "inbox.txt").write_text(task)
+        
+        if not state.kore_only:
+            (state.run_dir / "baseline" / "done.txt").unlink(missing_ok=True)
+            (state.run_dir / "baseline" / "inbox.txt").write_text(task)
     
-    task_entry = {
+    state.task_history.append({
         "task": task,
         "sent_at": datetime.now().isoformat(),
         "kore_done": False,
-        "baseline_done": False
-    }
-    state.task_history.append(task_entry)
+        "baseline_done": state.kore_only
+    })
+    state.save()
     
-    await broadcast_log("Task sent to both agents", "system")
-    
+    await broadcast(f"Task: {task[:50]}...", "system")
     return {"status": "sent", "task": task}
-
-@app.get("/api/logs/{agent}")
-async def get_logs(agent: str, lines: int = 50):
-    """Get recent logs from an agent"""
-    container = None
-    if agent == "kore":
-        container = state.kore_container
-    elif agent == "baseline":
-        container = state.baseline_container
-    
-    if not container:
-        return {"logs": f"No {agent} container configured", "error": True}
-    
-    # Check if container exists
-    if not is_container_exists(container):
-        return {"logs": f"Container {container} does not exist", "error": True}
-    
-    code, out = run_cmd(f"docker logs --tail {lines} {container} 2>&1")
-    if code != 0:
-        return {"logs": f"Error getting logs: {out}", "error": True}
-    
-    return {"logs": out if out.strip() else "(no output yet)", "error": False, "container": container}
-
-@app.get("/api/files/{agent}")
-async def get_files(agent: str):
-    """List files in agent workspace"""
-    if not state.run_dir:
-        return {"files": []}
-    
-    if agent == "kore":
-        path = state.run_dir / "kore" / "mnt"
-    else:
-        path = state.run_dir / "baseline"
-    
-    if not path.exists():
-        return {"files": []}
-    
-    files = []
-    for f in path.iterdir():
-        if f.is_file():
-            files.append({
-                "name": f.name,
-                "size": f.stat().st_size,
-                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
-            })
-    
-    return {"files": sorted(files, key=lambda x: x["name"])}
-
-@app.get("/api/file/{agent}/{filename}")
-async def get_file_content(agent: str, filename: str):
-    """Get content of a specific file"""
-    if not state.run_dir:
-        raise HTTPException(404, "No experiment running")
-    
-    if agent == "kore":
-        path = state.run_dir / "kore" / "mnt" / filename
-    else:
-        path = state.run_dir / "baseline" / filename
-    
-    if not path.exists():
-        raise HTTPException(404, "File not found")
-    
-    try:
-        content = path.read_text()
-    except:
-        content = "(binary file)"
-    
-    return {"content": content}
-
-@app.get("/api/prompts")
-async def get_prompts():
-    """Get list of prompt files"""
-    prompts = []
-    for name in ["genesis-prompt.md", "Cargo.toml", "README.md"]:
-        path = PROMPTS_DIR / name
-        if path.exists():
-            prompts.append({"name": name, "path": str(path)})
-    
-    # Also include baseline prompt
-    baseline_prompt = KORE_ROOT / "benchmarks" / "baseline" / "baseline_agent.py"
-    if baseline_prompt.exists():
-        prompts.append({"name": "baseline_agent.py", "path": str(baseline_prompt)})
-    
-    return {"prompts": prompts}
-
-@app.get("/api/prompt/{name}")
-async def get_prompt(name: str):
-    """Get content of a prompt file"""
-    if name == "baseline_agent.py":
-        path = KORE_ROOT / "benchmarks" / "baseline" / "baseline_agent.py"
-    else:
-        path = PROMPTS_DIR / name
-    
-    if not path.exists():
-        raise HTTPException(404, "Prompt not found")
-    
-    return {"content": path.read_text()}
-
-@app.get("/api/completion")
-async def check_completion():
-    """Check if agents have completed their tasks"""
-    if not state.run_dir:
-        return {"kore_done": False, "baseline_done": False}
-    
-    kore_done_file = state.run_dir / "kore" / "mnt" / "done.txt"
-    baseline_done_file = state.run_dir / "baseline" / "done.txt"
-    
-    kore_done = kore_done_file.exists()
-    baseline_done = baseline_done_file.exists()
-    
-    kore_result = kore_done_file.read_text() if kore_done else None
-    baseline_result = baseline_done_file.read_text() if baseline_done else None
-    
-    # Update task history
-    if state.task_history:
-        state.task_history[-1]["kore_done"] = kore_done
-        state.task_history[-1]["baseline_done"] = baseline_done
-        if kore_result:
-            state.task_history[-1]["kore_result"] = kore_result
-        if baseline_result:
-            state.task_history[-1]["baseline_result"] = baseline_result
-    
-    return {
-        "kore_done": kore_done,
-        "baseline_done": baseline_done,
-        "kore_result": kore_result,
-        "baseline_result": baseline_result
-    }
 
 @app.post("/api/chat")
 async def send_chat(req: ChatRequest):
-    """Send a chat message to a specific agent"""
+    """Send chat message to specific agent"""
     if not state.running or state.paused:
         raise HTTPException(400, "Experiment not running")
     
     agent = req.agent.lower()
-    if agent not in ["kore", "baseline"]:
-        raise HTTPException(400, "Invalid agent")
-    
     message = req.message.strip()
     
-    # Add user message to history
     state.chat_history[agent].append({
         "role": "user",
         "content": message,
         "timestamp": datetime.now().isoformat()
     })
     
-    await broadcast_log(f"[Chat→{agent}] {message[:50]}...", "system")
-    
-    # Clear done file and write to inbox
     if state.run_dir:
         if agent == "kore":
-            done_file = state.run_dir / "kore" / "mnt" / "done.txt"
-            inbox_file = state.run_dir / "kore" / "mnt" / "inbox.txt"
+            (state.run_dir / "kore" / "mnt" / "done.txt").unlink(missing_ok=True)
+            (state.run_dir / "kore" / "mnt" / "inbox.txt").write_text(message)
         else:
-            done_file = state.run_dir / "baseline" / "done.txt"
-            inbox_file = state.run_dir / "baseline" / "inbox.txt"
-        
-        done_file.unlink(missing_ok=True)
-        inbox_file.write_text(message)
+            (state.run_dir / "baseline" / "done.txt").unlink(missing_ok=True)
+            (state.run_dir / "baseline" / "inbox.txt").write_text(message)
     
+    state.save()
     return {"status": "sent", "agent": agent}
 
 @app.get("/api/chat/{agent}")
-async def get_chat_history(agent: str):
-    """Get chat history for an agent"""
-    if agent not in ["kore", "baseline"]:
-        raise HTTPException(400, "Invalid agent")
-    
+async def get_chat(agent: str):
+    """Get chat history"""
     return {"history": state.chat_history.get(agent, [])}
 
 @app.get("/api/chat/{agent}/response")
-async def check_chat_response(agent: str):
-    """Check if agent has responded (done.txt exists) and get logs"""
+async def check_response(agent: str):
+    """Check for agent response"""
     if not state.run_dir:
         return {"done": False, "response": None}
     
-    if agent == "kore":
-        done_file = state.run_dir / "kore" / "mnt" / "done.txt"
-        container = state.kore_container
-    else:
-        done_file = state.run_dir / "baseline" / "done.txt"
-        container = state.baseline_container
+    done_file = state.run_dir / ("kore/mnt" if agent == "kore" else "baseline") / "done.txt"
+    container = state.kore_container if agent == "kore" else state.baseline_container
     
     done = done_file.exists()
     response = done_file.read_text() if done else None
     
-    # Get recent logs as context
     logs = ""
     if container:
-        code, logs = run_cmd(f"docker logs --tail 30 {container} 2>&1")
+        _, logs = run_cmd(f"docker logs --tail 30 {container} 2>&1")
     
-    # If done, add assistant response to history
     if done and response:
-        # Check if we already added this response
         history = state.chat_history.get(agent, [])
         if not history or history[-1].get("role") != "assistant":
             state.chat_history[agent].append({
                 "role": "assistant",
                 "content": response,
-                "timestamp": datetime.now().isoformat(),
-                "logs": logs[-2000:]  # Last 2000 chars of logs
+                "timestamp": datetime.now().isoformat()
             })
+            state.save()
     
     return {"done": done, "response": response, "logs": logs[-2000:]}
 
 @app.delete("/api/chat/{agent}")
-async def clear_chat_history(agent: str):
-    """Clear chat history for an agent"""
-    if agent not in ["kore", "baseline"]:
-        raise HTTPException(400, "Invalid agent")
-    
+async def clear_chat(agent: str):
+    """Clear chat history"""
     state.chat_history[agent] = []
+    state.save()
     return {"status": "cleared"}
 
+@app.get("/api/completion")
+async def check_completion():
+    """Check task completion"""
+    if not state.run_dir:
+        return {"kore_done": False, "baseline_done": False}
+    
+    kore_done = (state.run_dir / "kore" / "mnt" / "done.txt").exists()
+    baseline_done = state.kore_only or (state.run_dir / "baseline" / "done.txt").exists()
+    
+    if state.task_history:
+        state.task_history[-1]["kore_done"] = kore_done
+        state.task_history[-1]["baseline_done"] = baseline_done
+    
+    return {"kore_done": kore_done, "baseline_done": baseline_done}
+
+# =============================================================================
+# PROMPTS API
+# =============================================================================
+
+@app.get("/api/prompts")
+async def get_prompts():
+    """List prompt files"""
+    prompts = []
+    for name in ["genesis-prompt.md", "README.md"]:
+        if (KORE_ROOT / name).exists():
+            prompts.append({"name": name})
+    return {"prompts": prompts}
+
+@app.get("/api/prompt/{name}")
+async def get_prompt(name: str):
+    """Get prompt content"""
+    path = KORE_ROOT / name
+    if not path.exists():
+        raise HTTPException(404, "Not found")
+    return {"content": path.read_text()}
+
+# =============================================================================
+# WEBSOCKET
+# =============================================================================
+
 @app.websocket("/ws/logs")
-async def websocket_logs(websocket: WebSocket):
-    """WebSocket for live log streaming"""
+async def ws_logs(websocket: WebSocket):
+    """Live log streaming"""
     await websocket.accept()
     log_connections.append(websocket)
     
     try:
         while True:
-            # Keep connection alive and stream logs periodically
             await asyncio.sleep(2)
-            
-            # Stream latest logs from containers
             if state.kore_container and state.running and not state.paused:
-                code, out = run_cmd(f"docker logs --tail 5 {state.kore_container} 2>&1")
+                _, out = run_cmd(f"docker logs --tail 5 {state.kore_container} 2>&1")
                 if out.strip():
                     await websocket.send_text(json.dumps({
                         "timestamp": datetime.now().isoformat(),
                         "source": "kore",
-                        "message": out.strip()[-500:]  # Last 500 chars
-                    }))
-            
-            if state.baseline_container and state.running and not state.paused:
-                code, out = run_cmd(f"docker logs --tail 5 {state.baseline_container} 2>&1")
-                if out.strip():
-                    await websocket.send_text(json.dumps({
-                        "timestamp": datetime.now().isoformat(),
-                        "source": "baseline", 
                         "message": out.strip()[-500:]
                     }))
     except WebSocketDisconnect:
         log_connections.remove(websocket)
 
-# Mount static files
+# =============================================================================
+# STATIC FILES
+# =============================================================================
+
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+# =============================================================================
+# MAIN
+# =============================================================================
+
 if __name__ == "__main__":
-    print(f"🚀 Kore Dashboard starting at http://localhost:8080")
-    print(f"📁 Kore root: {KORE_ROOT}")
+    print("=" * 60)
+    print("🚀 KORE DASHBOARD v2")
+    print(f"📁 Root: {KORE_ROOT}")
+    print(f"📊 Benchmarks: {BENCHMARKS_DIR}")
+    print("=" * 60)
     uvicorn.run(app, host="0.0.0.0", port=8080)

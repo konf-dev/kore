@@ -2926,8 +2926,9 @@ pub async fn register_persistence(ctx: &mut Context) {
             
             let mut count = 0;
             for key in keys {
-                if key.starts_with("tools/") {
-                    // Load tool
+                // Keys are sanitized: tools/name becomes tools_name
+                if key.starts_with("tools_") {
+                    // Load tool using the sanitized key
                     if let Ok(Some(value)) = storage.get(&key) {
                         if let Some(tool) = deserialize_tool(&value) {
                             let mut dict = ctx.dict.write().await;
@@ -2974,10 +2975,11 @@ pub async fn register_persistence(ctx: &mut Context) {
             let keys = storage.keys()
                 .map_err(|e| crate::error::Error::Runtime(e.to_string()))?;
             
+            // Keys are sanitized: tools/name becomes tools_name
             let names: Vec<Value> = keys.into_iter()
                 .filter_map(|key| {
-                    if key.starts_with("tools/") {
-                        Some(Value::Text(key.strip_prefix("tools/")?.to_string()))
+                    if key.starts_with("tools_") {
+                        Some(Value::Text(key.strip_prefix("tools_")?.to_string()))
                     } else {
                         None
                     }
@@ -3019,9 +3021,25 @@ fn deserialize_tool(value: &Value) -> Option<Tool> {
     let map = value.as_map().ok()?;
     
     let name = map.get("name")?.as_text().ok()?;
-    let body = map.get("body")?.as_quote().ok()?;
     
-    let mut tool = Tool::composed(name, None, body.clone());
+    // Body might be a Quote (if loaded internally) or a List (if loaded from JSON)
+    // because serde untagged deserializes arrays as List before Quote
+    let body = match map.get("body")? {
+        Value::Quote(ops) => ops.clone(),
+        Value::List(list) => {
+            // Try to convert each element to an Op
+            list.iter()
+                .filter_map(|v| value_to_op(v))
+                .collect()
+        }
+        _ => return None,
+    };
+    
+    if body.is_empty() {
+        return None;
+    }
+    
+    let mut tool = Tool::composed(name, None, body);
     
     if let Some(doc) = map.get("doc").and_then(|v| v.text_opt()) {
         tool = tool.with_doc(doc);
@@ -3030,6 +3048,29 @@ fn deserialize_tool(value: &Value) -> Option<Tool> {
     // TODO: Restore full meta from stored value
     
     Some(tool)
+}
+
+/// Convert a Value (from JSON) back to an Op
+fn value_to_op(value: &Value) -> Option<crate::op::Op> {
+    use crate::op::Op;
+    let map = value.as_map().ok()?;
+    
+    // Check for different Op types
+    if let Some(call_name) = map.get("Call") {
+        return Some(Op::call(call_name.as_text().ok()?));
+    }
+    if let Some(push_val) = map.get("Push") {
+        return Some(Op::push(push_val.clone()));
+    }
+    if let Some(quote_val) = map.get("Quote") {
+        // Recursively convert
+        if let Value::List(list) = quote_val {
+            let ops: Vec<Op> = list.iter().filter_map(|v| value_to_op(v)).collect();
+            return Some(Op::quote(ops));
+        }
+    }
+    
+    None
 }
 
 #[cfg(test)]

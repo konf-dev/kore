@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Ensure Python output is not buffered
+ENV PYTHONUNBUFFERED=1
+
 # Install common tools that a standard agent would have
 RUN apt-get update && apt-get install -y \
     curl \

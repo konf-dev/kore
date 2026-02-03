@@ -9,20 +9,32 @@ This represents the "status quo" approach:
 - Standard system prompt
 
 Used for benchmarking against Kore agent.
+
+Modes:
+- Single task: Set AGENT_GOAL, runs once
+- Persistent: Set AGENT_PERSISTENT=true, reads tasks from inbox.txt
 """
 
 import os
 import sys
 import json
 import subprocess
+import time
 from typing import Optional
 from openai import OpenAI
+
+# Ensure unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # Configuration
 GOAL = os.environ.get("AGENT_GOAL", "")
 MODEL = os.environ.get("AGENT_MODEL", "gpt-4o")
 MAX_ITERATIONS = int(os.environ.get("AGENT_MAX_ITERATIONS", "30"))
+PERSISTENT = os.environ.get("AGENT_PERSISTENT", "").lower() == "true"
 WORKSPACE = "/workspace"
+INBOX = os.path.join(WORKSPACE, "inbox.txt")
+DONE_FILE = os.path.join(WORKSPACE, "done.txt")
 BASE_URL = os.environ.get("OPENAI_BASE_URL", None)
 
 SYSTEM_PROMPT = """You are an AI assistant that can execute shell commands and write code to accomplish tasks.
@@ -66,7 +78,7 @@ def execute_shell(command: str) -> dict:
             shell=True,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=600,  # 10 minutes for ML training
             cwd=WORKSPACE
         )
         return {
@@ -75,7 +87,7 @@ def execute_shell(command: str) -> dict:
             "returncode": result.returncode
         }
     except subprocess.TimeoutExpired:
-        return {"error": "Command timed out after 60 seconds"}
+        return {"error": "Command timed out after 600 seconds"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -101,10 +113,9 @@ def read_file(path: str) -> dict:
 
 def extract_json(text: str) -> Optional[dict]:
     """Extract JSON from response text."""
-    # Try to find JSON block
     import re
     
-    # Look for ```json blocks
+    # Look for ```json blocks first
     match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
     if match:
         try:
@@ -112,7 +123,23 @@ def extract_json(text: str) -> Optional[dict]:
         except json.JSONDecodeError:
             pass
     
-    # Try to find raw JSON
+    # Look for ``` blocks (without json tag)
+    match = re.search(r'```\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+    
+    # Try to find JSON object anywhere in text (greedy match for action objects)
+    match = re.search(r'\{"action"\s*:\s*"[^"]+"\s*,?\s*[^}]*\}', text)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+    
+    # Try to find any JSON object on a line
     for line in text.split('\n'):
         line = line.strip()
         if line.startswith('{') and line.endswith('}'):
@@ -229,6 +256,140 @@ def run_agent():
     print(f"\n❌ MAX ITERATIONS REACHED")
     return False
 
+def check_inbox():
+    """Check inbox for new task, return task or None."""
+    if os.path.exists(INBOX):
+        try:
+            with open(INBOX, "r") as f:
+                content = f.read().strip()
+            if content:
+                # Clear inbox
+                with open(INBOX, "w") as f:
+                    f.write("")
+                return content
+        except Exception:
+            pass
+    return None
+
+def signal_done(summary: str):
+    """Write done signal with summary."""
+    try:
+        with open(DONE_FILE, "w") as f:
+            f.write(summary)
+        print(f"✅ Done signal written to {DONE_FILE}")
+    except Exception as e:
+        print(f"❌ Failed to write done signal: {e}")
+
+def run_persistent():
+    """Persistent mode - wait for tasks in inbox."""
+    print(f"=" * 70)
+    print(f"BASELINE AGENT (PERSISTENT MODE)")
+    print(f"Model: {MODEL}")
+    print(f"Inbox: {INBOX}")
+    print(f"Waiting for tasks...")
+    print(f"=" * 70)
+    print(flush=True)
+    
+    # Support custom base URL
+    if BASE_URL:
+        client = OpenAI(base_url=BASE_URL)
+    else:
+        client = OpenAI()
+    
+    while True:
+        task = check_inbox()
+        
+        if task:
+            print(f"\n📥 NEW TASK: {task}", flush=True)
+            
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT + "\n\nYou are in persistent mode. After completing a task, new tasks will be sent."},
+                {"role": "user", "content": f"Your task: {task}"}
+            ]
+            
+            # Run task with iterations
+            for iteration in range(MAX_ITERATIONS):
+                print(f"--- Iteration {iteration + 1}/{MAX_ITERATIONS} ---", flush=True)
+                
+                try:
+                    response = client.chat.completions.create(
+                        model=MODEL,
+                        messages=messages,
+                        max_tokens=4096,
+                        temperature=0.7
+                    )
+                    assistant_message = response.choices[0].message.content
+                except Exception as e:
+                    print(f"ERROR: LLM call failed: {e}", flush=True)
+                    break
+                
+                print(f"Assistant: {assistant_message[:300]}...", flush=True)
+                messages.append({"role": "assistant", "content": assistant_message})
+                
+                action = extract_json(assistant_message)
+                
+                if not action:
+                    messages.append({
+                        "role": "user", 
+                        "content": "Please respond with a valid JSON action block."
+                    })
+                    continue
+                
+                action_type = action.get("action")
+                
+                if action_type == "done":
+                    summary = action.get('summary', 'Task completed')
+                    print(f"\n✅ TASK COMPLETED: {summary}", flush=True)
+                    signal_done(summary)
+                    break
+                
+                elif action_type == "shell":
+                    command = action.get("command", "")
+                    print(f"Executing: {command}", flush=True)
+                    result = execute_shell(command)
+                    print(f"Result: {json.dumps(result)[:200]}...", flush=True)
+                    messages.append({
+                        "role": "user",
+                        "content": f"Command result:\n```\n{json.dumps(result, indent=2)}\n```"
+                    })
+                
+                elif action_type == "write":
+                    path = action.get("path", "")
+                    content = action.get("content", "")
+                    print(f"Writing: {path}", flush=True)
+                    result = write_file(path, content)
+                    print(f"Result: {result}", flush=True)
+                    messages.append({
+                        "role": "user",
+                        "content": f"Write result: {json.dumps(result)}"
+                    })
+                
+                elif action_type == "read":
+                    path = action.get("path", "")
+                    print(f"Reading: {path}", flush=True)
+                    result = read_file(path)
+                    content_preview = result.get("content", "")[:200] if "content" in result else str(result)
+                    print(f"Result: {content_preview}...", flush=True)
+                    messages.append({
+                        "role": "user",
+                        "content": f"File content:\n```\n{result.get('content', result)}\n```"
+                    })
+                
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": f"Unknown action: {action_type}. Use shell, write, read, or done."
+                    })
+            else:
+                # Max iterations reached
+                signal_done("Task incomplete - max iterations reached")
+        
+        # Poll for new tasks
+        time.sleep(1)
+
 if __name__ == "__main__":
-    success = run_agent()
-    sys.exit(0 if success else 1)
+    if PERSISTENT:
+        run_persistent()
+    else:
+        success = run_agent()
+        sys.exit(0 if success else 1)
