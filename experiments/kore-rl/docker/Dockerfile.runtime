@@ -1,0 +1,33 @@
+FROM rust:1.75-slim-bookworm as builder
+
+WORKDIR /app
+
+# Install protobuf compiler
+RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY crates ./crates
+
+# Build the runtime server
+RUN cargo build --release --bin kore-runtime
+
+# Runtime image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/kore-runtime /usr/local/bin/
+
+# Non-root user for security
+RUN useradd -m -s /bin/bash kore
+USER kore
+
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["kore-runtime", "--host", "0.0.0.0", "--port", "8080"]

@@ -1,0 +1,55 @@
+# Kore Sandbox Container
+# ======================
+# Isolated execution environment for Kore-RL training
+#
+# Features:
+# - Watches mount directory for programs
+# - Executes with full Kore capabilities
+# - Returns results via mount directory
+# - No access to host filesystem or localhost
+
+FROM rust:1.75-slim-bookworm AS builder
+
+# Build kore-train binary
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY src/ ./src/
+COPY crates/ ./crates/
+
+RUN cargo build --release --bin kore-train
+
+# Runtime image
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy kore-train binary
+COPY --from=builder /build/target/release/kore-train /usr/local/bin/kore-train
+
+# Copy worker script
+COPY experiments/kore-rl/docker/worker.py /app/worker.py
+
+# Setup exchange directory
+RUN mkdir -p /mnt/exchange/programs /mnt/exchange/results
+
+# Environment
+ENV KORE_CAPABILITIES=all
+ENV KORE_MAX_STEPS=100000
+ENV KORE_TIMEOUT=5
+
+WORKDIR /app
+
+# Run as root (Kore has full capabilities inside container)
+USER root
+
+# Health check
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s \
+    CMD python3 -c "import json; print(json.load(open('/mnt/exchange/status.json')).get('ready', False))" || exit 1
+
+# Start worker
+CMD ["python3", "/app/worker.py"]

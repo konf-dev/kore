@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/kore-agent",
+    "experiments/kore-rl/runtime",
 ]
 
 [workspace.package]

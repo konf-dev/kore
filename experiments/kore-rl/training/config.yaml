@@ -1,0 +1,47 @@
+# Kore-RL Training Configuration
+# ================================
+
+# Model (choose based on available GPUs)
+# 2x A100 40GB: Qwen/Qwen2.5-Coder-7B-Instruct
+# 4x A100 40GB: deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct
+# 8x A100 80GB: Qwen/Qwen2.5-Coder-32B-Instruct
+
+model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+model_revision: "main"
+trust_remote_code: true
+
+# Runtime Executor
+kore_binary: "../../../target/release/kore-train"  # Path to kore-train binary
+use_docker: false  # Set to true to use docker executor instead
+container_name: "kore-runtime"  # Docker container name (if use_docker=true)
+max_workers: 32  # Parallel execution workers
+
+# Training
+batch_size: 4
+gradient_accumulation_steps: 4  # Effective batch: 16
+num_epochs: 10
+max_steps: 50000
+
+# GRPO
+num_samples: 8       # K samples per prompt
+temperature: 0.7     # Sampling temperature
+learning_rate: 1.0e-6
+kl_coef: 0.1         # KL penalty
+
+# Curriculum
+# Phase 1: Arithmetic only
+# Phase 2: + Stack manipulation  
+# Phase 3: + Conditionals
+# Phase 4: + Loops
+# Phase 5: + Lists
+curriculum_phase: 1
+
+# Checkpointing
+output_dir: "./checkpoints"
+save_steps: 1000
+eval_steps: 500
+logging_steps: 10
+
+# Hardware
+bf16: true
+gradient_checkpointing: true

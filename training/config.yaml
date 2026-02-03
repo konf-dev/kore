@@ -1,0 +1,155 @@
+# Kore RL Training Configuration
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model:
+  name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+  device: "cuda"
+  dtype: "bfloat16"  # "float16", "bfloat16", "float32"
+  quantization: null  # null, "4bit", "8bit"
+  trust_remote_code: true
+  
+  # Generation settings
+  generation:
+    max_new_tokens: 256
+    temperature: 0.7
+    top_p: 0.95
+    do_sample: true
+    num_return_sequences: 1
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  # Basic settings
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  num_epochs: 10
+  
+  # RL specific
+  algorithm: "grpo"  # "grpo", "reinforce", "ppo"
+  kl_coef: 0.1
+  gamma: 0.99
+  
+  # Sampling
+  samples_per_task: 8  # K in GRPO
+  
+  # Checkpointing
+  save_every: 500
+  eval_every: 100
+  
+  # LoRA (optional)
+  use_lora: true
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+# =============================================================================
+# Kore Runtime Configuration  
+# =============================================================================
+kore:
+  binary: "../target/release/kore-train"
+  timeout: 5.0
+  max_trace_steps: 100
+  parallel_workers: 8
+
+# =============================================================================
+# Supervised Experiment Configuration
+# =============================================================================
+supervised:
+  # Curriculum phases
+  phases:
+    1:
+      name: "stack_arithmetic"
+      tools: ["dup", "drop", "swap", "rot", "over", "add", "sub", "mul", "div", "mod", "neg"]
+      epochs: 2
+      tasks_per_epoch: 1000
+      
+    2:
+      name: "control_flow"
+      tools_add: ["if", "times", "while", "def"]
+      epochs: 2
+      tasks_per_epoch: 1000
+      
+    3:
+      name: "data_structures"
+      tools_add: ["list", "list-len", "list-get", "list-push", "map", "filter", "fold"]
+      epochs: 3
+      tasks_per_epoch: 1000
+      
+    4:
+      name: "introspection"
+      tools_add: ["words", "meta", "effect-infer", "pure?"]
+      epochs: 2
+      tasks_per_epoch: 500
+      
+    5:
+      name: "io_capabilities"
+      tools_add: ["fs-read", "fs-write", "http-get", "cap-has"]
+      epochs: 2
+      tasks_per_epoch: 500
+      
+    6:
+      name: "advanced"
+      tools_add: ["linear-new", "linear-unwrap", "spawn"]
+      epochs: 3
+      tasks_per_epoch: 500
+
+  # Reward weights
+  reward:
+    correctness: 0.5
+    effect_match: 0.3
+    capability_minimal: 0.1
+    complexity_penalty: 0.1
+
+# =============================================================================
+# Unsupervised Experiment Configuration
+# =============================================================================
+unsupervised:
+  total_steps: 10000
+  
+  # Episode type weights
+  episode_weights:
+    effect_exploration: 0.25
+    self_play: 0.25
+    equivalence: 0.20
+    linear_puzzle: 0.15
+    capability_descent: 0.15
+  
+  # Memory settings
+  effect_memory_size: 10000
+  trace_memory_size: 5000
+  
+  # Novelty settings
+  novelty_k: 5  # K-nearest neighbors for novelty
+  
+  # Discovery logging
+  discovery_threshold: 1.5  # Log discoveries with reward > this
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  output_dir: "logs"
+  log_level: "INFO"
+  use_wandb: false
+  wandb_project: "kore-rl"
+  use_tensorboard: true
+  
+# =============================================================================
+# Evaluation Configuration
+# =============================================================================
+evaluation:
+  holdout_tasks: 100
+  eval_temperature: 0.3
+  metrics:
+    - "accuracy"
+    - "effect_match_rate"
+    - "capability_usage"
+    - "avg_program_length"

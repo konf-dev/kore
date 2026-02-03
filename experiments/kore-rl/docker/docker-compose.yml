@@ -1,0 +1,150 @@
+# Kore-RL Docker Compose
+# ======================
+# 
+# Services:
+# - kore-sandbox: Isolated Kore execution via mount directory (recommended)
+# - kore-runtime-*: HTTP-based execution (legacy)
+#
+# Usage (sandbox):
+#   export KORE_EXCHANGE_DIR=/tmp/kore-exchange
+#   docker compose -f docker/docker-compose.yml up -d kore-sandbox
+#
+# Usage (HTTP runtimes):
+#   docker compose -f docker/docker-compose.yml up -d kore-runtime kore-runtime-2
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # SANDBOX MODE (Recommended)
+  # ==========================================================================
+  # Isolated execution via mount directory - faster than HTTP
+  
+  kore-sandbox:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-rl/docker/Dockerfile.sandbox
+    image: kore-rl-sandbox:latest
+    container_name: kore-sandbox
+    
+    # Mount exchange directory for program/result passing
+    volumes:
+      - ${KORE_EXCHANGE_DIR:-/tmp/kore-exchange}:/mnt/exchange
+    
+    # Network: bridge for internet access, but no host access
+    network_mode: bridge
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    
+    environment:
+      - KORE_CAPABILITIES=${KORE_CAPABILITIES:-all}
+      - KORE_MAX_STEPS=${KORE_MAX_STEPS:-100000}
+      - KORE_TIMEOUT=${KORE_TIMEOUT:-5}
+      - MAX_WORKERS=${MAX_WORKERS:-16}
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import json; exit(0 if json.load(open('/mnt/exchange/status.json')).get('ready') else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # HTTP MODE (Legacy)
+  # ==========================================================================
+  # REST API for program execution - more overhead but easier debugging
+  
+  kore-runtime:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-rl/docker/Dockerfile.runtime
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kore-runtime-2:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-rl/docker/Dockerfile.runtime
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  kore-runtime-3:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-rl/docker/Dockerfile.runtime
+    ports:
+      - "8082:8080"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  kore-runtime-4:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-rl/docker/Dockerfile.runtime
+    ports:
+      - "8083:8080"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # Training container (optional - can run on host with GPU)
+  # trainer:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.trainer
+  #   volumes:
+  #     - ./checkpoints:/app/checkpoints
+  #     - ./training:/app/training
+  #     - ~/.cache/huggingface:/root/.cache/huggingface
+  #   depends_on:
+  #     - kore-runtime
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]

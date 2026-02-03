@@ -109,7 +109,7 @@ condition [ then-branch ] [ else-branch ] if
 
 ## 4. Complete Tool Reference
 
-### 4.1 Stack Operations (9 tools)
+### 4.1 Stack Operations (7 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -118,17 +118,21 @@ condition [ then-branch ] [ else-branch ] if
 | `swap` | `(a b -- b a)` | Swap top two |
 | `over` | `(a b -- a b a)` | Copy second to top |
 | `rot` | `(a b c -- b c a)` | Rotate top three |
-| `nip` | `(a b -- b)` | Remove second |
-| `tuck` | `(a b -- b a b)` | Copy top below second |
 | `depth` | `( -- n)` | Push stack depth |
-| `dip` | `(a q -- a)` | Execute quote under top |
+| `dip` | `(a q -- ... a)` | Execute quote under top |
+
+**Composed** (not primitives):
+| Tool | Definition | Description |
+|------|------------|-------------|
+| `nip` | `swap drop` | Remove second |
+| `tuck` | `swap over` | Copy top below second |
 
 **Linearity constraints:**
 - `dup`: Rejects linear/affine values
 - `drop`: Rejects linear values
 - `over`: Rejects linear/affine values
 
-### 4.2 Arithmetic (7 tools)
+### 4.2 Arithmetic (6 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -138,18 +142,24 @@ condition [ then-branch ] [ else-branch ] if
 | `div` | `(a b -- quot)` | Division (a / b) |
 | `mod` | `(a b -- rem)` | Modulo (a % b) |
 | `neg` | `(a -- -a)` | Negation |
-| `abs` | `(a -- |a|)` | Absolute value |
 
-### 4.3 Comparison (6 tools)
+**Note**: `abs` can be composed: `dup 0 lt [ neg ] when`
 
+### 4.3 Comparison (2 primitives + 4 composed)
+
+**Primitives:**
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `eq` | `(a b -- bool)` | Equal |
-| `neq` | `(a b -- bool)` | Not equal |
 | `lt` | `(a b -- bool)` | Less than |
-| `lte` | `(a b -- bool)` | Less or equal |
-| `gt` | `(a b -- bool)` | Greater than |
-| `gte` | `(a b -- bool)` | Greater or equal |
+
+**Composed** (from primitives):
+| Tool | Definition | Description |
+|------|------------|-------------|
+| `neq` | `eq not` | Not equal |
+| `gt` | `swap lt` | Greater than |
+| `lte` | `gt not` | Less or equal |
+| `gte` | `lt not` | Greater or equal |
 
 ### 4.4 Logic (3 tools)
 
@@ -178,25 +188,25 @@ condition [ then-branch ] [ else-branch ] if
 | `to-text` | `(a -- text)` | Convert to text |
 | `to-bool` | `(a -- bool)` | Convert to bool |
 
-### 4.6 List Operations (13 tools)
+### 4.6 List Operations (9 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `list` | `(n a₁..aₙ -- list)` | Create list from N items |
 | `unlist` | `(list -- a₁..aₙ)` | Explode list onto stack |
 | `list-len` | `(list -- n)` | Get length |
-| `list-get` | `(list n -- item)` | Get item at index |
+| `list-get` | `(list n -- item)` | Get item at index (clones, not for linear) |
 | `list-set` | `(list n val -- list')` | Set item at index |
 | `list-push` | `(list val -- list')` | Append item |
 | `list-pop` | `(list -- list' item)` | Remove and return last |
-| `list-first` | `(list -- item)` | Get first item |
-| `list-last` | `(list -- item)` | Get last item |
 | `list-reverse` | `(list -- list')` | Reverse list |
 | `list-concat` | `(list₁ list₂ -- list')` | Concatenate |
 | `list-slice` | `(list start end -- list')` | Get slice |
 | `list-take` | `(list n -- list' item)` | Move item out (linear-safe) |
 
-### 4.7 Map Operations (8 tools)
+**Note**: `list-first` = `0 list-get`, `list-last` = `dup list-len 1 sub list-get`
+
+### 4.7 Map Operations (6 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -207,9 +217,10 @@ condition [ then-branch ] [ else-branch ] if
 | `map-has` | `(map key -- bool)` | Check key exists |
 | `map-keys` | `(map -- list)` | Get all keys |
 | `map-vals` | `(map -- list)` | Get all values |
-| `map-take` | `(map key -- map' val)` | Move value out (linear-safe) |
 
-### 4.8 String Operations (16 tools)
+**Note**: `map-take` for linear values planned but use `map-get` + `map-del` for now
+
+### 4.8 String Operations (13 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -223,36 +234,34 @@ condition [ then-branch ] [ else-branch ] if
 | `str-replace` | `(s old new -- s')` | Replace all occurrences |
 | `str-starts` | `(s prefix -- bool)` | Check prefix |
 | `str-ends` | `(s suffix -- bool)` | Check suffix |
-| `str-upper` | `(s -- s')` | To uppercase |
-| `str-lower` | `(s -- s')` | To lowercase |
 | `str-trim` | `(s -- s')` | Trim whitespace |
 | `char-code` | `(char -- n)` | Character to code point |
 | `code-char` | `(n -- char)` | Code point to character |
 
-### 4.9 Control Flow (10 tools)
+**Note**: `str-upper`, `str-lower` planned but not yet implemented
+
+### 4.9 Control Flow (8 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `call` | `(q -- ...)` | Execute quote |
 | `if` | `(cond then else -- ...)` | Conditional |
-| `when` | `(cond q -- )` | Execute if true |
-| `unless` | `(cond q -- )` | Execute if false |
 | `times` | `(n q -- ...)` | Repeat N times |
 | `while` | `(cond-q body-q -- )` | While loop |
 | `loop` | `(q -- )` | Infinite loop (until break) |
 | `try` | `(q -- result)` | Try, catch errors |
 | `fail` | `(msg -- )` | Raise error |
-| `unwrap` | `(result -- val)` | Unwrap or propagate error |
+| `spawn` | `(q caps -- handle)` | Create sandboxed context |
 
-### 4.10 Definition Tools (5 tools)
+**Composed**: `when` = `[ ] if`, `unless` = `swap [ ] if`, `unwrap` = `dup is-error [ fail ] when`
+
+### 4.10 Definition Tools (3 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `def` | `(val name -- )` | Define word |
 | `words` | `( -- list)` | List all defined words |
 | `meta` | `(name -- map)` | Get tool metadata |
-| `meta!` | `(name key val -- )` | Set metadata field |
-| `defined?` | `(name -- bool)` | Check if word exists |
 
 ### 4.11 Combinators (4 tools)
 
@@ -263,17 +272,33 @@ condition [ then-branch ] [ else-branch ] if
 | `fold` | `(list init q -- result)` | Reduce list |
 | `each` | `(list q -- )` | Execute for each (no result) |
 
-### 4.12 I/O Tools (6 tools) [Requires capabilities]
+### 4.12 I/O Tools [Requires capabilities]
 
-| Tool | Stack Effect | IO Effect | Description |
-|------|--------------|-----------|-------------|
+| Tool | Stack Effect | Capability | Description |
+|------|--------------|------------|-------------|
 | `print` | `(val -- )` | io | Print without newline |
 | `println` | `(val -- )` | io | Print with newline |
+| `read-line` | `( -- text)` | io | Read line from stdin |
+| `log` | `(val level -- )` | io | Log with level |
 | `fs-read` | `(path -- text)` | fs | Read file |
 | `fs-write` | `(path text -- )` | fs | Write file |
+| `fs-append` | `(path text -- )` | fs | Append to file |
 | `fs-exists` | `(path -- bool)` | fs | Check file exists |
+| `fs-list` | `(path -- list)` | fs | List directory |
+| `fs-rm` | `(path -- )` | fs | Remove file |
+| `fs-mkdir` | `(path -- )` | fs | Create directory |
+| `http-get` | `(url -- resp)` | net | HTTP GET |
+| `http-post` | `(url body -- resp)` | net | HTTP POST |
+| `http-request` | `(req -- resp)` | net | Full HTTP request |
 | `json-parse` | `(text -- val)` | pure | Parse JSON |
 | `json-encode` | `(val -- text)` | pure | Encode to JSON |
+| `env-get` | `(name -- val)` | env | Get env variable |
+| `env-set` | `(name val -- )` | env | Set env variable |
+| `exec` | `(cmd args -- code)` | process | Execute command |
+| `pid` | `( -- n)` | process | Get process ID |
+| `cwd` | `( -- path)` | process | Current directory |
+| `args` | `( -- list)` | process | Command line args |
+| `exit` | `(code -- )` | process | Exit with code |
 
 ### 4.13 Linear Type Tools (7 tools)
 
@@ -309,59 +334,72 @@ condition [ then-branch ] [ else-branch ] if
 | `now` | `( -- timestamp)` | time | Current time |
 | `sleep` | `(ms -- )` | time | Sleep milliseconds |
 
-### 4.16 Tensor Tools (21 tools)
+### 4.16 Tensor Tools (32 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
-| `tensor-from-list` | `(list -- tensor)` | Create from list |
-| `tensor-to-list` | `(tensor -- list)` | Convert to list |
+| `tensor-from-list` | `(list -- tensor)` | Create from nested list |
+| `tensor-unwrap` | `(tensor -- list)` | Convert to nested list |
 | `tensor-zeros` | `(shape -- tensor)` | Zeros tensor |
 | `tensor-ones` | `(shape -- tensor)` | Ones tensor |
+| `tensor-rand` | `(shape -- tensor)` | Random uniform [0,1) |
 | `tensor-randn` | `(shape seed -- tensor)` | Random normal |
-| `tensor-shape` | `(tensor -- shape)` | Get shape |
+| `tensor-shape` | `(tensor -- shape)` | Get shape list |
+| `tensor-rank` | `(tensor -- n)` | Get rank (dimensions) |
+| `tensor-size` | `(tensor -- n)` | Total element count |
+| `tensor-get` | `(tensor indices -- val)` | Get element |
+| `tensor-set` | `(tensor indices val -- tensor')` | Set element |
+| `tensor-copy` | `(tensor -- tensor')` | Deep copy |
 | `tensor-add` | `(t₁ t₂ -- t)` | Element-wise add |
 | `tensor-sub` | `(t₁ t₂ -- t)` | Element-wise subtract |
 | `tensor-mul` | `(t₁ t₂ -- t)` | Element-wise multiply |
-| `tensor-div` | `(t₁ t₂ -- t)` | Element-wise divide |
+| `tensor-neg` | `(tensor -- tensor')` | Negate all elements |
+| `tensor-scale` | `(tensor scalar -- tensor')` | Scalar multiply |
+| `tensor-dot` | `(v₁ v₂ -- scalar)` | Dot product |
 | `tensor-matmul` | `(A B rows cols -- C)` | Matrix multiply |
 | `tensor-matmul-t` | `(A B rows cols -- C)` | Matmul with transpose |
 | `tensor-outer` | `(v₁ v₂ -- matrix)` | Outer product |
-| `tensor-scale` | `(tensor scalar -- tensor')` | Scalar multiply |
 | `tensor-sum` | `(tensor -- scalar)` | Sum all elements |
 | `tensor-mean` | `(tensor -- scalar)` | Mean of elements |
 | `tensor-max` | `(tensor -- scalar)` | Maximum element |
-| `tensor-min` | `(tensor -- scalar)` | Minimum element |
 | `tensor-argmax` | `(tensor -- index)` | Index of maximum |
+| `tensor-clip` | `(tensor min max -- tensor')` | Clip to range |
 | `tensor-softmax` | `(tensor -- tensor')` | Softmax |
+| `tensor-sigmoid` | `(tensor -- tensor')` | Sigmoid activation |
 | `tensor-relu` | `(tensor -- tensor')` | ReLU activation |
 | `tensor-relu-bwd` | `(tensor grad -- grad')` | ReLU gradient |
 | `tensor-log` | `(tensor -- tensor')` | Element-wise log |
 | `tensor-exp` | `(tensor -- tensor')` | Element-wise exp |
 
-### 4.17 Capability/Resource Tools (8 tools)
+### 4.17 Capability/Resource Tools (11 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
-| `cap-has` | `(cap -- bool)` | Check capability |
-| `cap-get` | `( -- capset)` | Get current caps |
+| `cap-list` | `( -- list)` | List all capabilities |
+| `cap-has` | `(cap -- bool)` | Check if capability held |
+| `cap-fs` | `(path -- cap)` | Create filesystem cap |
+| `cap-net` | `(host -- cap)` | Create network cap |
 | `cap-attenuate` | `(cap subset -- cap')` | Reduce capabilities |
 | `cap-leq` | `(cap₁ cap₂ -- bool)` | Check ≤ relation |
 | `cap-join` | `(cap₁ cap₂ -- cap')` | Union (∨) |
 | `cap-meet` | `(cap₁ cap₂ -- cap')` | Intersection (∧) |
-| `res-has` | `(amount resource -- bool)` | Check resource |
+| `res-has` | `(amount resource -- bool)` | Check resource amount |
+| `res-add` | `(res₁ res₂ -- res)` | Combine resources |
 | `res-split` | `(res amount -- res₁ res₂)` | Split resource |
 
-### 4.18 Memory Tools (8 tools)
+### 4.18 Memory Tools (10 tools)
 
 | Tool | Stack Effect | IO Effect | Description |
 |------|--------------|-----------|-------------|
 | `mem-get` | `(key -- val)` | mem | Get from memory |
 | `mem-set` | `(key val -- )` | mem | Set in memory |
 | `mem-del` | `(key -- )` | mem | Delete from memory |
+| `mem-has` | `(key -- bool)` | mem | Check key exists |
 | `mem-keys` | `( -- list)` | mem | List memory keys |
 | `rom-get` | `(key -- val)` | mem | Get from read-only |
 | `rom-set` | `(key val -- )` | mem | Set in ROM (init only) |
 | `rom-del` | `(key -- )` | mem | Delete from ROM |
+| `rom-has` | `(key -- bool)` | mem | Check ROM key exists |
 | `rom-keys` | `( -- list)` | mem | List ROM keys |
 
 ### 4.19 Trace Tools (3 tools)
@@ -371,6 +409,24 @@ condition [ then-branch ] [ else-branch ] if
 | `trace-new` | `( -- trace)` | Create empty trace |
 | `trace-step` | `(name trace -- trace')` | Add step |
 | `trace-fingerprint` | `(trace -- hash)` | Get trace hash |
+
+### 4.20 Linear Type Tools (7 tools)
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `linear-new` | `(val -- linear)` | Wrap as linear (must use exactly once) |
+| `linear-unwrap` | `(linear -- val)` | Consume linear value |
+| `affine-new` | `(val -- affine)` | Wrap as affine (use at most once) |
+| `affine-unwrap` | `(affine -- val)` | Consume affine value |
+| `is-linear` | `(val -- bool)` | Check if linear type |
+| `is-affine` | `(val -- bool)` | Check if affine type |
+| `linearity` | `(val -- sym)` | Get linearity: `none`, `affine`, or `linear` |
+
+### 4.21 Tensor Type Predicate
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `is-tensor` | `(val -- bool)` | Check if tensor type |
 
 ---
 
@@ -541,6 +597,163 @@ comment     = ";", { any except newline }, newline ;
 3. **Affinity**: Affine values cannot be duplicated (can be dropped)
 4. **Capabilities**: IO operations require matching capabilities
 5. **Resources**: spawn consumes allocated resource budget
+
+---
+
+## 11. Meta-Programming & Introspection
+
+### 11.1 Discovering Available Tools
+
+```kore
+; List all defined words
+words  ; => ["factorial" "fib" "square" ...]
+
+; Get metadata about any tool
+"map" meta
+; => { effect: "(2 -- 1)", doc: "Apply quote to each element", io: [] }
+
+; Check if a word exists
+words "http-get" list-find -1 neq  ; => true if http-get available
+```
+
+### 11.2 Verifying Code Before Execution
+
+```kore
+; Parse and validate a signature
+"(a b -- c)" effect-parse
+; => { consumes: 2, produces: 1 }
+
+; Infer effect of arbitrary code
+[ dup mul ] effect-infer
+; => { effect: {consumes: 1, produces: 1}, io: [], pure: true, safe: true }
+
+; Check if code is pure (no IO)
+[ 1 2 add ] pure?  ; => true
+[ "hi" println ] pure?  ; => false
+
+; Validate effect matches expected
+[ swap drop ] effect-infer "effect" map-get
+dup "consumes" map-get 2 eq
+swap "produces" map-get 1 eq
+and  ; => true
+```
+
+### 11.3 Serializing Programs with Annotations
+
+```kore
+; Define a capability-aware function with metadata
+[ 
+  ; Read file, parse JSON, return specific field
+  fs-read json-parse "data" map-get
+] "read-json-field" def
+
+; Attach metadata (convention: use ROM for function metadata)
+{
+  effect: "(path field -- value)"
+  capabilities: ["fs"]
+  doc: "Read JSON file and extract field"
+  version: "1.0"
+} "read-json-field:meta" rom-set
+
+; Later retrieve
+"read-json-field:meta" rom-get
+```
+
+### 11.4 Self-Verification Pattern
+
+```kore
+; Before defining, verify the code does what we expect
+: verified-square ( n -- n² )
+  ; First, test our implementation
+  [ dup mul ] 
+  dup effect-infer "effect" map-get
+  dup "consumes" map-get 1 eq
+  swap "produces" map-get 1 eq
+  and
+  [ call ] [ drop "effect mismatch" fail ] if
+;
+
+; Or inline test
+5 verified-square 25 eq [ "test passed" ] [ "test failed" fail ] if
+```
+
+### 11.5 Accessing External Resources
+
+```kore
+; When uncertain about implementation, fetch documentation
+"https://docs.kore.dev/api/tensor" http-get 
+json-parse "examples" map-get
+
+; Search for usage patterns
+"https://api.kore.dev/search" 
+{ query: "tensor matmul example" } json-encode
+http-post json-parse
+
+; Cache results for reuse
+dup "tensor-matmul-examples" mem-set
+```
+
+### 11.6 Capability Serialization for Sandboxed Execution
+
+```kore
+; Create a restricted capability set
+"fs" cap-fs "/tmp/sandbox" cap-attenuate
+"net" cap-net "api.example.com" cap-attenuate
+cap-join  ; combined caps
+
+; Spawn sandboxed execution with serialized capabilities
+[ 
+  ; This code runs with only /tmp/sandbox fs and api.example.com net
+  "/tmp/sandbox/input.json" fs-read
+  json-parse process-data json-encode
+  "https://api.example.com/submit" swap http-post
+] swap spawn
+
+; The capability set can be serialized for later use
+{ 
+  fs: ["/tmp/sandbox"]
+  net: ["api.example.com"]
+  spawn: false
+  exec: false
+} "sandbox-profile" rom-set
+```
+
+---
+
+## 12. Training Curriculum Notes
+
+> *This section describes capabilities progressively unlocked during RL training.*
+
+### Phase 1: Core Stack & Arithmetic
+- Stack manipulation: `dup`, `drop`, `swap`, `rot`, `over`
+- Arithmetic: `add`, `sub`, `mul`, `div`, `mod`
+- Basic types and literals
+
+### Phase 2: Control Flow & Definitions
+- Conditionals: `if`, `when`, `unless`
+- Loops: `times`, `while`
+- Definitions: `def`, named functions
+
+### Phase 3: Data Structures
+- Lists: creation, access, manipulation
+- Maps: creation, get/set, iteration
+- Combinators: `map`, `filter`, `fold`
+
+### Phase 4: Introspection & Verification
+- `words`, `meta` - discover available tools
+- `effect-infer`, `pure?` - verify code properties
+- Self-testing patterns
+
+### Phase 5: I/O & Capabilities
+- File system: `fs-read`, `fs-write`
+- Network: `http-get`, `http-post`
+- Capability awareness: `cap-has`, `cap-attenuate`
+
+### Phase 6: Advanced Patterns
+- Fetch documentation when uncertain
+- Serialize capability profiles
+- Spawn sandboxed workers
+- Linear type handling
 
 ---
 
