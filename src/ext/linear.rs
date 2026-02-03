@@ -427,4 +427,88 @@ mod tests {
         // All values consumed successfully
         assert_eq!(result.len(), 3);
     }
+
+    // === Handle Affinity Tests ===
+
+    #[tokio::test]
+    async fn test_handle_is_affine() {
+        use crate::value::{Handle, HandleKind};
+        
+        let handle = Value::Handle(Handle {
+            kind: HandleKind::File,
+            id: "test.txt".into(),
+        });
+        
+        assert!(handle.is_affine(), "Handles should be affine");
+        assert!(handle.is_non_duplicable(), "Handles should not be duplicable");
+        assert!(!handle.is_linear(), "Handles are not fully linear");
+    }
+
+    #[tokio::test]
+    async fn test_handle_cannot_dup() {
+        use crate::value::{Handle, HandleKind};
+        
+        let mut ctx = Context::new();
+        crate::core::register_core(&mut ctx).await;
+        
+        // Create a handle value directly on stack
+        let mut stack = Stack::new();
+        stack.push(Value::Handle(Handle {
+            kind: HandleKind::File,
+            id: "test.txt".into(),
+        })).unwrap();
+        
+        let ops = vec![Op::call("dup")];
+        let result = execute(&ops, stack, ctx).await;
+        
+        assert!(result.is_err(), "dup on handle should fail");
+        match result {
+            Err(Error::LinearDuplicate(_)) => (), // Expected
+            Err(e) => panic!("Expected LinearDuplicate error, got: {:?}", e),
+            Ok(_) => panic!("Expected error but got success"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_can_drop() {
+        use crate::value::{Handle, HandleKind};
+        
+        let mut ctx = Context::new();
+        crate::core::register_core(&mut ctx).await;
+        
+        // Create a handle value directly on stack
+        let mut stack = Stack::new();
+        stack.push(Value::Handle(Handle {
+            kind: HandleKind::Connection,
+            id: "db://localhost".into(),
+        })).unwrap();
+        
+        let ops = vec![Op::call("drop")];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        assert_eq!(result.depth(), 0, "Handle should be droppable (affine, not linear)");
+    }
+
+    #[tokio::test]
+    async fn test_handle_linearity_check() {
+        use crate::value::{Handle, HandleKind};
+        
+        let mut ctx = Context::new();
+        crate::core::register_core(&mut ctx).await;
+        {
+            let mut dict = ctx.dict.write().await;
+            register(&mut dict);
+        }
+        
+        let mut stack = Stack::new();
+        stack.push(Value::Handle(Handle {
+            kind: HandleKind::Secret,
+            id: "api-key".into(),
+        })).unwrap();
+        
+        let ops = vec![Op::call("linearity")];
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        assert_eq!(result.values()[0].as_text().unwrap(), "affine");
+    }
 }

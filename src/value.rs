@@ -136,14 +136,23 @@ impl Value {
     }
 
     /// Check if this is an affine value (cannot be duplicated but CAN be discarded)
+    /// Handles are inherently affine - resources should not be aliased
     pub fn is_affine(&self) -> bool {
-        matches!(self, Value::Ext(e) if e.kind == ext::AFFINE)
+        match self {
+            Value::Handle(_) => true,  // Handles are affine by nature
+            Value::Ext(e) if e.kind == ext::AFFINE => true,
+            _ => false,
+        }
     }
 
     /// Check if this value has linear semantics (cannot be duplicated)
-    /// Returns true for both LINEAR and AFFINE values
+    /// Returns true for LINEAR, AFFINE, and Handle values
     pub fn is_non_duplicable(&self) -> bool {
-        matches!(self, Value::Ext(e) if e.kind == ext::LINEAR || e.kind == ext::AFFINE)
+        match self {
+            Value::Handle(_) => true,  // Handles cannot be duplicated
+            Value::Ext(e) if e.kind == ext::LINEAR || e.kind == ext::AFFINE => true,
+            _ => false,
+        }
     }
 
     /// Check if this is a tensor value
