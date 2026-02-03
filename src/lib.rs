@@ -82,11 +82,13 @@ pub mod value;
 // Verification and analysis
 pub mod types;
 pub mod analyzer;
+pub mod effects;
 pub mod lookahead;
 pub mod stdlib;
 
 // Re-export effect types
 pub use types::{Effect, Type};
+pub use effects::EffectSet;
 
 // Re-export algebra types
 pub use algebra::{Cap, CapSet, Res, Trace, TraceStep};

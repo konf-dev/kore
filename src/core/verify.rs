@@ -10,7 +10,11 @@
 //! | effect-parse | (sig -- effect) | Parse effect from signature |
 //! | effect-net | (effect -- n) | Get net stack change |
 //! | effect-valid? | (effect depth -- bool) | Check if effect valid at depth |
+//! | effect-infer | (quote -- analysis) | Static analysis of quote |
+//! | io-effects | (quote -- list) | Get IO effects of quote |
+//! | pure? | (quote -- bool) | Check if quote is pure |
 
+use crate::analyzer;
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
 use crate::stack::Stack;
@@ -98,6 +102,76 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ).with_doc("Create effect from consume/produce counts"));
+
+    // effect-infer: Static analysis of a quote
+    dict.register(Tool::native(
+        "effect-infer",
+        "(code:Quote -- analysis:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let ops = stack.pop()?.into_quote()?;
+                let analysis = analyzer::analyze(&ops);
+                
+                // Build result map
+                let mut result = IndexMap::new();
+                result.insert("effect".into(), effect_to_value(analysis.effect));
+                result.insert("io".into(), Value::List(
+                    analysis.io_effects.to_list().iter()
+                        .map(|s| Value::Text(s.to_string()))
+                        .collect()
+                ));
+                result.insert("pure".into(), Value::Bool(analysis.is_pure()));
+                result.insert("errors".into(), Value::List(
+                    analysis.errors.iter()
+                        .map(|e| Value::Text(e.message.clone()))
+                        .collect()
+                ));
+                result.insert("warnings".into(), Value::List(
+                    analysis.warnings.iter()
+                        .map(|w| Value::Text(w.message.clone()))
+                        .collect()
+                ));
+                result.insert("safe".into(), Value::Bool(!analysis.has_errors()));
+                
+                stack.push(Value::Map(result))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Statically analyze a quote: stack effect, IO effects, safety"));
+
+    // io-effects: Get list of IO effects for a quote
+    dict.register(Tool::native(
+        "io-effects",
+        "(code:Quote -- effects:List)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let ops = stack.pop()?.into_quote()?;
+                let analysis = analyzer::analyze(&ops);
+                
+                let effects: Vec<Value> = analysis.io_effects.to_list().iter()
+                    .map(|s| Value::Text(s.to_string()))
+                    .collect();
+                
+                stack.push(Value::List(effects))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Get IO effects as a list: fs, net, spawn, time, io, env, exec, mem"));
+
+    // pure?: Check if a quote is pure (no IO effects)
+    dict.register(Tool::native(
+        "pure?",
+        "(code:Quote -- is_pure:Bool)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let ops = stack.pop()?.into_quote()?;
+                let analysis = analyzer::analyze(&ops);
+                
+                stack.push(Value::Bool(analysis.is_pure()))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Check if code is pure (no IO effects)"));
 }
 
 /// Convert Value (Map) to Effect

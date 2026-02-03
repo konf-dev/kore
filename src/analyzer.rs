@@ -3,6 +3,7 @@
 //! Analyzes Kore programs to detect stack errors before execution:
 //! - Underflows: consuming more than available
 //! - Unbalanced conditionals: if-branches with different effects  
+//! - IO Effects: which capabilities a program requires
 //!
 //! Uses the Effect algebra from types.rs for correct composition.
 //!
@@ -21,7 +22,15 @@
 //! Effect composition: `compose((a,b), (c,d)) = if b >= c then (a, b-c+d) else (a+c-b, d)`
 //! 
 //! This formula is proven correct and implemented in types.rs.
+//!
+//! ## IO Effect Inference
+//!
+//! Effects form a join-semilattice: effects(A ; B) = effects(A) ∪ effects(B)
+//! 
+//! The analyzer tracks which capabilities a program will require at runtime,
+//! enabling sandboxing verification without execution.
 
+use crate::effects::EffectSet;
 use crate::op::Op;
 use crate::types::Effect;
 use crate::value::Value;
@@ -30,8 +39,10 @@ use std::collections::HashMap;
 /// Result of analyzing a program's stack effect
 #[derive(Debug, Clone)]
 pub struct Analysis {
-    /// Computed effect of the program
+    /// Computed stack effect of the program
     pub effect: Effect,
+    /// IO effects the program may perform
+    pub io_effects: EffectSet,
     /// Any errors found
     pub errors: Vec<AnalysisError>,
     /// Any warnings (not errors, but suspicious)
@@ -54,6 +65,16 @@ impl Analysis {
     pub fn ok(effect: Effect) -> Self {
         Self {
             effect,
+            io_effects: EffectSet::pure(),
+            errors: vec![],
+            warnings: vec![],
+        }
+    }
+
+    pub fn with_effects(effect: Effect, io_effects: EffectSet) -> Self {
+        Self {
+            effect,
+            io_effects,
             errors: vec![],
             warnings: vec![],
         }
@@ -61,6 +82,11 @@ impl Analysis {
 
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
+    }
+
+    /// Check if the program is pure (no IO effects)
+    pub fn is_pure(&self) -> bool {
+        self.io_effects.is_pure()
     }
 }
 
@@ -78,12 +104,15 @@ pub fn analyze(ops: &[Op]) -> Analysis {
 struct Analyzer {
     /// User-defined tools and their effects
     user_defs: HashMap<String, Effect>,
+    /// User-defined tools and their IO effects
+    user_io_effects: HashMap<String, EffectSet>,
 }
 
 impl Analyzer {
     fn new() -> Self {
         Self {
             user_defs: HashMap::new(),
+            user_io_effects: HashMap::new(),
         }
     }
     
@@ -97,15 +126,16 @@ impl Analyzer {
                     (&ops[i], &ops[i + 1], &ops[i + 2]) 
                 {
                     if def_name == "def" {
-                        let effect = if let Value::Quote(quote_ops) = value {
-                            // Function: infer its effect
-                            self.infer_effect(quote_ops)
+                        let (effect, io_effects) = if let Value::Quote(quote_ops) = value {
+                            // Function: infer its stack effect and IO effects
+                            (self.infer_effect(quote_ops), self.infer_io_effects(quote_ops))
                         } else {
-                            // Constant: pushes 1 value
-                            Effect::push()
+                            // Constant: pushes 1 value, pure
+                            (Effect::push(), EffectSet::pure())
                         };
                         
                         self.user_defs.insert(name.clone(), effect);
+                        self.user_io_effects.insert(name.clone(), io_effects);
                         i += 3;
                         continue;
                     }
@@ -154,6 +184,7 @@ impl Analyzer {
     fn analyze_ops(&mut self, ops: &[Op], start_pos: usize) -> Analysis {
         let mut depth: i32 = 0;
         let mut min_depth: i32 = 0;
+        let mut io_effects = EffectSet::pure();
         let mut errors = vec![];
         let mut warnings = vec![];
 
@@ -174,8 +205,13 @@ impl Analyzer {
             }
             
             match &ops[i] {
-                Op::Push(_) => {
+                Op::Push(value) => {
                     depth += 1;
+                    // Recurse into quotes to find nested effects
+                    if let Value::Quote(inner_ops) = value {
+                        let inner_effects = self.infer_io_effects(inner_ops);
+                        io_effects = io_effects.union(&inner_effects);
+                    }
                 }
                 Op::Call(name) => {
                     if let Some(eff) = self.get_effect(name) {
@@ -198,6 +234,10 @@ impl Analyzer {
                         });
                         depth += 1; // Assume pushes 1
                     }
+                    
+                    // Track IO effects for this tool
+                    let tool_effects = self.get_io_effects(name);
+                    io_effects = io_effects.union(&tool_effects);
                 }
             }
             i += 1;
@@ -208,9 +248,40 @@ impl Analyzer {
 
         Analysis {
             effect: Effect::new(consumes, produces),
+            io_effects,
             errors,
             warnings,
         }
+    }
+
+    /// Get IO effects for a tool
+    fn get_io_effects(&self, name: &str) -> EffectSet {
+        // User definitions first
+        if let Some(e) = self.user_io_effects.get(name) {
+            return e.clone();
+        }
+        
+        // Built-in effects
+        EffectSet::for_tool(name)
+    }
+
+    /// Infer IO effects from a sequence of ops
+    fn infer_io_effects(&self, ops: &[Op]) -> EffectSet {
+        let mut effects = EffectSet::pure();
+        
+        for op in ops {
+            match op {
+                Op::Push(Value::Quote(inner_ops)) => {
+                    effects = effects.union(&self.infer_io_effects(inner_ops));
+                }
+                Op::Call(name) => {
+                    effects = effects.union(&self.get_io_effects(name));
+                }
+                _ => {}
+            }
+        }
+        
+        effects
     }
 
     /// Get effect for a tool
@@ -338,10 +409,24 @@ impl Analyzer {
             "effect-net" => (1, 1),
             "effect-valid?" => (2, 1),
             "effect-new" => (2, 1),
+            "effect-infer" => (1, 1),
+            "io-effects" => (1, 1),
+            "pure?" => (1, 1),
             
             // Combinators
             "map" | "filter" | "each" => (2, 1),
             "fold" => (3, 1),
+            
+            // Linear types
+            "linear-new" | "linear-unwrap" | "affine-new" | "affine-unwrap" => (1, 1),
+            "is-linear" | "is-affine" => (1, 1),
+            "linearity" => (1, 1),
+            
+            // List linear-safe operations
+            "list-take" => (2, 2),  // list n -- list' item
+            
+            // Map linear-safe operations  
+            "map-take" => (2, 2),   // map key -- map' val
             
             _ => return None,
         };
@@ -374,6 +459,13 @@ pub fn format_analysis(analysis: &Analysis) -> String {
         "Effect: {} (net: {:+})\n",
         analysis.effect, analysis.effect.net()
     ));
+    
+    // Display IO effects
+    if analysis.is_pure() {
+        out.push_str("IO: pure\n");
+    } else {
+        out.push_str(&format!("IO: {}\n", analysis.io_effects));
+    }
     
     out
 }
@@ -454,4 +546,94 @@ mod tests {
         let drop = Effect::new(1, 0);
         assert_eq!(dup.compose(drop), Effect::new(1, 1));
     }
-}
+
+    // === IO Effect Inference Tests ===
+
+    #[test]
+    fn test_pure_program() {
+        // Pure computation: no IO effects
+        let ops = vec![
+            Op::Push(Value::Int(1)),
+            Op::Push(Value::Int(2)),
+            Op::Call("add".into()),
+        ];
+        let result = analyze(&ops);
+        assert!(result.is_pure());
+    }
+
+    #[test]
+    fn test_io_effect_print() {
+        let ops = vec![
+            Op::Push(Value::Text("hello".into())),
+            Op::Call("println".into()),
+        ];
+        let result = analyze(&ops);
+        assert!(!result.is_pure());
+        assert!(result.io_effects.io);
+        assert!(!result.io_effects.fs);
+    }
+
+    #[test]
+    fn test_io_effect_fs() {
+        let ops = vec![
+            Op::Push(Value::Text("/tmp/test".into())),
+            Op::Call("fs-read".into()),
+        ];
+        let result = analyze(&ops);
+        assert!(!result.is_pure());
+        assert!(result.io_effects.fs);
+    }
+
+    #[test]
+    fn test_io_effect_time() {
+        let ops = vec![
+            Op::Call("now".into()),
+        ];
+        let result = analyze(&ops);
+        assert!(!result.is_pure());
+        assert!(result.io_effects.time);
+    }
+
+    #[test]
+    fn test_io_effects_combine() {
+        // Multiple different effects
+        let ops = vec![
+            Op::Call("now".into()),           // time
+            Op::Call("drop".into()),
+            Op::Push(Value::Text("hi".into())),
+            Op::Call("println".into()),       // io
+        ];
+        let result = analyze(&ops);
+        assert!(result.io_effects.time);
+        assert!(result.io_effects.io);
+        assert!(!result.io_effects.fs);
+    }
+
+    #[test]
+    fn test_io_effects_in_quote() {
+        // Effects inside a quote are detected
+        let ops = vec![
+            Op::Push(Value::Quote(vec![
+                Op::Push(Value::Text("file.txt".into())),
+                Op::Call("fs-read".into()),
+            ])),
+        ];
+        let result = analyze(&ops);
+        assert!(result.io_effects.fs);
+    }
+
+    #[test]
+    fn test_io_effects_user_defined() {
+        // User-defined tool with IO effects
+        let ops = vec![
+            Op::Push(Value::Quote(vec![
+                Op::Push(Value::Text("log".into())),
+                Op::Call("println".into()),
+            ])),
+            Op::Push(Value::Text("log-it".into())),
+            Op::Call("def".into()),
+            Op::Call("log-it".into()),
+        ];
+        let result = analyze(&ops);
+        assert!(result.io_effects.io);
+    }}
