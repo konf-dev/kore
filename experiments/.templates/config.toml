@@ -1,0 +1,33 @@
+# Experiment Configuration
+# Copy this to your experiment directory and customize
+
+[experiment]
+id = "{{ID}}"
+name = "{{NAME}}"
+version = "0.1.0"
+
+[requirements]
+kore_version = ">=2.0"
+rust_version = ">=1.75"
+hardware = []  # e.g., ["gpu:nvidia", "ram:16gb"]
+
+[parameters]
+# Experiment-specific parameters go here
+# param1 = "value"
+# param2 = 42
+
+[baselines]
+# Define baseline configurations
+# [baselines.python]
+# command = "python baseline.py"
+# timeout = 60
+
+[metrics]
+# Define what to measure
+primary = []      # e.g., ["latency_ms", "accuracy"]
+secondary = []    # e.g., ["memory_mb", "throughput"]
+
+[output]
+results_dir = "results"
+log_level = "info"
+save_artifacts = true
