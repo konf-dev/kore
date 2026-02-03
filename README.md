@@ -365,6 +365,167 @@ Traces form a **monoid**: you can concatenate them but never modify past entries
 
 ---
 
+## Mathematical Foundations: Proof and Verification
+
+Kore's safety guarantees aren't just claims—they're **theorems** with proofs. The implementation includes executable proofs (tests) that verify the mathematical properties hold.
+
+### The Semantic Homomorphism
+
+A Kore program is a sequence of operations. The **meaning** of a program is a function from stack to stack:
+
+$$\llbracket \cdot \rrbracket : \text{Program} \to (\text{Stack} \to \text{Stack})$$
+
+This denotation is a **monoid homomorphism**:
+
+$$\llbracket P_1 \cdot P_2 \rrbracket = \llbracket P_2 \rrbracket \circ \llbracket P_1 \rrbracket$$
+
+**What this means:** The meaning of "do A then B" is exactly "apply A's meaning, then B's meaning." Composition is concatenation. This is the **fundamental theorem of concatenative languages**.
+
+### Capability Lattice: Security Proofs
+
+Capabilities form a **bounded lattice** $(C, \leq, \land, \lor, \bot, \top)$:
+
+| Property | Statement | What it Means |
+|----------|-----------|---------------|
+| **Reflexivity** | $c \leq c$ | Every capability is at least as powerful as itself |
+| **Transitivity** | $a \leq b \land b \leq c \implies a \leq c$ | If A ≤ B and B ≤ C, then A ≤ C |
+| **Bottom** | $\bot \leq c$ | Empty capability set is weakest |
+| **Top** | $c \leq \top$ | Full capability set is strongest |
+| **Meet** | $a \land b \leq a$ | Intersection is weaker than either input |
+| **Join** | $a \leq a \lor b$ | Union is stronger than either input |
+
+**The Critical Security Theorem:**
+
+$$\text{attenuate}(c, \text{mask}) \leq c \quad \text{ALWAYS}$$
+
+*Proof:* Attenuation computes $c \land \text{mask}$. By lattice laws, meet is ≤ both operands. ∎
+
+**Corollary (No Capability Escalation):**
+
+If child is spawned from parent with capabilities $C_p$:
+$$C_{\text{child}} \leq C_{\text{parent}}$$
+
+A child process **cannot** regain capabilities its parent gave away. This is tested with nested spawn scenarios in [formal_proofs.rs](tests/formal_proofs.rs).
+
+### Resource Monoid: Conservation Proofs
+
+Resources form a **commutative monoid** $(R, +, \mathbf{0})$:
+
+| Property | Statement | What it Means |
+|----------|-----------|---------------|
+| **Identity** | $r + \mathbf{0} = r$ | Adding nothing changes nothing |
+| **Commutativity** | $a + b = b + a$ | Order doesn't matter |
+| **Associativity** | $(a + b) + c = a + (b + c)$ | Grouping doesn't matter |
+
+**The Conservation Law:**
+
+$$\text{split}(r, p) = (r_1, r_2) \implies r_1 + r_2 = r$$
+
+*Proof:* Split computes $r_1 = \lfloor r \cdot p \rfloor$ and $r_2 = r - r_1$. By definition, $r_1 + r_2 = r$. ∎
+
+**What this means:** Resources cannot be created from nothing. When you spawn a child with 30% of your resources, you keep exactly 70%. The total is conserved.
+
+**Corollary (Termination):**
+
+If every operation costs positive resources and resources are finite:
+$$\exists n.\ \text{execution terminates after } n \text{ steps}$$
+
+You cannot have infinite loops because resources run out.
+
+### Trace Monoid: Determinism Proofs
+
+Traces form a **monoid** $(\text{Trace}, \cdot, \epsilon)$:
+
+| Property | Statement | What it Means |
+|----------|-----------|---------------|
+| **Identity** | $\tau \cdot \epsilon = \tau$ | Empty trace changes nothing |
+| **Associativity** | $(\tau_1 \cdot \tau_2) \cdot \tau_3 = \tau_1 \cdot (\tau_2 \cdot \tau_3)$ | Grouping doesn't matter |
+| **Faithfulness** | $\text{trace}(f \circ g) = \text{trace}(f) \cdot \text{trace}(g)$ | Trace of composition = composition of traces |
+
+**The Determinism Theorem:**
+
+$$\gamma_0 \to^* \gamma_n \implies \text{trace is unique}$$
+
+*Proof:* Each configuration has at most one successor (deterministic transition). Therefore the trace is uniquely determined by the initial configuration. ∎
+
+**What this means:** Same program + same inputs = same trace. Every execution is reproducible and verifiable.
+
+### Static Effect Analysis
+
+Every tool has a **stack effect signature** $(c, p)$ where $c$ = consumed, $p$ = produced:
+
+$$\text{effect} : \text{Tool} \to (\mathbb{N} \times \mathbb{N})$$
+
+Effects compose algebraically:
+
+$$\text{compose}((a, b), (c, d)) = 
+\begin{cases}
+(a, b - c + d) & \text{if } b \geq c \\
+(a + c - b, d) & \text{otherwise}
+\end{cases}$$
+
+**What this means:** Before running code, you can compute its net stack effect. If a program starts with 3 values and ends needing 5, that's a type error—caught before execution.
+
+```kore
+[ dup mul ] effect-infer      ; → {consumes: 1, produces: 1}
+[ 1 2 add ] effect-infer      ; → {consumes: 0, produces: 1}
+[ drop drop ] effect-infer    ; → {consumes: 2, produces: 0}
+```
+
+### Verification in Practice
+
+The effect system lets you verify code **before running it**:
+
+```kore
+; Check if code is pure (no IO)
+[ 1 2 add ] pure?              ; → true
+[ "file.txt" fs-read ] pure?   ; → false
+
+; Check what IO effects are needed
+[ http-get json-parse ] io-effects   ; → ["net"]
+
+; Validate stack depth
+[ dup dup ] 1 effect-valid?    ; → true (needs 1, produces 3)
+[ drop drop ] 1 effect-valid?  ; → false (needs 2, have 1)
+```
+
+### The Algebraic Optimizer
+
+Stack operations satisfy algebraic identities that enable **automatic simplification**:
+
+| Identity | Equation | What it Means |
+|----------|----------|---------------|
+| **Involution** | $\text{swap} \circ \text{swap} = \text{id}$ | Swap twice = do nothing |
+| **Involution** | $\text{not} \circ \text{not} = \text{id}$ | Not twice = do nothing |
+| **Involution** | $\text{neg} \circ \text{neg} = \text{id}$ | Negate twice = do nothing |
+| **Order 3** | $\text{rot}^3 = \text{id}$ | Rotate three times = do nothing |
+| **Annihilation** | $\text{dup} \circ \text{drop} = \text{id}$ | Duplicate then discard = do nothing |
+
+```kore
+; Before optimization
+[ x swap swap dup drop neg neg ]
+
+; After optimization (mathematically equivalent)
+[ x ]
+```
+
+**Why this matters for AI:** An LLM might generate redundant code. The optimizer simplifies it automatically, using mathematical identities that are **provably correct**.
+
+### Extending the Postulates
+
+The formal foundations extend to advanced features:
+
+| Extension | Mathematical Structure | Postulates Preserved? |
+|-----------|----------------------|----------------------|
+| **Tensors** | Dual numbers, Wengert lists | ✅ Yes (gradient is metadata) |
+| **Probability** | Kleisli arrows over probability monad | ✅ Yes (randomness via seeds) |
+| **Linearity** | Linear logic, affine types | ✅ Yes (refined stack semantics) |
+| **Quantum** | Hilbert spaces, unitary matrices | ✅ Yes (no-cloning enforced) |
+
+Each extension is modeled as an **effect** with a monad or graded monad structure. The key insight: effects are introduced and eliminated by **tools**, so the three postulates are preserved.
+
+---
+
 ## Core Primitives
 
 Kore has ~80 primitives organized by category. Here are the essentials:
