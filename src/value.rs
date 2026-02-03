@@ -155,6 +155,18 @@ impl Value {
         }
     }
 
+    /// Check if this value or any contained value is non-duplicable
+    /// Used to protect list-get, map-get from cloning linear values
+    pub fn contains_non_duplicable(&self) -> bool {
+        match self {
+            Value::Handle(_) => true,
+            Value::Ext(e) if e.kind == ext::LINEAR || e.kind == ext::AFFINE => true,
+            Value::List(items) => items.iter().any(|v| v.contains_non_duplicable()),
+            Value::Map(map) => map.values().any(|v| v.contains_non_duplicable()),
+            _ => false,
+        }
+    }
+
     /// Check if this is a tensor value
     pub fn is_tensor(&self) -> bool {
         matches!(self, Value::Ext(e) if e.kind == ext::TENSOR)

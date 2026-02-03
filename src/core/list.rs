@@ -27,6 +27,8 @@ pub fn register(dict: &mut Dictionary) {
         },
     ));
 
+    // list-get clones - CANNOT be used on lists containing linear/affine values
+    // Use list-take instead for linear values
     dict.register(Tool::native(
         "list-get",
         "(list n -- item)",
@@ -44,7 +46,41 @@ pub fn register(dict: &mut Dictionary) {
                         n, list.len()
                     )));
                 }
+                // Check if item is non-duplicable (would be cloned here)
+                if list[n].is_non_duplicable() {
+                    return Err(Error::LinearDuplicate(format!(
+                        "list-get would clone non-duplicable value at index {}. Use list-take instead.",
+                        n
+                    )));
+                }
                 stack.push(list[n].clone())?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // list-take: MOVES item out of list (safe for linear/affine values)
+    dict.register(Tool::native(
+        "list-take",
+        "(list n -- list' item)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let n = stack.pop()?.as_int()? as usize;
+                let val = stack.pop()?;
+                let mut list = match val {
+                    Value::List(l) => l,
+                    _ => return Err(Error::type_error("list", &val)),
+                };
+                if n >= list.len() {
+                    return Err(Error::Runtime(format!(
+                        "list-take: index {} out of bounds for list of length {}",
+                        n, list.len()
+                    )));
+                }
+                // Remove and return - safe for linear values (no clone)
+                let item = list.remove(n);
+                stack.push(Value::List(list))?;
+                stack.push(item)?;
                 Ok((stack, ctx))
             })
         },
@@ -114,6 +150,7 @@ pub fn register(dict: &mut Dictionary) {
         },
     ));
 
+    // list-slice clones elements - CANNOT contain linear/affine values
     dict.register(Tool::native(
         "list-slice",
         "(list start end -- list')",
@@ -128,6 +165,15 @@ pub fn register(dict: &mut Dictionary) {
                 };
                 let end = end.min(list.len());
                 let start = start.min(end);
+                // Check if any element in slice is non-duplicable
+                for (i, item) in list[start..end].iter().enumerate() {
+                    if item.is_non_duplicable() {
+                        return Err(Error::LinearDuplicate(format!(
+                            "list-slice would clone non-duplicable value at index {}",
+                            start + i
+                        )));
+                    }
+                }
                 stack.push(Value::List(list[start..end].to_vec()))?;
                 Ok((stack, ctx))
             })

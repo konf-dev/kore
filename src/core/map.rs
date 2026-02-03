@@ -1,16 +1,17 @@
-//! Map primitives (6)
+//! Map primitives (7)
 //!
 //! Operations on Map values that require internal access.
 //! These cannot be composed from other primitives.
 //!
 //! | Tool | Signature | Description |
 //! |------|-----------|-------------|
-//! | map-get | (map key -- val) | Get value by key |
+//! | map-get | (map key -- val) | Get value by key (clones - rejects linear) |
+//! | map-take | (map key -- map' val) | Take value by key (moves - linear-safe) |
 //! | map-set | (map key val -- map') | Set key-value pair |
 //! | map-del | (map key -- map') | Delete key |
 //! | map-has | (map key -- bool) | Check if key exists |
 //! | map-keys | (map -- list) | Get all keys |
-//! | map-vals | (map -- list) | Get all values |
+//! | map-vals | (map -- list) | Get all values (clones - rejects linear) |
 
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
@@ -20,6 +21,8 @@ use crate::value::Value;
 
 /// Register all map primitives
 pub fn register(dict: &mut Dictionary) {
+    // map-get clones - CANNOT be used if value is linear/affine
+    // Use map-take instead for linear values
     dict.register(Tool::native(
         "map-get",
         "(map key -- val)",
@@ -28,9 +31,40 @@ pub fn register(dict: &mut Dictionary) {
                 let key = stack.pop()?.into_text()?;
                 let map = stack.pop()?.into_map()?;
                 match map.get(&key) {
-                    Some(val) => stack.push(val.clone())?,
+                    Some(val) => {
+                        // Check if value is non-duplicable (would be cloned here)
+                        if val.is_non_duplicable() {
+                            return Err(Error::LinearDuplicate(format!(
+                                "map-get would clone non-duplicable value at key '{}'. Use map-take instead.",
+                                key
+                            )));
+                        }
+                        stack.push(val.clone())?;
+                    }
                     None => {
                         return Err(Error::Runtime(format!("map-get: key '{}' not found", key)))
+                    }
+                }
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // map-take: MOVES value out of map (safe for linear/affine values)
+    dict.register(Tool::native(
+        "map-take",
+        "(map key -- map' val)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let key = stack.pop()?.into_text()?;
+                let mut map = stack.pop()?.into_map()?;
+                match map.shift_remove(&key) {
+                    Some(val) => {
+                        stack.push(Value::Map(map))?;
+                        stack.push(val)?;
+                    }
+                    None => {
+                        return Err(Error::Runtime(format!("map-take: key '{}' not found", key)))
                     }
                 }
                 Ok((stack, ctx))
@@ -93,12 +127,22 @@ pub fn register(dict: &mut Dictionary) {
         },
     ));
 
+    // map-vals clones ALL values - CANNOT be used if any value is linear/affine
     dict.register(Tool::native(
         "map-vals",
         "(map -- list)",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let map = stack.pop()?.into_map()?;
+                // Check if any value is non-duplicable
+                for (key, val) in map.iter() {
+                    if val.is_non_duplicable() {
+                        return Err(Error::LinearDuplicate(format!(
+                            "map-vals would clone non-duplicable value at key '{}'",
+                            key
+                        )));
+                    }
+                }
                 let vals: Vec<Value> = map.values().cloned().collect();
                 stack.push(Value::List(vals))?;
                 Ok((stack, ctx))

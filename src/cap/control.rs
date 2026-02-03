@@ -21,6 +21,7 @@ pub fn register(dict: &mut Dictionary) {
     //   - Create fresh stack with just i
     //   - Execute quote
     //   - Push results back to main stack
+    // NOTE: Results are MOVED (not cloned) so linear values are safe
     dict.register(Tool::native(
         "times",
         "(n:Int f:Quote -- )",
@@ -33,9 +34,9 @@ pub fn register(dict: &mut Dictionary) {
                     let mut iter_stack = Stack::new();
                     iter_stack.push(Value::Int(i))?;
                     let (result_stack, _) = execute(&quote, iter_stack, ctx.clone()).await?;
-                    // Pass through results to main stack
-                    for v in result_stack.values() {
-                        stack.push(v.clone())?;
+                    // Move results to main stack (linear-safe: no clone needed)
+                    for v in result_stack.into_values() {
+                        stack.push(v)?;
                     }
                 }
                 
