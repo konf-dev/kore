@@ -58,6 +58,9 @@ pub mod core;
 // Capability tools: OS, network, storage
 pub mod cap;
 
+// Extension tools: tensor, fiber, linear, distribution
+pub mod ext;
+
 // Legacy builtins (to be removed)
 pub mod builtins;
 
@@ -99,4 +102,5 @@ pub use value::{ErrorValue, Handle, HandleKind, Value};
 // Registration functions
 pub use core::register_core;
 pub use cap::register_cap;
+pub use ext::register_ext;
 pub use builtins::register_builtins;
