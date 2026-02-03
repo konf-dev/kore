@@ -73,6 +73,20 @@ def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str]:
     result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
     return result.returncode, result.stdout + result.stderr
 
+def is_container_running(name: str) -> bool:
+    """Check if a Docker container is running"""
+    if not name:
+        return False
+    code, out = run_cmd(f"docker ps -q -f name=^{name}$")
+    return bool(out.strip())
+
+def is_container_exists(name: str) -> bool:
+    """Check if a Docker container exists (running or stopped)"""
+    if not name:
+        return False
+    code, out = run_cmd(f"docker ps -aq -f name=^{name}$")
+    return bool(out.strip())
+
 def get_env():
     """Load environment variables"""
     env_file = KORE_ROOT / ".env"
@@ -92,23 +106,29 @@ async def index():
 @app.get("/api/status")
 async def get_status():
     """Get current experiment status"""
-    # Check if containers are running
-    kore_running = False
-    baseline_running = False
+    # Actually check Docker container states
+    kore_running = is_container_running(state.kore_container)
+    baseline_running = is_container_running(state.baseline_container)
+    kore_exists = is_container_exists(state.kore_container)
+    baseline_exists = is_container_exists(state.baseline_container)
     
-    if state.kore_container:
-        code, out = run_cmd(f"docker ps -q -f name={state.kore_container}")
-        kore_running = bool(out.strip())
-    
-    if state.baseline_container:
-        code, out = run_cmd(f"docker ps -q -f name={state.baseline_container}")
-        baseline_running = bool(out.strip())
+    # Sync state with actual Docker state
+    if state.running:
+        if not kore_exists and not baseline_exists:
+            # Containers were removed externally
+            state.running = False
+            state.paused = False
+        elif not kore_running and not baseline_running and kore_exists:
+            # Containers exist but not running = paused
+            state.paused = True
     
     return {
         "running": state.running,
         "paused": state.paused,
         "kore_running": kore_running,
         "baseline_running": baseline_running,
+        "kore_container": state.kore_container,
+        "baseline_container": state.baseline_container,
         "current_task": state.current_task,
         "task_history": state.task_history,
         "run_id": state.run_id
@@ -174,11 +194,34 @@ async def start_experiment(req: StartRequest):
     
     await broadcast_log("Baseline agent started", "baseline")
     
+    # Verify containers are actually running
+    await asyncio.sleep(1)  # Give Docker a moment
+    kore_ok = is_container_running(state.kore_container)
+    baseline_ok = is_container_running(state.baseline_container)
+    
+    if not kore_ok or not baseline_ok:
+        # Get logs to see what went wrong
+        kore_logs = run_cmd(f"docker logs {state.kore_container} 2>&1")[1] if not kore_ok else ""
+        baseline_logs = run_cmd(f"docker logs {state.baseline_container} 2>&1")[1] if not baseline_ok else ""
+        error_msg = f"Containers failed to start. Kore: {kore_ok}, Baseline: {baseline_ok}"
+        if kore_logs:
+            error_msg += f"\nKore logs: {kore_logs[-500:]}"
+        if baseline_logs:
+            error_msg += f"\nBaseline logs: {baseline_logs[-500:]}"
+        await broadcast_log(error_msg, "error")
+        raise HTTPException(500, error_msg)
+    
     state.running = True
     state.paused = False
     state.task_history = []
+    state.chat_history = {"kore": [], "baseline": []}  # Clear chat history on new experiment
     
-    return {"status": "started", "run_id": state.run_id}
+    return {
+        "status": "started", 
+        "run_id": state.run_id,
+        "kore_running": kore_ok,
+        "baseline_running": baseline_ok
+    }
 
 @app.post("/api/pause")
 async def pause_experiment():
@@ -188,15 +231,31 @@ async def pause_experiment():
     
     await broadcast_log("Pausing experiment...", "system")
     
+    kore_stopped = False
+    baseline_stopped = False
+    
     if state.kore_container:
-        run_cmd(f"docker stop {state.kore_container}")
+        code, out = run_cmd(f"docker stop {state.kore_container}")
+        kore_stopped = code == 0
     if state.baseline_container:
-        run_cmd(f"docker stop {state.baseline_container}")
+        code, out = run_cmd(f"docker stop {state.baseline_container}")
+        baseline_stopped = code == 0
+    
+    # Verify they actually stopped
+    kore_running = is_container_running(state.kore_container)
+    baseline_running = is_container_running(state.baseline_container)
+    
+    if kore_running or baseline_running:
+        await broadcast_log(f"Warning: Some containers still running. Kore: {kore_running}, Baseline: {baseline_running}", "error")
     
     state.paused = True
     await broadcast_log("Experiment paused - containers stopped", "system")
     
-    return {"status": "paused"}
+    return {
+        "status": "paused",
+        "kore_stopped": not kore_running,
+        "baseline_stopped": not baseline_running
+    }
 
 @app.post("/api/resume")
 async def resume_experiment():
@@ -211,22 +270,49 @@ async def resume_experiment():
     if state.baseline_container:
         run_cmd(f"docker start {state.baseline_container}")
     
+    await asyncio.sleep(1)  # Give Docker a moment
+    
+    # Verify they actually started
+    kore_running = is_container_running(state.kore_container)
+    baseline_running = is_container_running(state.baseline_container)
+    
+    if not kore_running or not baseline_running:
+        await broadcast_log(f"Warning: Some containers failed to start. Kore: {kore_running}, Baseline: {baseline_running}", "error")
+    
     state.paused = False
     await broadcast_log("Experiment resumed", "system")
     
-    return {"status": "resumed"}
+    return {
+        "status": "resumed",
+        "kore_running": kore_running,
+        "baseline_running": baseline_running
+    }
 
 @app.post("/api/stop")
 async def stop_experiment():
     """Stop and clean up experiment"""
     await broadcast_log("Stopping experiment...", "system")
     
+    kore_removed = False
+    baseline_removed = False
+    
     if state.kore_container:
-        run_cmd(f"docker rm -f {state.kore_container}")
-        state.kore_container = None
+        code, out = run_cmd(f"docker rm -f {state.kore_container}")
+        kore_removed = code == 0
+        if kore_removed:
+            state.kore_container = None
     if state.baseline_container:
-        run_cmd(f"docker rm -f {state.baseline_container}")
-        state.baseline_container = None
+        code, out = run_cmd(f"docker rm -f {state.baseline_container}")
+        baseline_removed = code == 0
+        if baseline_removed:
+            state.baseline_container = None
+    
+    # Verify removal
+    kore_exists = is_container_exists(state.kore_container) if state.kore_container else False
+    baseline_exists = is_container_exists(state.baseline_container) if state.baseline_container else False
+    
+    if kore_exists or baseline_exists:
+        await broadcast_log(f"Warning: Some containers still exist. Kore: {kore_exists}, Baseline: {baseline_exists}", "error")
     
     state.running = False
     state.paused = False
@@ -234,7 +320,11 @@ async def stop_experiment():
     
     await broadcast_log("Experiment stopped", "system")
     
-    return {"status": "stopped"}
+    return {
+        "status": "stopped",
+        "kore_removed": not kore_exists,
+        "baseline_removed": not baseline_exists
+    }
 
 @app.post("/api/task")
 async def send_task(req: TaskRequest):
@@ -271,13 +361,24 @@ async def send_task(req: TaskRequest):
 @app.get("/api/logs/{agent}")
 async def get_logs(agent: str, lines: int = 50):
     """Get recent logs from an agent"""
-    if agent == "kore" and state.kore_container:
-        code, out = run_cmd(f"docker logs --tail {lines} {state.kore_container} 2>&1")
-        return {"logs": out}
-    elif agent == "baseline" and state.baseline_container:
-        code, out = run_cmd(f"docker logs --tail {lines} {state.baseline_container} 2>&1")
-        return {"logs": out}
-    return {"logs": "No container running"}
+    container = None
+    if agent == "kore":
+        container = state.kore_container
+    elif agent == "baseline":
+        container = state.baseline_container
+    
+    if not container:
+        return {"logs": f"No {agent} container configured", "error": True}
+    
+    # Check if container exists
+    if not is_container_exists(container):
+        return {"logs": f"Container {container} does not exist", "error": True}
+    
+    code, out = run_cmd(f"docker logs --tail {lines} {container} 2>&1")
+    if code != 0:
+        return {"logs": f"Error getting logs: {out}", "error": True}
+    
+    return {"logs": out if out.strip() else "(no output yet)", "error": False, "container": container}
 
 @app.get("/api/files/{agent}")
 async def get_files(agent: str):

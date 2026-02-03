@@ -265,72 +265,131 @@
 
         // Status update
         async function updateStatus() {
-            const status = await api('status');
-            const badge = document.getElementById('status-badge');
-            const dot = badge.querySelector('.status-dot');
-            const text = badge.querySelector('span:last-child');
-            
-            dot.className = 'status-dot';
-            if (status.running && !status.paused) {
-                dot.classList.add('status-running');
-                text.textContent = `Running (${status.run_id || 'unknown'})`;
-            } else if (status.paused) {
-                dot.classList.add('status-paused');
-                text.textContent = 'Paused';
-            } else {
-                dot.classList.add('status-stopped');
-                text.textContent = 'Stopped';
-            }
+            try {
+                const status = await api('status');
+                const badge = document.getElementById('status-badge');
+                const dot = badge.querySelector('.status-dot');
+                const text = badge.querySelector('span:last-child');
+                
+                dot.className = 'status-dot';
+                if (status.running && !status.paused) {
+                    dot.classList.add('status-running');
+                    const koreIcon = status.kore_running ? '🟢' : '🔴';
+                    const baseIcon = status.baseline_running ? '🟢' : '🔴';
+                    text.textContent = `Running ${koreIcon}K ${baseIcon}B (${status.run_id || 'unknown'})`;
+                } else if (status.paused) {
+                    dot.classList.add('status-paused');
+                    text.textContent = 'Paused';
+                } else {
+                    dot.classList.add('status-stopped');
+                    text.textContent = 'Stopped';
+                }
 
-            document.getElementById('btn-start').disabled = status.running && !status.paused;
-            document.getElementById('btn-pause').disabled = !status.running || status.paused;
-            document.getElementById('btn-resume').disabled = !status.paused;
-            document.getElementById('btn-stop').disabled = !status.running;
-            document.getElementById('btn-send').disabled = !status.running || status.paused;
+                document.getElementById('btn-start').disabled = status.running && !status.paused;
+                document.getElementById('btn-pause').disabled = !status.running || status.paused;
+                document.getElementById('btn-resume').disabled = !status.paused;
+                document.getElementById('btn-stop').disabled = !status.running;
+                document.getElementById('btn-send').disabled = !status.running || status.paused;
 
-            // Update task history
-            if (status.task_history && status.task_history.length > 0) {
-                const historyDiv = document.getElementById('task-history');
-                historyDiv.innerHTML = status.task_history.map((t, i) => `
-                    <div class="bg-gray-900 rounded p-2 text-xs">
-                        <div class="text-gray-400 mb-1">#${i+1} - ${new Date(t.sent_at).toLocaleTimeString()}</div>
-                        <div class="text-white mb-1">${t.task.substring(0, 50)}${t.task.length > 50 ? '...' : ''}</div>
-                        <div class="flex gap-2">
-                            <span class="${t.kore_done ? 'text-green-400' : 'text-gray-500'}">${t.kore_done ? '✓' : '○'} Kore</span>
-                            <span class="${t.baseline_done ? 'text-blue-400' : 'text-gray-500'}">${t.baseline_done ? '✓' : '○'} Baseline</span>
+                // Update task history
+                if (status.task_history && status.task_history.length > 0) {
+                    const historyDiv = document.getElementById('task-history');
+                    historyDiv.innerHTML = status.task_history.map((t, i) => `
+                        <div class="bg-gray-900 rounded p-2 text-xs">
+                            <div class="text-gray-400 mb-1">#${i+1} - ${new Date(t.sent_at).toLocaleTimeString()}</div>
+                            <div class="text-white mb-1">${t.task.substring(0, 50)}${t.task.length > 50 ? '...' : ''}</div>
+                            <div class="flex gap-2">
+                                <span class="${t.kore_done ? 'text-green-400' : 'text-gray-500'}">${t.kore_done ? '✓' : '○'} Kore</span>
+                                <span class="${t.baseline_done ? 'text-blue-400' : 'text-gray-500'}">${t.baseline_done ? '✓' : '○'} Baseline</span>
+                            </div>
                         </div>
-                    </div>
-                `).reverse().join('');
+                    `).reverse().join('');
+                }
+            } catch (e) {
+                console.error('Status update failed:', e);
             }
         }
 
-        // Experiment controls
+        // Experiment controls with feedback
         async function startExperiment() {
             const model = prompt('Model to use:', 'google/gemini-2.5-flash-preview');
             if (!model) return;
             
-            await api('start', 'POST', { model });
+            const btn = document.getElementById('btn-start');
+            btn.textContent = '⏳ Starting...';
+            btn.disabled = true;
+            
+            try {
+                const result = await api('start', 'POST', { model });
+                if (result.status === 'started') {
+                    showNotification(`✅ Started! Kore: ${result.kore_running ? 'OK' : 'FAIL'}, Baseline: ${result.baseline_running ? 'OK' : 'FAIL'}`, 'success');
+                    startPolling();
+                }
+            } catch (e) {
+                showNotification(`❌ Start failed: ${e.message}`, 'error');
+            }
+            btn.textContent = '▶ Start';
             updateStatus();
-            startPolling();
         }
 
         async function pauseExperiment() {
-            await api('pause', 'POST');
+            const btn = document.getElementById('btn-pause');
+            btn.textContent = '⏳ Pausing...';
+            
+            try {
+                const result = await api('pause', 'POST');
+                showNotification(`⏸ Paused. Kore stopped: ${result.kore_stopped}, Baseline stopped: ${result.baseline_stopped}`, 'info');
+                stopPolling();
+            } catch (e) {
+                showNotification(`❌ Pause failed: ${e.message}`, 'error');
+            }
+            btn.textContent = '⏸ Pause';
             updateStatus();
-            stopPolling();
         }
 
         async function resumeExperiment() {
-            await api('resume', 'POST');
+            const btn = document.getElementById('btn-resume');
+            btn.textContent = '⏳ Resuming...';
+            
+            try {
+                const result = await api('resume', 'POST');
+                showNotification(`▶ Resumed. Kore: ${result.kore_running ? 'OK' : 'FAIL'}, Baseline: ${result.baseline_running ? 'OK' : 'FAIL'}`, 'success');
+                startPolling();
+            } catch (e) {
+                showNotification(`❌ Resume failed: ${e.message}`, 'error');
+            }
+            btn.textContent = '⏵ Resume';
             updateStatus();
-            startPolling();
         }
 
         async function stopExperiment() {
             if (!confirm('Stop experiment and remove containers?')) return;
-            await api('stop', 'POST');
+            
+            const btn = document.getElementById('btn-stop');
+            btn.textContent = '⏳ Stopping...';
+            
+            try {
+                const result = await api('stop', 'POST');
+                showNotification(`⏹ Stopped. Kore removed: ${result.kore_removed}, Baseline removed: ${result.baseline_removed}`, 'info');
+                stopPolling();
+            } catch (e) {
+                showNotification(`❌ Stop failed: ${e.message}`, 'error');
+            }
+            btn.textContent = '⏹ Stop';
             updateStatus();
-            stopPolling();
+        }
+        
+        function showNotification(message, type = 'info') {
+            const colors = {
+                success: 'bg-green-600',
+                error: 'bg-red-600',
+                info: 'bg-blue-600'
+            };
+            const notif = document.createElement('div');
+            notif.className = `fixed top-4 right-4 ${colors[type]} text-white px-4 py-2 rounded shadow-lg z-50 animate-pulse`;
+            notif.textContent = message;
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 4000);
         }
 
         // Task sending
@@ -350,11 +409,28 @@
 
         // Logs
         async function refreshLogs(agent) {
-            const data = await api(`logs/${agent}?lines=100`);
-            document.getElementById(`logs-${agent}`).textContent = data.logs || 'No logs';
-            // Auto-scroll to bottom
-            const el = document.getElementById(`logs-${agent}`);
-            el.scrollTop = el.scrollHeight;
+            try {
+                const data = await api(`logs/${agent}?lines=100`);
+                const el = document.getElementById(`logs-${agent}`);
+                if (data.error) {
+                    el.textContent = `⚠️ ${data.logs}`;
+                    el.classList.add('text-yellow-400');
+                } else {
+                    el.textContent = data.logs || '(no output yet)';
+                    el.classList.remove('text-yellow-400');
+                    if (data.container) {
+                        // Show container name in header
+                        const header = el.parentElement.querySelector('.font-medium');
+                        if (header && !header.textContent.includes('(')) {
+                            header.textContent += ` (${data.container})`;
+                        }
+                    }
+                }
+                // Auto-scroll to bottom
+                el.scrollTop = el.scrollHeight;
+            } catch (e) {
+                document.getElementById(`logs-${agent}`).textContent = `Error: ${e.message}`;
+            }
         }
 
         // Files
@@ -451,11 +527,16 @@
             addChatMessage(agent, 'user', message);
             input.value = '';
             
-            // Send to API
-            await api('chat', 'POST', { message, agent });
-            
-            // Start polling for response
-            startChatPolling(agent);
+            try {
+                // Send to API
+                const result = await api('chat', 'POST', { message, agent });
+                if (result.status === 'sent') {
+                    // Start polling for response
+                    startChatPolling(agent);
+                }
+            } catch (e) {
+                addChatMessage(agent, 'assistant', `❌ Error sending message: ${e.message}`);
+            }
         }
 
         function addChatMessage(agent, role, content, logs = null) {
@@ -471,10 +552,16 @@
             msgDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
             
             const bubble = document.createElement('div');
-            bubble.className = `max-w-[80%] rounded-lg p-3 ${isUser ? 'bg-gray-700' : `bg-${color}-900/30 border border-${color}-800`}`;
+            // Use inline styles for dynamic colors since Tailwind purges unused classes
+            const bgColor = isUser ? '#374151' : (agent === 'kore' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(59, 130, 246, 0.1)');
+            const borderColor = isUser ? '' : (agent === 'kore' ? '1px solid #166534' : '1px solid #1e40af');
+            bubble.style.backgroundColor = bgColor;
+            if (borderColor) bubble.style.border = borderColor;
+            bubble.className = 'max-w-[80%] rounded-lg p-3';
             
             const roleLabel = document.createElement('div');
-            roleLabel.className = `text-xs ${isUser ? 'text-gray-400' : `text-${color}-400`} mb-1`;
+            roleLabel.className = 'text-xs mb-1';
+            roleLabel.style.color = isUser ? '#9ca3af' : (agent === 'kore' ? '#22c55e' : '#3b82f6');
             roleLabel.textContent = isUser ? 'You' : (agent === 'kore' ? 'Kore' : 'Baseline');
             
             const contentDiv = document.createElement('div');
@@ -487,7 +574,7 @@
             // Add collapsible logs if present
             if (logs && !isUser) {
                 const logsToggle = document.createElement('button');
-                logsToggle.className = 'text-xs text-gray-500 hover:text-gray-300 mt-2';
+                logsToggle.className = 'text-xs text-gray-500 hover:text-gray-300 mt-2 block';
                 logsToggle.textContent = '▶ Show execution logs';
                 
                 const logsDiv = document.createElement('pre');
@@ -529,20 +616,42 @@
                 container.scrollTop = container.scrollHeight;
             }
             
+            let pollCount = 0;
+            const maxPolls = 120; // 3 minutes max (1.5s * 120)
+            
             // Poll for response
             chatPolling[agent] = setInterval(async () => {
-                const data = await api(`chat/${agent}/response`);
-                if (data.done) {
-                    // Remove typing indicator
+                pollCount++;
+                try {
+                    const data = await api(`chat/${agent}/response`);
+                    
+                    // Update typing indicator with poll count
                     const typing = document.getElementById(`typing-${agent}`);
-                    if (typing) typing.remove();
+                    if (typing) {
+                        typing.querySelector('div').innerHTML = `
+                            <span class="animate-pulse">● ● ●</span> ${agent === 'kore' ? 'Kore' : 'Baseline'} is thinking... (${pollCount}s)
+                        `;
+                    }
                     
-                    // Add response
-                    addChatMessage(agent, 'assistant', data.response, data.logs);
-                    
-                    // Stop polling
-                    clearInterval(chatPolling[agent]);
-                    chatPolling[agent] = null;
+                    if (data.done && data.response) {
+                        // Remove typing indicator
+                        if (typing) typing.remove();
+                        
+                        // Add response
+                        addChatMessage(agent, 'assistant', data.response, data.logs);
+                        
+                        // Stop polling
+                        clearInterval(chatPolling[agent]);
+                        chatPolling[agent] = null;
+                    } else if (pollCount >= maxPolls) {
+                        // Timeout
+                        if (typing) typing.remove();
+                        addChatMessage(agent, 'assistant', '⏰ Timeout waiting for response. Check the Logs tab for details.');
+                        clearInterval(chatPolling[agent]);
+                        chatPolling[agent] = null;
+                    }
+                } catch (e) {
+                    console.error('Poll error:', e);
                 }
             }, 1500);
         }
