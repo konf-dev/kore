@@ -1,0 +1,42 @@
+# Verification Tools
+#
+# Written in Kore, calling the trusted Rust kernel (effect-compose).
+# This is the self-hosting verification system.
+
+# Effect constructors
+# Create identity effect: (0 -- 0)
+[ 0 0 effect-new ] "effect-identity" def
+
+# Create push effect: (0 -- 1)  
+[ 0 1 effect-new ] "effect-push" def
+
+# Create pop effect: (1 -- 0)
+[ 1 0 effect-new ] "effect-pop" def
+
+# Check if two effects are equal
+# (e1 e2 -- bool)
+[
+  swap
+  dup "consumes" map-get rot dup "consumes" map-get rot eq  # compare consumes
+  swap "produces" map-get rot "produces" map-get eq         # compare produces
+  and
+] "effect-eq" def
+
+# Compose a list of effects
+# (effects -- effect)
+[
+  effect-identity swap  # start with identity
+  [ effect-compose ] fold
+] "effect-compose-all" def
+
+# Check if effect is balanced (net = 0)
+# (effect -- bool)
+[ effect-net 0 eq ] "effect-balanced?" def
+
+# Check if effect only pushes (consumes = 0)
+# (effect -- bool)
+[ "consumes" map-get 0 eq ] "effect-push-only?" def
+
+# Check if effect only pops (produces = 0)
+# (effect -- bool)
+[ "produces" map-get 0 eq ] "effect-pop-only?" def

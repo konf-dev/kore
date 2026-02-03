@@ -412,11 +412,11 @@ mod postulates {
         // only contains tools with this signature.
         use kore::core::CORE_PRIMITIVES;
         
-        // All 75 primitives are tools (expanded with combinators + over + dip + type checks + string ops)
+        // All 80 primitives are tools (expanded with verification primitives)
         // 4 execution + 2 definition + 3 error + 7 stack + 6 arithmetic + 2 comparison + 3 logic + 3 data
-        // + 13 string + 8 list + 6 map + 14 type + 4 combinators
-        assert_eq!(CORE_PRIMITIVES.len(), 75, 
-            "We have exactly 75 core primitives");
+        // + 13 string + 8 list + 6 map + 14 type + 4 combinators + 5 verification
+        assert_eq!(CORE_PRIMITIVES.len(), 80, 
+            "We have exactly 80 core primitives");
         
         // Each one is documented with a stack effect signature
         // (verified in FORMAL_ARCHITECTURE.md)

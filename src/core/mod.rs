@@ -60,6 +60,9 @@
 //!
 //! ### Combinators (4)
 //! - `map`, `filter`, `fold`, `each`
+//!
+//! ### Verification (5) - THE TRUSTED KERNEL
+//! - `effect-compose`, `effect-parse`, `effect-net`, `effect-valid?`, `effect-new`
 
 mod arithmetic;
 mod combinators;
@@ -74,6 +77,7 @@ mod map;
 mod stack;
 mod string;
 mod types;
+mod verify;
 
 use crate::context::Context;
 
@@ -122,13 +126,16 @@ pub async fn register_core(ctx: &mut Context) {
     
     // Combinators (4)
     combinators::register(&mut dict);
+    
+    // Verification - THE TRUSTED KERNEL (5)
+    verify::register(&mut dict);
 }
 
 /// Total count of core primitives
-pub const CORE_COUNT: usize = 75;
+pub const CORE_COUNT: usize = 80;
 
 /// All primitive names for introspection
-pub const CORE_PRIMITIVES: [&str; 75] = [
+pub const CORE_PRIMITIVES: [&str; 80] = [
     // Execution (4)
     "call", "spawn", "if", "loop",
     // Definition (2)
@@ -160,4 +167,6 @@ pub const CORE_PRIMITIVES: [&str; 75] = [
     "is-list", "is-map", "is-quote", "unwrap",
     // Combinators (4)
     "map", "filter", "fold", "each",
+    // Verification - THE TRUSTED KERNEL (5)
+    "effect-compose", "effect-parse", "effect-net", "effect-valid?", "effect-new",
 ];

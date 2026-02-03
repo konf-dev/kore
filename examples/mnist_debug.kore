@@ -1,0 +1,94 @@
+# Debug MNIST gradients
+# Check if backprop is working
+
+[784] "N_IN" def
+[128] "N_HID" def
+[10]  "N_OUT" def
+[0.1] "LR" def
+
+# Initialize with fixed seed
+"w1" N_IN N_HID mul 42 tensor-randn 0.05 tensor-scale mem-set
+"b1" N_HID tensor-zeros mem-set
+"w2" N_HID N_OUT mul 43 tensor-randn 0.05 tensor-scale mem-set
+"b2" N_OUT tensor-zeros mem-set
+
+# Load a single sample
+"data/mnist_train.json" fs-read json-parse
+dup "images" map-get 0 list-get tensor-from-list "input" swap mem-set
+"labels" map-get 0 list-get "label" swap mem-set
+
+"Input shape: " print N_IN to-text println
+"Label: " print "label" mem-get to-text println
+"Input sum: " print "input" mem-get tensor-sum to-text println
+"Input max: " print "input" mem-get tensor-max to-text println
+
+# Forward pass
+"=== Forward Pass ===" println
+"w1" mem-get "input" mem-get N_HID N_IN tensor-matmul "b1" mem-get tensor-add
+dup "z1" swap mem-set
+dup tensor-sum to-text "z1 sum: " print println
+tensor-relu
+dup "h1" swap mem-set
+dup tensor-sum to-text "h1 sum: " print println
+
+"w2" mem-get swap N_OUT N_HID tensor-matmul "b2" mem-get tensor-add
+dup "z2" swap mem-set
+dup tensor-sum to-text "z2 sum: " print println
+tensor-softmax
+dup "output" swap mem-set
+"output: " print to-text println
+
+# Check that output sums to 1
+"output" mem-get tensor-sum to-text "output sum: " print println
+
+# Loss
+"output" mem-get tensor-log "label" mem-get tensor-get neg
+to-text "loss: " print println
+
+# Backward pass
+"=== Backward Pass ===" println
+
+# d_out = output - one_hot(label)
+"output" mem-get
+N_OUT tensor-zeros "label" mem-get 1.0 tensor-set
+tensor-sub
+"d_out" swap mem-set
+"d_out: " print "d_out" mem-get to-text println
+"d_out sum: " print "d_out" mem-get tensor-sum to-text println
+
+# dW2 = outer(d_out, h1)
+"d_out" mem-get "h1" mem-get tensor-outer "dW2" swap mem-set
+"dW2 sum: " print "dW2" mem-get tensor-sum to-text println
+
+# Check W2 before update
+"W2 sum before: " print "w2" mem-get tensor-sum to-text println
+
+# W2 -= LR * dW2
+"w2" mem-get "dW2" mem-get LR tensor-scale tensor-sub "w2" swap mem-set
+"W2 sum after: " print "w2" mem-get tensor-sum to-text println
+
+# dB2
+"b2" mem-get "d_out" mem-get LR tensor-scale tensor-sub "b2" swap mem-set
+
+# d_h1 = W2^T @ d_out  
+"w2" mem-get "d_out" mem-get N_OUT N_HID tensor-matmul-t
+"d_h1: " print dup to-text println
+"d_h1 sum: " print dup tensor-sum to-text println
+
+# ReLU backward
+"z1" mem-get swap tensor-relu-bwd
+"d_z1" swap mem-set
+"d_z1 sum: " print "d_z1" mem-get tensor-sum to-text println
+
+# dW1 = outer(d_z1, input)
+"d_z1" mem-get "input" mem-get tensor-outer "dW1" swap mem-set
+"dW1 sum: " print "dW1" mem-get tensor-sum to-text println
+
+# Check W1 before update
+"W1 sum before: " print "w1" mem-get tensor-sum to-text println
+
+# W1 -= LR * dW1
+"w1" mem-get "dW1" mem-get LR tensor-scale tensor-sub "w1" swap mem-set
+"W1 sum after: " print "w1" mem-get tensor-sum to-text println
+
+"Done!" println

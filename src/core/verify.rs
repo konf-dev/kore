@@ -1,0 +1,139 @@
+//! Verification Primitives - The Trusted Mathematical Kernel
+//!
+//! These primitives expose the effect algebra to Kore programs.
+//! They are the ONLY trusted Rust code for verification.
+//! Everything else (analyzer, checker) can be written in Kore.
+//!
+//! | Tool | Signature | Description |
+//! |------|-----------|-------------|
+//! | effect-compose | (e1 e2 -- e3) | Compose two effects |
+//! | effect-parse | (sig -- effect) | Parse effect from signature |
+//! | effect-net | (effect -- n) | Get net stack change |
+//! | effect-valid? | (effect depth -- bool) | Check if effect valid at depth |
+
+use crate::context::{Context, Dictionary};
+use crate::error::Error;
+use crate::stack::Stack;
+use crate::tool::Tool;
+use crate::types::Effect;
+use crate::value::Value;
+use indexmap::IndexMap;
+
+/// Register verification primitives
+pub fn register(dict: &mut Dictionary) {
+    // effect-compose: The mathematical core
+    dict.register(Tool::native(
+        "effect-compose",
+        "(e1:Map e2:Map -- e3:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let e2 = effect_from_value(stack.pop()?)?;
+                let e1 = effect_from_value(stack.pop()?)?;
+                
+                let e3 = e1.compose(e2);
+                
+                stack.push(effect_to_value(e3))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Compose two stack effects using the formula: compose((a,b), (c,d)) = if b >= c then (a, b-c+d) else (a+c-b, d)"));
+
+    // effect-parse: Parse signature string
+    dict.register(Tool::native(
+        "effect-parse",
+        "(sig:Text -- effect:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let v = stack.pop()?;
+                let sig = v.as_text()?;
+                let effect = Effect::parse(sig)
+                    .map_err(|e| Error::Runtime(format!("effect-parse: {}", e)))?;
+                
+                stack.push(effect_to_value(effect))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Parse effect signature like '(a b -- sum)' into effect map"));
+
+    // effect-net: Get net stack change
+    dict.register(Tool::native(
+        "effect-net",
+        "(effect:Map -- n:Int)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let effect = effect_from_value(stack.pop()?)?;
+                stack.push(Value::Int(effect.net() as i64))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Get net stack change: produces - consumes"));
+
+    // effect-valid?: Check if effect is valid at given depth
+    dict.register(Tool::native(
+        "effect-valid?",
+        "(effect:Map depth:Int -- valid:Bool)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let depth = stack.pop()?.as_int()? as u32;
+                let effect = effect_from_value(stack.pop()?)?;
+                
+                stack.push(Value::Bool(effect.is_valid_at(depth)))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Check if effect can execute with given stack depth"));
+
+    // effect-new: Create effect from consumes/produces
+    dict.register(Tool::native(
+        "effect-new",
+        "(consumes:Int produces:Int -- effect:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let produces = stack.pop()?.as_int()? as u32;
+                let consumes = stack.pop()?.as_int()? as u32;
+                
+                let effect = Effect::new(consumes, produces);
+                stack.push(effect_to_value(effect))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Create effect from consume/produce counts"));
+}
+
+/// Convert Value (Map) to Effect
+fn effect_from_value(v: Value) -> Result<Effect, Error> {
+    match v {
+        Value::Map(m) => {
+            let consumes = m.get("consumes")
+                .and_then(|v| v.as_int().ok())
+                .ok_or_else(|| Error::Runtime("effect missing 'consumes' field".into()))?;
+            let produces = m.get("produces")
+                .and_then(|v| v.as_int().ok())
+                .ok_or_else(|| Error::Runtime("effect missing 'produces' field".into()))?;
+            Ok(Effect::new(consumes as u32, produces as u32))
+        }
+        _ => Err(Error::Runtime(format!("expected effect map, got {:?}", v))),
+    }
+}
+
+/// Convert Effect to Value (Map)
+fn effect_to_value(e: Effect) -> Value {
+    let mut m = IndexMap::new();
+    m.insert("consumes".into(), Value::Int(e.consumes as i64));
+    m.insert("produces".into(), Value::Int(e.produces as i64));
+    m.insert("net".into(), Value::Int(e.net() as i64));
+    Value::Map(m)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_effect_roundtrip() {
+        let e = Effect::new(2, 3);
+        let v = effect_to_value(e);
+        let e2 = effect_from_value(v).unwrap();
+        assert_eq!(e, e2);
+    }
+}

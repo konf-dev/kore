@@ -1,0 +1,228 @@
+# MNIST Neural Network - Optimized for Kore
+# ==========================================
+#
+# Optimizations:
+# 1. All state in memory (weights, gradients, intermediates)
+# 2. Minimal stack manipulation
+# 3. Tensor ops do heavy lifting in Rust
+# 4. Inline hot paths to avoid quote overhead
+#
+# Architecture: 784 → 128 (ReLU) → 10 (Softmax)
+# Training: SGD with backpropagation
+#
+# Usage: kore examples/mnist_full.kore
+
+# === Configuration ===
+[784] "N_IN" def
+[128] "N_HID" def
+[10]  "N_OUT" def
+[0.01] "LR" def        # Learning rate
+[20]  "EPOCHS" def
+[500] "SAMPLES_PER_EPOCH" def
+[100] "TEST_SAMPLES" def
+
+# === Initialize Network ===
+"w1" N_IN N_HID mul 42 tensor-randn 0.05 tensor-scale mem-set
+"b1" N_HID tensor-zeros mem-set
+"w2" N_HID N_OUT mul 43 tensor-randn 0.05 tensor-scale mem-set
+"b2" N_OUT tensor-zeros mem-set
+
+# === Forward Pass (stores intermediates in memory) ===
+# ( input -- ) stores: h1, output
+[
+  # z1 = W1 @ input + b1
+  "input" swap mem-set
+  "w1" mem-get "input" mem-get N_HID N_IN tensor-matmul
+  "b1" mem-get tensor-add
+  
+  # h1 = relu(z1)
+  dup tensor-relu
+  "h1" swap mem-set     # Save for backprop
+  "z1" swap mem-set     # Save for ReLU backward
+  
+  # z2 = W2 @ h1 + b2
+  "w2" mem-get "h1" mem-get N_OUT N_HID tensor-matmul
+  "b2" mem-get tensor-add
+  
+  # output = softmax(z2)
+  tensor-softmax
+  "output" swap mem-set
+] "fwd" def
+
+# === Backward Pass (reads from memory, updates weights) ===
+# ( label -- ) uses stored: input, h1, z1, output
+[
+  "label" swap mem-set
+  
+  # d_out = output - one_hot(label)
+  "output" mem-get
+  N_OUT tensor-zeros "label" mem-get 1.0 tensor-set
+  tensor-sub
+  "d_out" swap mem-set
+  
+  # dW2 = outer(d_out, h1)
+  "d_out" mem-get "h1" mem-get tensor-outer
+  # W2 -= LR * dW2
+  "w2" mem-get swap LR tensor-scale tensor-sub
+  "w2" swap mem-set
+  
+  # dB2 = d_out
+  "b2" mem-get "d_out" mem-get LR tensor-scale tensor-sub
+  "b2" swap mem-set
+  
+  # d_h1 = W2^T @ d_out
+  "w2" mem-get "d_out" mem-get N_OUT N_HID tensor-matmul-t
+  
+  # ReLU backward: d_z1 = d_h1 * (z1 > 0 ? 1 : 0)
+  "z1" mem-get swap tensor-relu-bwd
+  "d_z1" swap mem-set
+  
+  # dW1 = outer(d_z1, input)
+  "d_z1" mem-get "input" mem-get tensor-outer
+  # W1 -= LR * dW1
+  "w1" mem-get swap LR tensor-scale tensor-sub
+  "w1" swap mem-set
+  
+  # dB1 = d_z1
+  "b1" mem-get "d_z1" mem-get LR tensor-scale tensor-sub
+  "b1" swap mem-set
+] "bwd" def
+
+# === Training Step ===
+# ( input label -- loss )
+[
+  swap fwd              # Forward pass (stores in memory)
+  "output" mem-get      # Get output
+  over                  # label output label
+  swap tensor-log       # label log(output)
+  swap tensor-get       # log(output)[label]
+  neg                   # loss = -log(output[label])
+  swap bwd              # Backward pass
+] "train" def
+
+# === Evaluation (no backprop) ===
+# ( input label -- correct? )
+[
+  swap                  # label input
+  "w1" mem-get swap N_HID N_IN tensor-matmul
+  "b1" mem-get tensor-add tensor-relu
+  "w2" mem-get swap N_OUT N_HID tensor-matmul
+  "b2" mem-get tensor-add tensor-softmax
+  tensor-argmax         # label pred
+  eq                    # correct?
+] "eval" def
+
+# === Main ===
+"" println
+"╔══════════════════════════════════════════════════════════════╗" println
+"║  MNIST Neural Network (Optimized Kore)                       ║" println  
+"║  784 → 128 (ReLU) → 10 (Softmax) | SGD lr=" print LR to-text print "                 ║" println
+"╚══════════════════════════════════════════════════════════════╝" println
+
+# Load data
+"data/mnist_train.json" fs-exists
+[
+  "" println
+  "Loading training data..." println
+  "data/mnist_train.json" fs-read json-parse
+  dup "images" map-get "train_images" swap mem-set
+  "labels" map-get "train_labels" swap mem-set
+  "train_images" mem-get list-len "n_train" swap mem-set
+  "n_train" mem-get to-text "  Training samples: " swap str-concat println
+  
+  "data/mnist_test.json" fs-read json-parse
+  dup "images" map-get "test_images" swap mem-set
+  "labels" map-get "test_labels" swap mem-set
+  "test_images" mem-get list-len "n_test" swap mem-set
+  "n_test" mem-get to-text "  Test samples: " swap str-concat println
+  "" println
+
+  # === Training Loop ===
+  EPOCHS [
+    dup 1 add "epoch" swap mem-set
+    "epoch" mem-get to-text "Epoch " swap str-concat "..." str-concat println
+    
+    # Track loss and accuracy
+    "epoch_loss" 0.0 mem-set
+    "epoch_correct" 0 mem-set
+    
+    # Train on subset for speed
+    SAMPLES_PER_EPOCH "batch_size" swap mem-set
+    
+    now "start_time" swap mem-set
+    
+    "batch_size" mem-get [
+      "i" over mem-set
+      
+      # Get sample
+      "train_images" mem-get "i" mem-get list-get tensor-from-list
+      "train_labels" mem-get "i" mem-get list-get
+      
+      # Train
+      train
+      
+      # Accumulate loss
+      "epoch_loss" mem-get add "epoch_loss" swap mem-set
+      
+      # Check if correct (after training)
+      "output" mem-get tensor-argmax
+      "label" mem-get eq
+      [ "epoch_correct" mem-get 1 add "epoch_correct" swap mem-set ] [ ] if
+      
+      # Progress every 20 samples
+      "i" mem-get 20 mod 0 eq
+      [ "." print ] [ ] if
+      
+      drop  # drop loop counter
+    ] times
+    # No drop after times - fresh stack pattern means nothing left
+    
+    now "start_time" mem-get sub "elapsed" swap mem-set
+    "" println
+    
+    # Print epoch stats
+    "  Loss: " print 
+    "epoch_loss" mem-get "batch_size" mem-get to-float div
+    to-text print
+    
+    " | Acc: " print
+    "epoch_correct" mem-get to-float "batch_size" mem-get to-float div 100.0 mul
+    to-text print "%"  print
+    
+    " | Time: " print
+    "elapsed" mem-get to-text print "ms" println
+    
+    drop  # drop epoch counter
+  ] times
+  # No drop after times - fresh stack pattern
+  
+  # === Final Evaluation on Test Set ===
+  "" println
+  "Evaluating on test set..." println
+  "test_correct" 0 mem-set
+  
+  TEST_SAMPLES [
+    "i" over mem-set
+    
+    "test_images" mem-get "i" mem-get list-get tensor-from-list
+    "test_labels" mem-get "i" mem-get list-get
+    eval
+    [ "test_correct" mem-get 1 add "test_correct" swap mem-set ] [ ] if
+    drop  # drop loop counter i
+  ] times
+  # No drop after times - fresh stack pattern means nothing left
+  
+  "test_correct" mem-get to-float TEST_SAMPLES to-float div 100.0 mul
+  "" println
+  "╔══════════════════════════════════════════════════════════════╗" println
+  "║  TEST ACCURACY: " print 
+  dup to-text print "%" print
+  dup 80.0 lt [ "  (target: >80%)" print ] [ "  ✓ TARGET MET!" print ] if
+  "           ║" println
+  "╚══════════════════════════════════════════════════════════════╝" println
+  drop
+
+] [
+  "MNIST data not found. Run:" println
+  "  python3 scripts/prepare_mnist.py --samples 5000" println
+] if

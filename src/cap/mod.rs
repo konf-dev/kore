@@ -99,4 +99,7 @@ pub async fn register_cap(ctx: &mut Context) {
     
     // Introspection (3)
     introspect::register(&mut dict);
+    
+    // Extensions: Tensor, Fiber, Linear, Distribution (20+)
+    crate::ext::register_ext(&mut dict);
 }

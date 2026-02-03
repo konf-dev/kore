@@ -24,6 +24,7 @@
 //!
 //! ## Algebraic Foundations
 //!
+//! - **Effect Algebra**: `compose((a,b), (c,d)) = if b >= c then (a, b-c+d) else (a+c-b, d)`
 //! - **[algebra::CapSet]**: Capability lattice with ≤, ∧, ∨, attenuate
 //! - **[algebra::Res]**: Resource monoid with +, split (conservation law)
 //! - **[algebra::Trace]**: Execution traces (monoid under concatenation)
@@ -37,13 +38,13 @@
 //!
 //! ## Architecture
 //!
-//! - **Core** (27 primitives): Irreducible operations in `src/core/`
+//! - **Core** (80 primitives): Irreducible operations in `src/core/`
 //! - **Stdlib**: Composed tools in `stdlib/*.kore`
 //! - **Capability Tools**: External tools requiring permissions in `src/cap/`
 //!
 //! ## Design Principles
 //!
-//! 1. **Minimal**: 2 operations (Push, Call), 10 types, 27 core primitives
+//! 1. **Minimal**: 2 operations (Push, Call), 10 types, 80 core primitives
 //! 2. **Formal**: Built on algebraic structures (lattice, monoid, category)
 //! 3. **Secure**: Capability-based access control, resource conservation
 //! 4. **Composable**: Tools are the only abstraction
@@ -52,7 +53,7 @@
 // Algebraic foundations
 pub mod algebra;
 
-// Core: 57 irreducible primitives
+// Core: 80 irreducible primitives
 pub mod core;
 
 // Capability tools: OS, network, storage
@@ -78,10 +79,14 @@ pub mod storage;
 pub mod tool;
 pub mod value;
 
-// Optional modules
-pub mod effect;
+// Verification and analysis
+pub mod types;
+pub mod analyzer;
 pub mod lookahead;
 pub mod stdlib;
+
+// Re-export effect types
+pub use types::{Effect, Type};
 
 // Re-export algebra types
 pub use algebra::{Cap, CapSet, Res, Trace, TraceStep};

@@ -4,8 +4,10 @@
 //! - REPL: Interactive mode (no args)
 //! - Script: Run a file (kore file.kore)
 //! - Inline: Run code (kore -e 'code')
+//! - Check: Static analysis (kore --check file.kore)
 
 use kore::{Context, Stack, Op, execute};
+use kore::analyzer;
 use kore::builtins::register_builtins;
 use std::env;
 use std::fs;
@@ -24,6 +26,10 @@ async fn main() {
         }
         2 if args[1] == "--help" || args[1] == "-h" => {
             show_help();
+        }
+        _ if args[1] == "--check" && args.len() >= 3 => {
+            // --check <file> - static analysis
+            check_file(&args[2]);
         }
         _ if args[1] == "-e" && args.len() >= 3 => {
             // -e '<code>' - inline execution
@@ -55,12 +61,38 @@ fn show_help() {
     eprintln!("  kore                      Start REPL (interactive mode)");
     eprintln!("  kore <file.kore> [args]   Run a script with arguments");
     eprintln!("  kore -e '<code>'          Run inline code");
+    eprintln!("  kore --check <file.kore>  Static stack analysis (detect errors before running)");
     eprintln!();
     eprintln!("Examples:");
     eprintln!("  kore                           # Start REPL");
     eprintln!("  kore -e '5 3 add'              # => 8");
     eprintln!("  kore examples/ls.kore /tmp     # List /tmp directory");
-    eprintln!("  kore examples/cat.kore file    # Display file contents");
+    eprintln!("  kore --check script.kore       # Check for stack errors");
+}
+
+fn check_file(path: &str) {
+    match fs::read_to_string(path) {
+        Ok(source) => {
+            match Op::parse(&source) {
+                Ok(ops) => {
+                    let analysis = analyzer::analyze(&ops);
+                    print!("{}", analyzer::format_analysis(&analysis));
+                    
+                    if analysis.has_errors() {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Parse error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Error reading {}: {}", path, e);
+            std::process::exit(1);
+        }
+    }
 }
 
 async fn repl() {
@@ -194,8 +226,8 @@ async fn run_script(source: &str) {
         }
     };
     
-    // Setup context with builtins
-    let mut ctx = Context::new();
+    // Setup context with builtins (trusted mode for full access)
+    let mut ctx = Context::trusted();
     register_builtins(&mut ctx).await;
     
     // Execute

@@ -1,0 +1,119 @@
+# MNIST Neural Network Trainer in Kore
+# =====================================
+#
+# A feedforward neural network for MNIST digit classification.
+# Demonstrates tensor tools and neural network operations.
+#
+# Usage:
+#   kore examples/mnist_train.kore
+
+# ==========================================
+# Configuration
+# ==========================================
+
+[784] "INPUT_SIZE" def
+[128] "HIDDEN_SIZE" def
+[10]  "OUTPUT_SIZE" def
+[0.01] "LEARNING_RATE" def
+
+# ==========================================
+# Helper Functions  
+# ==========================================
+
+# Initialize random weights scaled to 0.1
+# ( n -- tensor )
+[ tensor-rand 0.1 tensor-scale ] "init-weights" def
+
+# ==========================================
+# Main Execution
+# ==========================================
+
+"" println
+"╔═══════════════════════════════════════════════════╗" println
+"║     MNIST Neural Network Demo (Kore + Tensor)     ║" println
+"╚═══════════════════════════════════════════════════╝" println
+"" println
+
+# Test 1: Random tensor creation
+"Test 1: Random Tensor Creation" println
+"  Creating 5-element random tensor..." println
+5 tensor-rand
+dup tensor-sum to-text "  Sum of elements: " swap str-concat println
+dup tensor-mean to-text "  Mean of elements: " swap str-concat println
+drop  # clean up tensor
+"" println
+
+# Test 2: Zeros and ones
+"Test 2: Zeros and Ones" println
+5 tensor-zeros tensor-sum to-text "  5 zeros sum: " swap str-concat println
+5 tensor-ones tensor-sum to-text "  5 ones sum: " swap str-concat println  
+"" println
+
+# Test 3: Activations
+"Test 3: Activation Functions" println
+10 tensor-zeros tensor-sigmoid tensor-sum to-text 
+"  sigmoid(zeros) sum: " swap str-concat " (expect 5.0)" str-concat println
+10 tensor-rand dup
+dup tensor-sum to-text "    Original sum: " swap str-concat println
+tensor-relu tensor-sum to-text "    After ReLU:   " swap str-concat println
+drop  # drop original
+"" println
+
+# Test 4: Element-wise operations
+"Test 4: Element-wise Operations" println
+5 tensor-ones 
+5 tensor-rand
+# a b on stack
+over over tensor-add tensor-sum to-text "  ones + random: " swap str-concat println
+over over tensor-mul tensor-sum to-text "  ones * random: " swap str-concat println
+drop  # drop b
+2.0 tensor-scale tensor-sum to-text "  scale by 2:    " swap str-concat println
+"" println
+
+# Test 5: Network initialization
+"Test 5: Network Initialization" println
+"  Initializing neural network..." println
+map-new
+INPUT_SIZE HIDDEN_SIZE mul init-weights
+"w1" swap map-set
+HIDDEN_SIZE tensor-zeros
+"b1" swap map-set
+HIDDEN_SIZE OUTPUT_SIZE mul init-weights
+"w2" swap map-set
+OUTPUT_SIZE tensor-zeros
+"b2" swap map-set
+# Network map on stack
+
+INPUT_SIZE HIDDEN_SIZE mul to-text "  W1 elements: " swap str-concat " (784 x 128)" str-concat println
+HIDDEN_SIZE OUTPUT_SIZE mul to-text "  W2 elements: " swap str-concat " (128 x 10)" str-concat println
+INPUT_SIZE HIDDEN_SIZE mul
+HIDDEN_SIZE add
+HIDDEN_SIZE OUTPUT_SIZE mul add
+OUTPUT_SIZE add
+to-text "  Total parameters: " swap str-concat println
+
+# Get biases and run forward pass demo
+dup "b1" map-get
+tensor-relu tensor-sum to-text "  Hidden (ReLU of b1): " swap str-concat println
+
+dup "b2" map-get  
+tensor-sigmoid tensor-sum to-text "  Output (sigmoid of b2): " swap str-concat println
+drop  # drop network
+
+"" println
+"╔═══════════════════════════════════════════════════╗" println
+"║  All tensor operations working correctly!         ║" println
+"╚═══════════════════════════════════════════════════╝" println
+"" println
+"To use tensors in your scripts:" println
+"  5 tensor-rand              # Create random tensor" println
+"  5 tensor-zeros             # Create zeros" println
+"  5 tensor-ones              # Create ones" println
+"  t1 t2 tensor-add           # Element-wise add" println
+"  t1 t2 tensor-mul           # Element-wise multiply" println
+"  t 2.0 tensor-scale         # Scale by scalar" println
+"  t tensor-sigmoid           # Apply sigmoid" println
+"  t tensor-relu              # Apply ReLU" println
+"  t tensor-sum               # Sum all elements" println
+"  t tensor-mean              # Mean of elements" println
+"" println

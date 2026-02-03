@@ -1,0 +1,262 @@
+# Neural Network with Tensors in Kore
+# ====================================
+#
+# This implements a feedforward neural network using Kore's tensor extension.
+# Much cleaner than the manual vector operations!
+#
+# Usage:
+#   kore examples/nn_tensor.kore
+#
+# Or in REPL:
+#   kore
+#   > "examples/nn_tensor.kore" fs-read call
+
+# ==========================================
+# SECTION 1: Tensor Utilities
+# ==========================================
+
+# Create a tensor from a flat list with shape metadata
+# ( data shape -- tensor )
+[ 
+  "shape" swap 2 list map-new  # Create metadata map
+  swap                          # meta data
+  tensor-from-list              # This ignores our meta for now
+  # TODO: tensor-from-list should accept shape
+] "tensor-create" def
+
+# Element-wise apply function to tensor
+# ( tensor fn -- tensor' )
+[
+  swap tensor-unwrap  # fn data
+  swap map            # Apply fn to each element
+  tensor-from-list    # Wrap back as tensor
+] "tensor-map" def
+
+# ==========================================
+# SECTION 2: Activation Functions (Tensor)
+# ==========================================
+
+# Sigmoid: 1 / (1 + e^(-x))
+# Fast approximation using (1 + x/256)^256
+[ # ( x -- sigmoid(x) )
+  neg                 # -x
+  256.0 div           # -x/256
+  1.0 add             # 1 + (-x/256)
+  dup dup mul mul     # ^4
+  dup dup mul mul     # ^16  
+  dup dup mul mul     # ^64
+  dup dup mul mul     # ^256
+  1.0 swap div        # 1 / e^(-x)
+  1.0 add             # 1 + e^(-x)
+  1.0 swap div        # 1 / (1 + e^(-x))
+] "sigmoid" def
+
+# Sigmoid derivative: s * (1 - s)
+[ # ( s -- s*(1-s) )
+  dup 1.0 swap sub mul
+] "sigmoid-deriv" def
+
+# ReLU: max(0, x)
+[ # ( x -- relu(x) )
+  dup 0.0 lt 
+  [ drop 0.0 ] 
+  [ ] 
+  if
+] "relu" def
+
+# ReLU derivative
+[ # ( x -- 0 or 1 )
+  0.0 lt [ 0.0 ] [ 1.0 ] if
+] "relu-deriv" def
+
+# Apply sigmoid to entire tensor
+[ # ( tensor -- tensor' )
+  [ sigmoid ] tensor-map
+] "tensor-sigmoid" def
+
+# Apply ReLU to entire tensor
+[ # ( tensor -- tensor' )
+  [ relu ] tensor-map
+] "tensor-relu" def
+
+# ==========================================
+# SECTION 3: Neural Network Layer
+# ==========================================
+
+# Layer structure (as a Map):
+# {
+#   "weights": Tensor [out_dim, in_dim]
+#   "biases": Tensor [out_dim]
+#   "activation": "sigmoid" | "relu" | "none"
+# }
+
+# Initialize layer with small random weights
+# ( in_dim out_dim activation -- layer )
+[
+  # activation out_dim in_dim
+  rot rot           # in_dim activation out_dim
+  
+  # Create weight values (0.1 for now, would be random)
+  over over mul     # in_dim activation out_dim total_weights
+  0 list swap       # in_dim activation out_dim weights total
+  [ 0.1 swap list-push ] times
+  tensor-from-list  # in_dim activation out_dim weights_tensor
+  
+  # Create bias values (zeros)
+  rot               # in_dim out_dim weights_tensor activation
+  rot               # in_dim weights_tensor activation out_dim
+  0 list swap       # in_dim weights activation biases out_dim
+  [ 0.0 swap list-push ] times
+  tensor-from-list  # in_dim weights activation biases_tensor
+  
+  # Build layer map
+  map-new
+  "biases" rot map-set
+  "activation" rot map-set  
+  "weights" rot map-set
+  "in_dim" rot map-set
+] "layer-new" def
+
+# Forward pass through layer
+# ( input layer -- output )
+[
+  dup "weights" swap map-get    # input layer weights
+  swap dup "biases" swap map-get  # input weights layer biases
+  swap "activation" swap map-get  # input weights biases activation
+  
+  # Compute: activation(weights · input + biases)
+  rot rot                       # input activation biases weights
+  rot                           # input activation weights biases
+  rot rot rot                   # biases input activation weights
+  swap rot                      # biases weights input activation
+  rot rot                       # biases activation weights input
+  
+  # For now, simple dot product (flattened)
+  tensor-mul                    # biases activation weighted
+  tensor-sum                    # biases activation sum
+  rot                           # activation sum biases
+  tensor-sum add                # activation output
+  
+  # Apply activation
+  swap
+  "sigmoid" eq [ sigmoid ] [ ] if
+] "layer-forward" def
+
+# ==========================================
+# SECTION 4: XOR Demo with Tensors
+# ==========================================
+
+# XOR truth table
+[ 0.0 0.0 ] tensor-from-list "xor-00" def
+[ 0.0 1.0 ] tensor-from-list "xor-01" def
+[ 1.0 0.0 ] tensor-from-list "xor-10" def
+[ 1.0 1.0 ] tensor-from-list "xor-11" def
+
+# Expected outputs
+0.0 "target-00" def
+1.0 "target-01" def
+1.0 "target-10" def
+0.0 "target-11" def
+
+# Simple 2-layer XOR network with pre-trained weights
+# Hidden: 2 neurons, Output: 1 neuron
+
+# Hand-tuned weights that solve XOR
+[ 1.0 1.0 ] tensor-from-list "w1-and" def   # AND-like neuron
+[ 1.0 1.0 ] tensor-from-list "w1-or" def    # OR-like neuron
+[ -2.0 1.0 ] tensor-from-list "w2" def      # XOR combination
+
+-1.5 "b1-and" def
+-0.5 "b1-or" def  
+0.5 "b2" def
+
+# XOR forward pass
+# ( input -- output )
+[
+  # Input tensor
+  dup dup   # input input input
+  
+  # Hidden neuron 1: sigmoid(w·x + b)
+  w1-and tensor-mul tensor-sum b1-and add sigmoid
+  
+  # Hidden neuron 2
+  swap
+  w1-or tensor-mul tensor-sum b1-or add sigmoid
+  
+  # Combine hidden outputs
+  2 list tensor-from-list
+  
+  # Output neuron
+  w2 tensor-mul tensor-sum b2 add sigmoid
+] "xor-net" def
+
+# ==========================================
+# SECTION 5: Training Loop
+# ==========================================
+
+# Mean Squared Error
+# ( predicted target -- loss )
+[ sub dup mul ] "mse" def
+
+# MSE derivative  
+# ( predicted target -- grad )
+[ sub 2.0 mul ] "mse-grad" def
+
+# SGD update: w' = w - lr * grad
+# ( weight grad lr -- weight' )
+[ mul sub ] "sgd-update" def
+
+# Training step (simplified for demo)
+# ( inputs targets lr -- loss )
+[
+  # lr targets inputs
+  rot rot   # inputs lr targets
+  
+  # Would iterate over training examples
+  # For demo, just compute forward pass
+  drop drop
+  
+  # Return dummy loss
+  0.0
+] "train-step" def
+
+# ==========================================
+# SECTION 6: Run Demo
+# ==========================================
+
+"" println
+"===== XOR Neural Network (Tensor Edition) =====" println
+"" println
+
+"Testing XOR with tensor operations:" println
+"" println
+
+"Input [0,0] -> " print
+xor-00 xor-net to-text println
+
+"Input [0,1] -> " print  
+xor-01 xor-net to-text println
+
+"Input [1,0] -> " print
+xor-10 xor-net to-text println
+
+"Input [1,1] -> " print
+xor-11 xor-net to-text println
+
+"" println
+"Expected: ~0, ~1, ~1, ~0" println
+"" println
+
+# Verify tensor operations work
+"Tensor operation tests:" println
+[ 1.0 2.0 3.0 ] tensor-from-list "t1" def
+[ 4.0 5.0 6.0 ] tensor-from-list "t2" def
+
+"t1 = " print t1 println
+"t2 = " print t2 println
+"t1 + t2 = " print t1 t2 tensor-add println
+"t1 * t2 = " print t1 t2 tensor-mul println
+"sum(t1) = " print t1 tensor-sum println
+"mean(t2) = " print t2 tensor-mean println
+"" println
+"Done!" println

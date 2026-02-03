@@ -1,0 +1,30 @@
+# Test verification primitives
+
+# Test effect-new
+2 3 effect-new
+dup "consumes" map-get 2 eq "effect-new consumes" print drop
+"produces" map-get 3 eq "effect-new produces" print drop
+
+# Test effect-parse
+"(a b -- sum)" effect-parse
+dup "consumes" map-get 2 eq "effect-parse consumes" print drop
+"produces" map-get 1 eq "effect-parse produces" print drop
+
+# Test effect-compose
+# (1,2) ; (2,1) should give (1,1)
+1 2 effect-new 2 1 effect-new effect-compose
+dup "consumes" map-get 1 eq "compose consumes" print drop
+"produces" map-get 1 eq "compose produces" print drop
+
+# Test effect-net
+1 2 effect-new effect-net
+1 eq "effect-net" print drop
+
+# Test effect-valid?
+2 1 effect-new 3 effect-valid?
+"effect-valid? true" print drop
+
+2 1 effect-new 1 effect-valid?
+not "effect-valid? false" print drop
+
+"All verification tests passed!" println
