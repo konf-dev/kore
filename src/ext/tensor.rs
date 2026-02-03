@@ -1,6 +1,7 @@
 //! Tensor tools - differentiable multi-dimensional arrays
 //!
 //! Extension tools for tensor operations. All tools follow P1/P2/P3.
+//! Operations automatically track gradients when inputs have requires_grad=true.
 //!
 //! # Tools (25+)
 //!
@@ -10,24 +11,32 @@
 //! | tensor-shape | (tensor -- list) | Get shape as list |
 //! | tensor-rank | (tensor -- n) | Get number of dimensions |
 //! | tensor-size | (tensor -- n) | Get total element count |
-//! | tensor-add | (t1 t2 -- t3) | Element-wise addition |
-//! | tensor-mul | (t1 t2 -- t3) | Element-wise multiplication |
-//! | tensor-matmul | (W x m n -- y) | Matrix-vector multiply (m×n) @ (n) → (m) |
+//! | tensor-add | (t1 t2 -- t3) | Element-wise addition (autodiff) |
+//! | tensor-mul | (t1 t2 -- t3) | Element-wise multiplication (autodiff) |
+//! | tensor-matmul | (W x m n -- y) | Matrix-vector multiply (autodiff) |
 //! | tensor-outer | (a b -- M) | Outer product: (m) × (n) → (m×n) |
 //! | tensor-dot | (t1 t2 -- t3) | Dot product / matrix multiply |
-//! | tensor-sum | (tensor -- n) | Sum all elements |
+//! | tensor-sum | (tensor -- n) | Sum all elements (autodiff) |
 //! | tensor-mean | (tensor -- n) | Mean of all elements |
 //! | tensor-max | (tensor -- n) | Maximum element |
 //! | tensor-argmax | (tensor -- n) | Index of maximum element |
-//! | tensor-softmax | (tensor -- tensor) | Softmax activation |
-//! | tensor-log | (tensor -- tensor) | Element-wise log |
+//! | tensor-softmax | (tensor -- tensor) | Softmax activation (autodiff) |
+//! | tensor-log | (tensor -- tensor) | Element-wise log (autodiff) |
 //! | tensor-unwrap | (tensor -- list) | Extract data as flat list |
+//!
+//! # Automatic Differentiation
+//!
+//! When a tensor has `requires_grad=true`, operations record gradient information:
+//! - `grad_fn`: the operation name (Add, Mul, Sum, etc.)
+//! - `input_ids`: IDs of input tensors for backward traversal
+//! - `saved_tensors`: cached input data needed for gradient computation
 
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
 use crate::stack::Stack;
 use crate::tool::Tool;
 use crate::value::{ext, Value};
+use crate::ext::autodiff::{requires_grad_check, get_tensor_id, tensor_with_grad};
 use indexmap::IndexMap;
 
 /// Register all tensor tools
@@ -146,6 +155,7 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-add: (t1 t2 -- t3)
+    // Autodiff-aware: records gradient info when inputs require gradients
     dict.register(Tool::native(
         "tensor-add",
         "(t1:Tensor t2:Tensor -- t3:Tensor)",
@@ -162,7 +172,25 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let result = elementwise_op(&e1.data, &e2.data, |a, b| a + b)?;
-                let tensor = Value::tensor(result, e1.meta.clone());
+                
+                // Check if either input requires gradient
+                let req_grad = requires_grad_check(&e1.meta) || requires_grad_check(&e2.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info for backward pass
+                    let x_id = get_tensor_id(&e1.meta);
+                    let y_id = get_tensor_id(&e2.meta);
+                    let x_data = flatten(&e1.data);
+                    let y_data = flatten(&e2.data);
+                    let saved = vec![
+                        x_data.iter().map(|v| value_to_f64(v)).collect(),
+                        y_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    tensor_with_grad(result, e1.meta.clone(), "Add", vec![x_id, y_id], saved)
+                } else {
+                    Value::tensor(result, e1.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -170,6 +198,7 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-mul: (t1 t2 -- t3)
+    // Autodiff-aware: records gradient info when inputs require gradients
     dict.register(Tool::native(
         "tensor-mul",
         "(t1:Tensor t2:Tensor -- t3:Tensor)",
@@ -186,7 +215,25 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let result = elementwise_op(&e1.data, &e2.data, |a, b| a * b)?;
-                let tensor = Value::tensor(result, e1.meta.clone());
+                
+                // Check if either input requires gradient
+                let req_grad = requires_grad_check(&e1.meta) || requires_grad_check(&e2.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: d/dx(x*y) = y, d/dy(x*y) = x
+                    let x_id = get_tensor_id(&e1.meta);
+                    let y_id = get_tensor_id(&e2.meta);
+                    let x_data = flatten(&e1.data);
+                    let y_data = flatten(&e2.data);
+                    let saved = vec![
+                        x_data.iter().map(|v| value_to_f64(v)).collect(),
+                        y_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    tensor_with_grad(result, e1.meta.clone(), "Mul", vec![x_id, y_id], saved)
+                } else {
+                    Value::tensor(result, e1.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -194,9 +241,10 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-sum: (tensor -- n)
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-sum",
-        "(tensor:Tensor -- sum:Float)",
+        "(tensor:Tensor -- result:Tensor)",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let t = stack.pop()?;
@@ -210,7 +258,27 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let sum = sum_elements(&ext.data);
-                stack.push(Value::Float(sum))?;
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let result = if req_grad {
+                    // Record gradient info: d/dx(sum(x)) = 1 for all elements
+                    let x_id = get_tensor_id(&ext.meta);
+                    let x_data = flatten(&ext.data);
+                    let saved = vec![
+                        x_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    // Return tensor (not float) so we can track it
+                    let mut meta = IndexMap::new();
+                    meta.insert("shape".to_string(), Value::List(vec![Value::Int(1)]));
+                    tensor_with_grad(Value::List(vec![Value::Float(sum)]), Some(meta), "Sum", vec![x_id], saved)
+                } else {
+                    // Original behavior: return float
+                    Value::Float(sum)
+                };
+                
+                stack.push(result)?;
                 Ok((stack, ctx))
             })
         },
@@ -451,6 +519,7 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-relu: (tensor -- tensor')
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-relu",
         "(tensor:Tensor -- tensor:Tensor)",
@@ -467,7 +536,22 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let result = map_elements(&ext.data, |x| if x > 0.0 { x } else { 0.0 });
-                let tensor = Value::tensor(result, ext.meta.clone());
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: d/dx(relu(x)) = 1 if x > 0 else 0
+                    let x_id = get_tensor_id(&ext.meta);
+                    let x_data = flatten(&ext.data);
+                    let saved = vec![
+                        x_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    tensor_with_grad(result, ext.meta.clone(), "Relu", vec![x_id], saved)
+                } else {
+                    Value::tensor(result, ext.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -585,6 +669,7 @@ pub fn register(dict: &mut Dictionary) {
     // tensor-matmul: (W x m n -- y)
     // Matrix-vector multiply: W is (m*n) flat, x is (n), result is (m)
     // Essential for neural network forward pass
+    // Autodiff-aware: records gradient info when inputs require gradients
     dict.register(Tool::native(
         "tensor-matmul",
         "(W:Tensor x:Tensor m:Int n:Int -- y:Tensor)",
@@ -628,7 +713,26 @@ pub fn register(dict: &mut Dictionary) {
                     })
                     .collect();
                 
-                let tensor = Value::tensor(Value::List(result), None);
+                // Check if either input requires gradient
+                let req_grad = requires_grad_check(&w_ext.meta) || requires_grad_check(&x_ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info for matmul
+                    // dL/dx = W^T @ dL/dy
+                    // dL/dW = dL/dy ⊗ x (outer product)
+                    let w_id = get_tensor_id(&w_ext.meta);
+                    let x_id = get_tensor_id(&x_ext.meta);
+                    let saved = vec![
+                        w_flat.clone(),           // W data
+                        x_flat.clone(),           // x data
+                        vec![m as f64],           // m dimension
+                        vec![n as f64],           // n dimension
+                    ];
+                    tensor_with_grad(Value::List(result), None, "MatMul", vec![w_id, x_id], saved)
+                } else {
+                    Value::tensor(Value::List(result), None)
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -770,6 +874,7 @@ pub fn register(dict: &mut Dictionary) {
 
     // tensor-softmax: (tensor -- tensor)
     // Numerically stable softmax
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-softmax",
         "(tensor:Tensor -- tensor:Tensor)",
@@ -792,11 +897,27 @@ pub fn register(dict: &mut Dictionary) {
                 let exp_vals: Vec<f64> = flat.iter().map(|&x| (x - max).exp()).collect();
                 let sum: f64 = exp_vals.iter().sum();
                 
-                let result: Vec<Value> = exp_vals.iter()
-                    .map(|&x| Value::Float(x / sum))
+                let softmax_vals: Vec<f64> = exp_vals.iter()
+                    .map(|&x| x / sum)
                     .collect();
                 
-                let tensor = Value::tensor(Value::List(result), ext.meta.clone());
+                let result: Vec<Value> = softmax_vals.iter()
+                    .map(|&x| Value::Float(x))
+                    .collect();
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: softmax Jacobian-vector product
+                    // We save the output (softmax values) for the backward pass
+                    let x_id = get_tensor_id(&ext.meta);
+                    let saved = vec![softmax_vals]; // Save the softmax output
+                    tensor_with_grad(Value::List(result), ext.meta.clone(), "Softmax", vec![x_id], saved)
+                } else {
+                    Value::tensor(Value::List(result), ext.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -805,6 +926,7 @@ pub fn register(dict: &mut Dictionary) {
 
     // tensor-log: (tensor -- tensor)
     // Element-wise natural log (clamped to avoid -inf)
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-log",
         "(tensor:Tensor -- tensor:Tensor)",
@@ -821,7 +943,22 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let result = map_elements(&ext.data, |x| (x.max(1e-10)).ln());
-                let tensor = Value::tensor(result, ext.meta.clone());
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: d/dx(log(x)) = 1/x
+                    let x_id = get_tensor_id(&ext.meta);
+                    let x_data = flatten(&ext.data);
+                    let saved = vec![
+                        x_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    tensor_with_grad(result, ext.meta.clone(), "Log", vec![x_id], saved)
+                } else {
+                    Value::tensor(result, ext.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -979,6 +1116,15 @@ fn flatten_to_f64(v: &Value) -> Vec<f64> {
         Value::Float(f) => vec![*f],
         Value::Int(n) => vec![*n as f64],
         _ => vec![0.0],
+    }
+}
+
+/// Convert a single Value to f64
+fn value_to_f64(v: &Value) -> f64 {
+    match v {
+        Value::Float(f) => *f,
+        Value::Int(n) => *n as f64,
+        _ => 0.0,
     }
 }
 

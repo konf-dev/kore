@@ -1,117 +1,79 @@
 # Kore Status
 
-## Current State: Solid Foundation ✓
+## Current State
 
-**Version**: 0.1.0  
-**Branch**: `stable-v0.1-agent-working`  
-**Tests**: 232 passing  
+**Tests**: 469 passing (255 lib + 214 integration)  
+**Tools**: 186 total (87 core + 54 cap + 45 ext)  
 **Clippy**: Clean  
 
-## What's Working
+---
 
-### Core (7 files, ~5,500 lines)
+## Architecture
 
-| Module | Lines | Purpose |
-|--------|-------|---------|
-| `builtins.rs` | 2,856 | 143 primitives |
-| `meta.rs` | 357 | Unified metadata for tools |
-| `executor.rs` | 314 | Core execution loop with stats tracking |
-| `context.rs` | 240 | Execution environment |
-| `stack.rs` | 150 | Stack with depth limit |
-| `tool.rs` | 180 | Tool definition (3 fields) |
-| `value.rs` | 400 | Value types |
+### Core (87 tools)
+Stack manipulation, arithmetic, logic, control flow, data structures, strings, types.
 
-### 143 Primitives by Category
+### Capabilities (54 tools)
+Gated operations: fs, net, spawn, io, env, mem, rom, process, time, http, json.
 
-| Category | Count | Examples |
-|----------|-------|----------|
-| Stack | 6 | `dup`, `drop`, `swap`, `over`, `rot`, `depth` |
-| Arithmetic | 6 | `add`, `sub`, `mul`, `div`, `mod`, `neg` |
-| Comparison | 6 | `eq`, `lt`, `gt`, `le`, `ge`, `neq` |
-| Logic | 3 | `and`, `or`, `not` |
-| Control | 5 | `if`, `call`, `times`, `each`, `while` |
-| Combinators | 4 | `map`, `filter`, `fold`, `collect` |
-| Lists | 12 | `list-get`, `list-set`, `list-push`, `list-pop`, etc. |
-| Maps | 7 | `map-get`, `map-set`, `map-del`, `map-has`, `map-keys`, etc. |
-| Strings | 15 | `str-concat`, `str-split`, `str-find`, `str-slice`, etc. |
-| Types | 9 | `type`, `to-int`, `to-float`, `to-text`, `is-*` predicates |
-| Error | 7 | `try`, `unwrap`, `is-error`, `error`, `throw`, `catch`, `assert` |
-| Dictionary | 5 | `def`, `undef`, `tools`, `describe`, `source` |
-| I/O | 4 | `print`, `println`, `debug`, `input` |
-| Memory | 6 | `mem-set`, `mem-get`, `mem-del`, `mem-has`, `mem-keys`, `mem-clear` |
-| Resources | 10 | quota queries and reservation |
-| Capabilities | 4 | `can?`, `caps`, `require-cap` |
-| File System | 6 | `fs-read`, `fs-write`, `fs-list`, `fs-exists`, etc. |
-| HTTP | 3 | `http-get`, `http-post`, `http-request` |
-| Process | 2 | `exec`, `exit` |
-| Environment | 2 | `env-get`, `env-set` |
-| Time | 4 | `now`, `sleep`, `time-fmt`, `time-parse` |
-| JSON | 2 | `json-parse`, `json-encode` |
-| Introspection | 8 | `meta`, `meta!`, `calls`, `graph`, `tag`, `find-tag`, `health`, `stats` |
-| Persistence | 5 | `persist`, `register`, `load-tools`, `unregister`, `list-persisted` |
+### Extensions (45 tools)
+- **Tensor (25+)**: Multi-dimensional arrays with autodiff support
+- **Autodiff (5)**: Automatic differentiation (requires-grad, backward, grad-get, zero-grad, detach)
+- **Linear (7+)**: Linear types (use-once, affine)
 
-## Recent Fixes (This Session)
+---
 
-### 1. Stats Not Updating - FIXED
-- **Issue**: `meta.record_call()` was never called in executor
-- **Fix**: Added timing and stats update in `executor.rs` after each tool call
-- **Test**: `test_stats_are_tracked` verifies stats increment
+## Features
 
-### 2. Persistence Key Mismatch - FIXED
-- **Issue**: `persist` used `tools/` prefix but `load-tools` looked for `tools_`
-- **Fix**: Changed `load-tools` and `list-persisted` to use `tools/`
+| Feature | Status |
+|---------|--------|
+| Stack-based execution | ✓ |
+| 3 postulates | ✓ |
+| Static stack analysis | ✓ |
+| IO effect inference | ✓ |
+| Capability system | ✓ |
+| Tensor operations | ✓ |
+| Automatic differentiation | ✓ |
+| Linear types | ✓ |
 
-### 3. Capability Errors Inconsistent - FIXED
-- **Issue**: Capability denials used generic `Runtime` error instead of `CapabilityDenied`
-- **Fix**: All 10 capability checks now use `Error::CapabilityDenied { capability, tool }`
+---
 
-### 4. Dictionary Missing get_mut - FIXED
-- **Issue**: No way to update tool metadata in place
-- **Fix**: Added `Dictionary::get_mut()` and `Dictionary::update_stats()`
-
-## Design Decisions
-
-### Streaming
-HTTP operations are synchronous (await full response). This is intentional for stack-based semantics - values on the stack are complete.
-
-### Stats Tracking
-Stats are updated after every tool call via write lock on dictionary. This adds some overhead but provides accurate telemetry for introspection.
-
-### Memory Semantics
-`try` blocks share memory with parent context. Memory changes persist even if the block fails. This is documented behavior, not a bug.
-
-## Known Limitations
-
-1. **Dictionary Unbounded**: No limit on number of tools (could be fixed with tool count quota)
-2. **No True Streaming**: Large HTTP responses are fully buffered
-3. **Stats Lock Contention**: High-frequency calls may contend on write lock
-
-## Test Coverage
+## Test Summary
 
 ```
-src/lib.rs (kore)     68 tests
-integration_tests.rs  62 tests
-language_semantics.rs 34 tests
-primitives.rs         68 tests
+lib.rs              255 tests
+algebra_integration  18 tests
+autodiff_tests       13 tests  
+control_tests        34 tests
+data_structure_tests 27 tests
+stack_tests          23 tests
+string_number_tests  44 tests
+tensor_tests         68 tests
 ----------------------------------------
-TOTAL                 232 tests
+TOTAL               469 tests
 ```
 
-## Usage Example
+---
 
-```
-# Define a tool
-"square" [dup mul] def
+## Performance
 
-# Add metadata
-"square" "doc" "Square a number" meta!
-"square" "math" tag
+See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for detailed benchmarks.
 
-# Use it
-5 square  # -> 25
+| Operation | Rate |
+|-----------|------|
+| Loop overhead | 1.15M ops/s |
+| Stack operations | 474K ops/s |
+| Tensor add (100-elem) | 101K ops/s |
+| Autodiff backward | 36K ops/s |
 
-# Introspect it
-"square" meta    # -> {name: "square", doc: "Square a number", ...}
-"square" stats   # -> {calls: 1, failures: 0, time_ms: 0}
-"math" find-tag  # -> ["square"]
-```
+---
+
+## Documentation
+
+- [POSTULATES.md](docs/POSTULATES.md) - The three axioms
+- [PHILOSOPHY.md](docs/PHILOSOPHY.md) - Design rationale  
+- [PRIMITIVES.md](docs/PRIMITIVES.md) - Core tool reference
+- [REFERENCE.md](docs/REFERENCE.md) - Complete tool reference
+- [QUICKSTART.md](docs/QUICKSTART.md) - Getting started
+- [AUTODIFF_DESIGN.md](docs/AUTODIFF_DESIGN.md) - Autodiff implementation
+- [FORMAL_FOUNDATIONS.md](docs/FORMAL_FOUNDATIONS.md) - Mathematical foundations

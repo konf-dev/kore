@@ -1,0 +1,258 @@
+[
+  {
+    "method": "no_filter",
+    "problem": "AND",
+    "programs_enumerated": 6,
+    "programs_executed": 16,
+    "ops_executed": 16,
+    "time_seconds": 1.8836666034379352e-05,
+    "solution": [
+      "mul"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "effect_filter",
+    "problem": "AND",
+    "programs_enumerated": 6,
+    "programs_executed": 8,
+    "effect_rejected": 3,
+    "ops_executed": 8,
+    "time_seconds": 1.4726002215563009e-05,
+    "solution": [
+      "mul"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "no_filter",
+    "problem": "OR",
+    "programs_enumerated": 8,
+    "programs_executed": 21,
+    "ops_executed": 21,
+    "time_seconds": 1.7059668607544154e-05,
+    "solution": [
+      "or"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "effect_filter",
+    "problem": "OR",
+    "programs_enumerated": 8,
+    "programs_executed": 14,
+    "effect_rejected": 3,
+    "ops_executed": 14,
+    "time_seconds": 1.329066678105543e-05,
+    "solution": [
+      "or"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "no_filter",
+    "problem": "XOR",
+    "programs_enumerated": 9,
+    "programs_executed": 25,
+    "ops_executed": 25,
+    "time_seconds": 1.9072002032771707e-05,
+    "solution": [
+      "xor"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "effect_filter",
+    "problem": "XOR",
+    "programs_enumerated": 9,
+    "programs_executed": 18,
+    "effect_rejected": 3,
+    "ops_executed": 18,
+    "time_seconds": 1.620200297717626e-05,
+    "solution": [
+      "xor"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "no_filter",
+    "problem": "NAND",
+    "programs_enumerated": 106,
+    "programs_executed": 140,
+    "ops_executed": 259,
+    "time_seconds": 0.00013480866376388198,
+    "solution": [
+      "mul",
+      "not"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "effect_filter",
+    "problem": "NAND",
+    "programs_enumerated": 106,
+    "programs_executed": 32,
+    "effect_rejected": 83,
+    "ops_executed": 54,
+    "time_seconds": 8.10503358176599e-05,
+    "solution": [
+      "mul",
+      "not"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "no_filter",
+    "problem": "IMPLIES",
+    "programs_enumerated": 218,
+    "programs_executed": 274,
+    "ops_executed": 528,
+    "time_seconds": 0.0002720816676931766,
+    "solution": [
+      "gt",
+      "not"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "effect_filter",
+    "problem": "IMPLIES",
+    "programs_enumerated": 218,
+    "programs_executed": 59,
+    "effect_rejected": 180,
+    "ops_executed": 108,
+    "time_seconds": 0.0001588106679264456,
+    "solution": [
+      "gt",
+      "not"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "no_filter",
+    "problem": "EQUIV",
+    "programs_enumerated": 11,
+    "programs_executed": 16,
+    "ops_executed": 16,
+    "time_seconds": 1.4631666999775916e-05,
+    "solution": [
+      "eq"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "effect_filter",
+    "problem": "EQUIV",
+    "programs_enumerated": 11,
+    "programs_executed": 10,
+    "effect_rejected": 4,
+    "ops_executed": 10,
+    "time_seconds": 1.2017997505608946e-05,
+    "solution": [
+      "eq"
+    ],
+    "solution_length": 1
+  },
+  {
+    "method": "no_filter",
+    "problem": "PARITY3",
+    "programs_enumerated": 153,
+    "programs_executed": 339,
+    "ops_executed": 641,
+    "time_seconds": 0.00035466966558791074,
+    "solution": [
+      "xor",
+      "xor"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "effect_filter",
+    "problem": "PARITY3",
+    "programs_enumerated": 153,
+    "programs_executed": 150,
+    "effect_rejected": 93,
+    "ops_executed": 300,
+    "time_seconds": 0.00021967266851182407,
+    "solution": [
+      "xor",
+      "xor"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "no_filter",
+    "problem": "DOUBLE",
+    "programs_enumerated": 20,
+    "programs_executed": 29,
+    "ops_executed": 40,
+    "time_seconds": 2.4330001906491816e-05,
+    "solution": [
+      "dup",
+      "add"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "effect_filter",
+    "problem": "DOUBLE",
+    "programs_enumerated": 20,
+    "programs_executed": 8,
+    "effect_rejected": 17,
+    "ops_executed": 15,
+    "time_seconds": 1.5603332334042836e-05,
+    "solution": [
+      "dup",
+      "add"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "no_filter",
+    "problem": "SQUARE",
+    "programs_enumerated": 22,
+    "programs_executed": 37,
+    "ops_executed": 55,
+    "time_seconds": 3.200600137157986e-05,
+    "solution": [
+      "dup",
+      "mul"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "effect_filter",
+    "problem": "SQUARE",
+    "programs_enumerated": 22,
+    "programs_executed": 13,
+    "effect_rejected": 17,
+    "ops_executed": 25,
+    "time_seconds": 2.081566829777633e-05,
+    "solution": [
+      "dup",
+      "mul"
+    ],
+    "solution_length": 2
+  },
+  {
+    "method": "no_filter",
+    "problem": "MAX",
+    "programs_enumerated": 1118480,
+    "programs_executed": 1343971,
+    "ops_executed": 4967047,
+    "time_seconds": 2.0585756423291364,
+    "solution": null,
+    "solution_length": null
+  },
+  {
+    "method": "effect_filter",
+    "problem": "MAX",
+    "programs_enumerated": 1118480,
+    "programs_executed": 203754,
+    "effect_rejected": 1010252,
+    "ops_executed": 1005154,
+    "time_seconds": 1.1975665089994436,
+    "solution": null,
+    "solution_length": null
+  }
+]

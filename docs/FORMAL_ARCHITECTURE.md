@@ -146,9 +146,15 @@ This is **Postulate 3** manifesting in traces: composition traces concatenate.
 
 ---
 
-## The ~50 Core Primitives
+## Tool Categories (186 total)
 
-These are the ONLY native operations. Everything else is composed.
+Tools are organized into three layers:
+
+- **Core (87 tools)**: Primitives, stack, arithmetic, logic, string, control, data structures
+- **Cap (54 tools)**: Capability-gated operations (fs, net, spawn, io, env, mem, rom)
+- **Ext (45 tools)**: Extensions (tensor, autodiff, linear types)
+
+Everything is a tool, and tools compose by concatenation.
 
 ### Stack Operations (9)
 
@@ -298,32 +304,29 @@ The formal foundations give us **theorems**, not just hopes:
 kore/
 ├── src/
 │   ├── lib.rs          # Module exports
-│   ├── algebra.rs      # CapSet, Res, Trace (NEW!)
-│   ├── core.rs         # Core primitives (NEW!)
-│   ├── op.rs           # Push, Call only
-│   ├── executor.rs     # The ~10 line core
-│   ├── value.rs        # 10 value types
+│   ├── op.rs           # Push, Call operations
+│   ├── executor.rs     # Execution engine
+│   ├── value.rs        # Value types
 │   ├── stack.rs        # LIFO stack
 │   ├── context.rs      # Execution context
-│   ├── tool.rs         # Tool type
-│   └── ...
-└── stdlib/             # Everything else (TODO)
-    ├── fs.kore         # File system tools
-    ├── net.kore        # Network tools  
-    ├── str.kore        # String tools
-    └── ...
+│   ├── tool.rs         # Tool abstraction
+│   ├── core/           # Core primitives (87 tools)
+│   │   ├── stack.rs    # Stack manipulation
+│   │   ├── arith.rs    # Arithmetic
+│   │   ├── logic.rs    # Boolean logic
+│   │   ├── string.rs   # String operations
+│   │   └── ...
+│   ├── cap/            # Capability tools (54 tools)
+│   │   ├── fs.rs       # File system
+│   │   ├── io.rs       # Standard I/O
+│   │   ├── process.rs  # Process management
+│   │   └── ...
+│   └── ext/            # Extensions (45 tools)
+│       ├── tensor.rs   # Tensors (25+ ops)
+│       ├── autodiff.rs # Automatic differentiation
+│       └── linear.rs   # Linear types
+└── docs/               # Documentation
 ```
-
----
-
-## Migration Path
-
-1. ✅ Create `algebra.rs` with `CapSet`, `Res`, `Trace`
-2. ✅ Create `core.rs` defining the ~50 primitives
-3. ✅ Update `lib.rs` to export new modules
-4. ⬜ Wire `algebra` types into `executor.rs`
-5. ⬜ Move non-core tools to `stdlib/`
-6. ⬜ Update tests and documentation
 
 ---
 

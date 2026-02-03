@@ -465,65 +465,33 @@ Python     JavaScript    Rust      Haskell    Idris     Coq
 
 ---
 
-## Implementation Roadmap
+## Implementation Status
 
-### Phase 1: Stack Effects (DONE ✓)
+### Implemented ✓
 
+**Stack Effect Analysis:**
 ```rust
-// Current analyzer.rs
-pub fn analyze(ops: &[Op]) -> StackAnalysis
+// src/analyzer.rs
+pub fn analyze(ops: &[Op]) -> Analysis
 ```
+Verifies: No stack underflows, balanced conditionals
 
-**Proves:** No stack underflows
-
-### Phase 2: Type Effects (Next)
-
+**IO Effect Analysis:**
 ```rust
-// Add type tracking to effects
-type Effect = (Vec<Type>, Vec<Type>);
-
-fn type_check(ops: &[Op]) -> TypeAnalysis {
-    // Track types, not just counts
-}
+// src/analyzer.rs - tracks capability requirements
+pub io_effects: EffectSet
 ```
+Verifies: Which capabilities a program requires before execution
 
-**Proves:** Type correctness
+**Capability System:**
+- `cap-has`, `cap-list`, `cap-leq`, `cap-attenuate` implemented
+- Capability attenuation ensures monotonic restriction
 
-### Phase 3: Capability Effects
+### Future Work
 
-```rust
-// Track capabilities required
-type CapEffect = HashSet<Capability>;
-
-fn cap_check(ops: &[Op], available: &CapEffect) -> CapAnalysis {
-    // Verify capabilities are available
-}
-```
-
-**Proves:** Capability safety
-
-### Phase 4: Refinement Types
-
-```rust
-// Add predicates to types
-type RefinedType = (Type, Predicate);
-
-fn refine_check(ops: &[Op]) -> RefinedAnalysis {
-    // Use SMT solver for predicates
-}
-```
-
-**Proves:** Value-level invariants
-
-### Phase 5: Dependent Effects (Research)
-
-```rust
-// Effects that depend on values
-type DepEffect = (Vec<DepType>, Vec<DepType>);
-// Where DepType can reference term variables
-```
-
-**Proves:** Shape preservation, index safety, etc.
+- **Type inference**: Track value types, not just stack depth
+- **Refinement types**: SMT-backed predicate verification
+- **Termination analysis**: Structural recursion checks
 
 ---
 
