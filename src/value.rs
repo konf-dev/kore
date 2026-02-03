@@ -21,6 +21,8 @@ pub mod ext {
     pub const LINEAR: u8 = 2;
     /// Distribution: probability distribution
     pub const DIST: u8 = 3;
+    /// Affine: value that cannot be duplicated but CAN be discarded
+    pub const AFFINE: u8 = 4;
 }
 
 /// Extended value - wraps any value with kind + metadata
@@ -133,6 +135,17 @@ impl Value {
         matches!(self, Value::Ext(e) if e.kind == ext::LINEAR)
     }
 
+    /// Check if this is an affine value (cannot be duplicated but CAN be discarded)
+    pub fn is_affine(&self) -> bool {
+        matches!(self, Value::Ext(e) if e.kind == ext::AFFINE)
+    }
+
+    /// Check if this value has linear semantics (cannot be duplicated)
+    /// Returns true for both LINEAR and AFFINE values
+    pub fn is_non_duplicable(&self) -> bool {
+        matches!(self, Value::Ext(e) if e.kind == ext::LINEAR || e.kind == ext::AFFINE)
+    }
+
     /// Check if this is a tensor value
     pub fn is_tensor(&self) -> bool {
         matches!(self, Value::Ext(e) if e.kind == ext::TENSOR)
@@ -172,6 +185,15 @@ impl Value {
     pub fn linear(data: Value) -> Self {
         Value::Ext(Arc::new(ExtValue {
             kind: ext::LINEAR,
+            data: Box::new(data),
+            meta: None,
+        }))
+    }
+
+    /// Create an Affine value (non-duplicable, but CAN be discarded)
+    pub fn affine(data: Value) -> Self {
+        Value::Ext(Arc::new(ExtValue {
+            kind: ext::AFFINE,
             data: Box::new(data),
             meta: None,
         }))

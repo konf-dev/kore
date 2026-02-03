@@ -8,13 +8,14 @@
 //! All extension tools follow P1/P2/P3.
 
 pub mod tensor;
+pub mod linear;
 
 use crate::context::Dictionary;
 
 /// Register all extension tools
 pub fn register_ext(dict: &mut Dictionary) {
     tensor::register(dict);
+    linear::register(dict);
     // Future: fiber::register(dict);
-    // Future: linear::register(dict);
     // Future: distribution::register(dict);
 }

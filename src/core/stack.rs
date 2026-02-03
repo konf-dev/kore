@@ -16,15 +16,15 @@ use crate::tool::Tool;
 use crate::value::Value;
 
 pub fn register(dict: &mut Dictionary) {
-    // dup: (a -- a a) - REJECTS linear values
+    // dup: (a -- a a) - REJECTS linear and affine values
     dict.register(Tool::native(
         "dup",
         "(a:Any -- a:Any a:Any)",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let a = stack.pop()?;
-                // Linear values cannot be duplicated
-                if a.is_linear() {
+                // Linear and affine values cannot be duplicated
+                if a.is_non_duplicable() {
                     return Err(Error::LinearDuplicate(format!("{}", a)));
                 }
                 stack.push(a.clone())?;
@@ -34,14 +34,14 @@ pub fn register(dict: &mut Dictionary) {
         },
     ));
 
-    // drop: (a -- ) - REJECTS linear values  
+    // drop: (a -- ) - REJECTS linear values (but allows affine)
     dict.register(Tool::native(
         "drop",
         "(a:Any -- )",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 let a = stack.pop()?;
-                // Linear values cannot be discarded
+                // Linear values cannot be discarded (affine CAN be discarded)
                 if a.is_linear() {
                     return Err(Error::LinearDiscard(format!("{}", a)));
                 }
@@ -82,7 +82,7 @@ pub fn register(dict: &mut Dictionary) {
         },
     ));
 
-    // over: (a b -- a b a)
+    // over: (a b -- a b a) - REJECTS linear and affine on 'a' since it duplicates
     dict.register(Tool::native(
         "over",
         "(a:Any b:Any -- a:Any b:Any a:Any)",
@@ -90,6 +90,10 @@ pub fn register(dict: &mut Dictionary) {
             Box::pin(async move {
                 let b = stack.pop()?;
                 let a = stack.pop()?;
+                // 'over' duplicates 'a', so 'a' cannot be linear or affine
+                if a.is_non_duplicable() {
+                    return Err(Error::LinearDuplicate(format!("{}", a)));
+                }
                 stack.push(a.clone())?;
                 stack.push(b)?;
                 stack.push(a)?;
