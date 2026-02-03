@@ -1,0 +1,12 @@
+// E001 Test: IO Effects
+// This should trigger IO effect detection
+
+// Console output (io effect)
+"Hello, world!" print
+
+// File operations (fs effect)
+"test.txt" read-file
+"data" "output.txt" write-file
+
+// Environment access (env effect)
+"HOME" env-get

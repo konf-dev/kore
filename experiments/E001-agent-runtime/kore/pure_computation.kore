@@ -1,0 +1,17 @@
+// E001 Test: Pure Computation
+// This should have NO IO effects and be safe for any profile
+
+// Basic arithmetic
+1 2 + 3 * 4 -  // => 5
+
+// Using quotations
+[ 1 2 3 4 5 ] [ 2 * ] map  // => [2 4 6 8 10]
+
+// Factorial (recursive)
+: factorial ( n -- n! )
+  dup 1 <= [ drop 1 ] [ dup 1 - factorial * ] if ;
+
+5 factorial  // => 120
+
+// Sum of list
+[ 10 20 30 40 50 ] sum  // => 150

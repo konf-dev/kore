@@ -1,0 +1,29 @@
+"=== E002: Kore Verification Demo ===" println
+"" println
+
+"1. ALGEBRAIC OPTIMIZATION" println
+"   swap swap -> " print  [ swap swap ] optimize to-text println
+"   dup drop -> " print   [ dup drop ] optimize to-text println
+"   rot rot rot -> " print [ rot rot rot ] optimize to-text println
+"   not not -> " print    [ not not ] optimize to-text println
+"" println
+
+"2. EFFECT ANALYSIS" println
+"   [ 1 2 add ] pure? = " print [ 1 2 add ] pure? to-text println
+"" println
+
+"3. EFFECT INFERENCE" println
+"   [ 1 2 add ]:" println
+[ 1 2 add ] effect-infer
+"   [ dup mul ]:" println
+[ dup mul ] effect-infer
+"   [ over mul ]:" println
+[ over mul ] effect-infer
+"" println
+
+"4. COMPUTATION" println
+"   5 dup mul = " print 5 dup mul to-text println
+"   23 * 45 = " print 23 45 mul to-text println
+"" println
+
+"Kore verifies programs statically - synthesis needs Z3 integration" println

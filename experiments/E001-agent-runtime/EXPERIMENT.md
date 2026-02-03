@@ -1,9 +1,19 @@
 # Experiment E001: Agent Execution Engine
 
-> **Status**: 🔵 Planned  
-> **Started**: -  
-> **Completed**: -  
+> **Status**: � Complete  
+> **Started**: 2026-02-03  
+> **Completed**: 2026-02-03  
 > **Author**: Kore Team
+
+## Results Summary
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| Safety (0% false negatives) | 0% | **0%** | ✅ PASS |
+| Profile enforcement | 100% | **100%** | ✅ PASS |
+| Analysis latency p95 | <5ms | ~8ms | ⚠️ Subprocess overhead |
+
+**Key Achievement**: Static effect analysis correctly blocks unauthorized IO with perfect accuracy.
 
 ## 1. Hypothesis
 

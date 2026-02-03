@@ -1,0 +1,57 @@
+; E002: Verified Synthesis Demo
+; Demonstrates Kore's ability to optimize and verify programs
+
+"=== Algebraic Optimization ===" println
+
+"swap swap -> " print
+[ swap swap ] optimize println
+
+"dup drop -> " print
+[ dup drop ] optimize println
+
+"rot rot rot -> " print
+[ rot rot rot ] optimize println
+
+"not not -> " print
+[ not not ] optimize println
+
+"swap swap dup drop rot rot rot -> " print
+[ swap swap dup drop rot rot rot ] optimize println
+
+"" println
+"=== Effect Analysis ===" println
+
+"[ 1 2 add ] pure? = " print
+[ 1 2 add ] pure? println
+
+"[ hi print ] pure? = " print
+[ "hi" print ] pure? println
+
+"[ 1 2 add ] effects: " print
+[ 1 2 add ] effect-infer println
+
+"" println
+"=== Testing Program Equivalence ===" println
+
+"5 dup mul = " print
+5 dup mul println
+
+"5 5 mul = " print
+5 5 mul println
+
+"[ dup mul ] effect: " print
+[ dup mul ] effect-infer println
+
+"[ over mul ] effect: " print  
+[ over mul ] effect-infer println
+
+"" println
+"=== Simple Math Demo ===" println
+"23 * 45 = " print
+23 45 mul println
+
+"" println
+"Kore provides verification infrastructure:" println
+"  - effect-infer: check stack effects" println
+"  - optimize: reduce to canonical form" println  
+"  - pure?: verify no side effects" println

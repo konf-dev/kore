@@ -1,0 +1,8 @@
+# E002: Verified Algorithm Synthesis
+#
+# Dependencies: z3-solver
+#
+fastapi>=0.109.0
+uvicorn>=0.27.0
+z3-solver>=4.12.0
+pydantic>=2.5.0

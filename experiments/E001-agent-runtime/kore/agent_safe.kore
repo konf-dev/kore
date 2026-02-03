@@ -1,0 +1,27 @@
+// E001 Test: Agent Safe Operations
+// Typical operations an LLM agent might want to do
+
+// Data transformation pipeline (SAFE - pure)
+: transform-data ( data -- result )
+  [ "error" key? not ] filter
+  [ "value" get 2 * ] map
+  sum ;
+
+// JSON-like data manipulation (SAFE - pure)
+{ "items" [ 1 2 3 4 5 ] "name" "test" } 
+  "items" get 
+  [ 10 > ] filter
+
+// String processing (SAFE - pure)
+: process-text ( text -- words )
+  " " split
+  [ length 3 > ] filter
+  [ to-upper ] map ;
+
+"hello world from kore language" process-text
+
+// Math operations (SAFE - pure)
+: statistics ( numbers -- mean )
+  dup sum swap length / ;
+
+[ 10 20 30 40 50 ] statistics  // => 30

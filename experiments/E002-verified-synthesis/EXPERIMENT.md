@@ -1,9 +1,22 @@
 # Experiment E002: Verified Algorithm Synthesis
 
-> **Status**: 🔵 Planned  
-> **Started**: -  
+> **Status**: � Partial (Verification works, Synthesis needs Z3)  
+> **Started**: 2026-02-03  
 > **Completed**: -  
 > **Author**: Kore Team
+
+## Current State
+
+Kore provides the **verification infrastructure** needed for synthesis:
+
+| Feature | Status | Demo |
+|---------|--------|------|
+| Algebraic optimizer | ✅ Working | `[ swap swap ] optimize` → `[]` |
+| Effect inference | ✅ Working | `[ dup mul ] effect-infer` → stack analysis |
+| Purity checking | ✅ Working | `[ 1 2 add ] pure?` → `true` |
+| Z3 integration | 🔵 Needed | Required for equivalence proofs |
+
+**What's missing**: Z3 integration to prove program equivalence (required for synthesis).
 
 ## 1. Hypothesis
 

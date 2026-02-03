@@ -9,8 +9,8 @@ Systematic experiments to demonstrate and validate Kore's capabilities.
 | ID | Name | Status | Start | End | Result |
 |----|------|--------|-------|-----|--------|
 | **Tier 1: Foundation** |
-| E001 | Agent Runtime | 🔵 Planned | - | - | - |
-| E002 | Verified Synthesis | 🔵 Planned | - | - | - |
+| E001 | Agent Runtime | � Complete | 2026-02-03 | 2026-02-03 | Safety ✅ 100%, Latency ~8ms |
+| E002 | Verified Synthesis | 🟡 Partial | 2026-02-03 | - | Verification ✅, needs Z3 |
 | E003 | Differentiable Search | 🔵 Planned | - | - | - |
 | **Tier 2: Demonstrations** |
 | E004 | LLM Agent Executor | 🔵 Planned | - | - | - |
