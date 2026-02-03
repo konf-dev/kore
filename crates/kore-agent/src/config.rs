@@ -10,14 +10,14 @@ pub struct Config {
     /// Workspace directory - agent reads/writes here only
     pub workspace: PathBuf,
     
-    /// Logs directory - trace and stdout logs
-    pub logs: PathBuf,
-    
     /// Path to prompt file (master prompt)
     pub prompt: PathBuf,
     
     /// Goal for the agent
     pub goal: String,
+    
+    /// Maximum iterations before terminating (0 = unlimited)
+    pub max_iterations: u32,
 }
 
 impl Config {
@@ -30,23 +30,28 @@ impl Config {
         let goal = std::env::var("KORE_GOAL")
             .map_err(|_| "KORE_GOAL is required")?;
         
-        // Check LLM config
-        if std::env::var("OPENAI_API_KEY").map(|k| k.is_empty()).unwrap_or(true) {
-            return Err("OPENAI_API_KEY is required".to_string());
+        // Check LLM config - one key only
+        let has_key = std::env::var("OPENAI_API_KEY")
+            .map(|k| !k.is_empty())
+            .unwrap_or(false);
+        
+        if !has_key {
+            return Err("OPENAI_API_KEY is required (your one LLM key)".to_string());
         }
         
-        // Optional with defaults (for local dev)
+        // Optional with defaults
         let workspace = std::env::var("KORE_WORKSPACE")
-            .unwrap_or_else(|_| "./workspace".to_string());
+            .unwrap_or_else(|_| "/world".to_string());
         
-        let logs = std::env::var("KORE_LOGS")
-            .unwrap_or_else(|_| "./logs".to_string());
+        let max_iterations = std::env::var("KORE_MAX_ITERATIONS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0); // 0 = unlimited
         
         Ok(Self {
             workspace: PathBuf::from(workspace),
-            logs: PathBuf::from(logs),
             prompt: PathBuf::from(prompt),
             goal,
-        })
+            max_iterations,        })
     }
 }

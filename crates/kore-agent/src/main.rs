@@ -1,7 +1,14 @@
 //! Kore Agent - Autonomous LLM-driven agent
 //!
-//! Simple loop: prompt → LLM → parse → execute → trace
-//! No magic. No preprocessing. Errors go to trace, LLM learns.
+//! Simple loop: check inbox → prompt → LLM → parse → execute → trace
+//! 
+//! Control channels:
+//!   /mnt/inbox.txt   - Human writes commands here (agent reads & clears)
+//!   /mnt/outbox.txt  - Agent writes messages here (human reads)
+//!   /mnt/trace.jsonl - Full execution trace (append-only)
+//!
+//! Workspace:
+//!   /world/          - Agent's persistent workspace
 
 mod tools;
 mod trace;
@@ -10,6 +17,9 @@ mod config;
 use kore::{Context, Stack, Op, execute, register_builtins};
 use trace::Trace;
 use config::Config;
+
+const INBOX_PATH: &str = "/mnt/inbox.txt";
+const TRACE_PATH: &str = "/mnt/trace.jsonl";
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +31,7 @@ async fn main() {
             eprintln!("\nRequired environment variables:");
             eprintln!("  KORE_PROMPT  - Path to prompt file");
             eprintln!("  KORE_GOAL    - Goal for the agent");
-            eprintln!("  OPENAI_API_KEY - LLM API key");
+            eprintln!("  OPENAI_API_KEY or ANTHROPIC_API_KEY");
             std::process::exit(1);
         }
     };
@@ -35,13 +45,12 @@ async fn main() {
         }
     };
     
-    // Setup workspace and logs
+    // Setup workspace
     std::fs::create_dir_all(&config.workspace).ok();
-    std::fs::create_dir_all(&config.logs).ok();
+    std::fs::create_dir_all("/mnt").ok();
     
-    // Initialize trace (logs to stdout AND file)
-    let trace_file = config.logs.join("trace.jsonl");
-    let mut trace = Trace::new(&trace_file);
+    // Initialize trace (writes to /mnt/trace.jsonl for host observation)
+    let mut trace = Trace::new(std::path::Path::new(TRACE_PATH));
     
     // Initialize kore runtime
     let mut ctx = Context::new();
@@ -52,23 +61,46 @@ async fn main() {
     
     // Log start
     trace.start(&config.goal);
+    println!("🌍 Kore World starting...");
+    println!("   Goal: {}", config.goal);
+    println!("   Inbox: {}", INBOX_PATH);
+    println!("   Trace: {}", TRACE_PATH);
+    if config.max_iterations > 0 {
+        println!("   Max iterations: {}", config.max_iterations);
+    }
+    println!();
     
     // The loop: simple, no magic
     let mut iteration = 0;
     loop {
         iteration += 1;
+        
+        // Check max iterations limit
+        if config.max_iterations > 0 && iteration > config.max_iterations {
+            println!("🏁 Max iterations ({}) reached. Terminating.", config.max_iterations);
+            trace.done("Max iterations reached");
+            break;
+        }
+        
         trace.iteration(iteration);
         
-        // Build context for LLM: goal + recent trace
-        // Master prompt is ALWAYS prepended - agent remembers principles
-        let context = build_context(&config.goal, &trace, iteration);
+        // Check inbox for human guidance
+        let inbox = read_and_clear_inbox();
+        if !inbox.is_empty() {
+            trace.inbox(&inbox);
+            println!("📬 Inbox: {}", inbox.trim());
+        }
         
-        // Call LLM (prompt is system message, context is user message)
+        // Build context for LLM
+        let context = build_context(&config.goal, &inbox, &trace, iteration);
+        
+        // Call LLM
         trace.thinking();
         let response = match tools::llm::call_llm(&prompt, &context).await {
             Ok(r) => r,
             Err(e) => {
                 trace.error(&format!("LLM call failed: {}", e));
+                eprintln!("❌ LLM error: {}", e);
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 continue;
             }
@@ -76,22 +108,15 @@ async fn main() {
         
         trace.response(&response);
         
-        // Parse <think> and <code> blocks
-        let (thinking, code) = parse_response(&response);
+        // Extract code from response (```kore ... ``` or raw)
+        let code = extract_code(&response);
         
-        // Log thinking if present (goes to trace for context)
-        if let Some(think) = &thinking {
-            trace.think(think);
+        if code.is_empty() {
+            trace.error("No code found in response");
+            continue;
         }
         
-        // Get code to execute
-        let code = match code {
-            Some(c) => c,
-            None => {
-                // No <code> block - use whole response (backwards compat)
-                response.trim().to_string()
-            }
-        };
+        println!("▶ [{}] {}", iteration, truncate(&code.replace('\n', " "), 60));
         
         match Op::parse(&code) {
             Ok(ops) => {
@@ -102,43 +127,90 @@ async fn main() {
                     Ok((new_stack, new_ctx)) => {
                         let result = format_stack(&new_stack);
                         trace.success(&result);
+                        println!("  ✓ {}", truncate(&result, 60));
                         stack = new_stack;
                         ctx = new_ctx;
                     }
                     Err(e) => {
-                        trace.error(&format!("Execution error: {}", e));
+                        let err = format!("Execution error: {}", e);
+                        trace.error(&err);
+                        eprintln!("  ✗ {}", err);
                     }
                 }
             }
             Err(e) => {
-                // Parse error - this goes to trace, LLM sees it next iteration
-                trace.error(&format!("Parse error: {} | Input was: {}", e, truncate(&code, 100)));
+                let err = format!("Parse error: {}", e);
+                trace.error(&err);
+                eprintln!("  ✗ {}", err);
             }
         }
         
         // Small delay between iterations
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 }
 
-/// Build context for LLM - just goal and recent trace
-fn build_context(goal: &str, trace: &Trace, iteration: u32) -> String {
+/// Read inbox and clear it (atomic read-then-clear)
+fn read_and_clear_inbox() -> String {
+    match std::fs::read_to_string(INBOX_PATH) {
+        Ok(content) if !content.trim().is_empty() => {
+            // Clear the inbox after reading
+            let _ = std::fs::write(INBOX_PATH, "");
+            content
+        }
+        _ => String::new(),
+    }
+}
+
+/// Build context for LLM
+fn build_context(goal: &str, inbox: &str, trace: &Trace, iteration: u32) -> String {
     let mut ctx = String::new();
     
-    ctx.push_str(&format!("GOAL: {}\n", goal));
-    ctx.push_str(&format!("ITERATION: {}\n\n", iteration));
+    ctx.push_str(&format!("**Goal:** {}\n", goal));
+    ctx.push_str(&format!("**Iteration:** {}\n\n", iteration));
     
-    // Recent trace - LLM sees what happened
+    // Inbox from human
+    if !inbox.is_empty() {
+        ctx.push_str("**Inbox (from human):**\n");
+        ctx.push_str(inbox);
+        ctx.push_str("\n\n");
+    }
+    
+    // Recent trace
     let recent = trace.recent(10);
     if !recent.is_empty() {
-        ctx.push_str("RECENT TRACE:\n");
+        ctx.push_str("**Recent:**\n");
         ctx.push_str(&recent);
         ctx.push_str("\n");
     }
     
-    ctx.push_str("YOUR TURN: Output kore code to execute.\n");
-    
     ctx
+}
+
+/// Extract code from response - looks for ```kore blocks or raw code
+fn extract_code(response: &str) -> String {
+    // Try ```kore ... ```
+    if let Some(start) = response.find("```kore") {
+        if let Some(end) = response[start + 7..].find("```") {
+            return response[start + 7..start + 7 + end].trim().to_string();
+        }
+    }
+    
+    // Try ``` ... ``` (generic code block)
+    if let Some(start) = response.find("```") {
+        let after_start = start + 3;
+        // Skip language identifier if present
+        let code_start = response[after_start..]
+            .find('\n')
+            .map(|n| after_start + n + 1)
+            .unwrap_or(after_start);
+        if let Some(end) = response[code_start..].find("```") {
+            return response[code_start..code_start + end].trim().to_string();
+        }
+    }
+    
+    // No code block found - try the whole response
+    response.trim().to_string()
 }
 
 /// Format stack for display
@@ -157,32 +229,4 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         s.to_string()
     }
-}
-
-/// Parse response into <think> and <code> blocks
-fn parse_response(response: &str) -> (Option<String>, Option<String>) {
-    let mut thinking = None;
-    let mut code = None;
-    
-    // Extract <think>...</think>
-    if let Some(start) = response.find("<think>") {
-        if let Some(end) = response.find("</think>") {
-            let content = response[start + 7..end].trim();
-            if !content.is_empty() {
-                thinking = Some(content.to_string());
-            }
-        }
-    }
-    
-    // Extract <code>...</code>
-    if let Some(start) = response.find("<code>") {
-        if let Some(end) = response.find("</code>") {
-            let content = response[start + 6..end].trim();
-            if !content.is_empty() {
-                code = Some(content.to_string());
-            }
-        }
-    }
-    
-    (thinking, code)
 }

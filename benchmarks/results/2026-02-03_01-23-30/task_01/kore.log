@@ -1,0 +1,11 @@
+time="2026-02-03T01:23:30+01:00" level=warning msg="No services to build"
+time="2026-02-03T01:23:30+01:00" level=warning msg="No services to build"
+ Container kore-kore-agent-run-ccedd645609e Creating 
+ Container kore-kore-agent-run-ccedd645609e Created 
+Configuration error: OPENAI_API_KEY is required (your one LLM key)
+
+Required environment variables:
+  KORE_PROMPT  - Path to prompt file
+  KORE_GOAL    - Goal for the agent
+  OPENAI_API_KEY or ANTHROPIC_API_KEY
+

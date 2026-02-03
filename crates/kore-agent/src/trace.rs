@@ -15,6 +15,7 @@ use std::path::Path;
 pub enum EventKind {
     Start,
     Iteration,
+    Inbox,
     Think,
     Response,
     Code,
@@ -71,6 +72,7 @@ impl Trace {
         let icon = match kind {
             EventKind::Start => "🚀",
             EventKind::Iteration => "🔄",
+            EventKind::Inbox => "📬",
             EventKind::Think => "🤔",
             EventKind::Response => "💬",
             EventKind::Code => "📝",
@@ -104,6 +106,10 @@ impl Trace {
     
     pub fn iteration(&mut self, n: u32) {
         self.log(EventKind::Iteration, &format!("Iteration {}", n));
+    }
+    
+    pub fn inbox(&mut self, message: &str) {
+        self.log(EventKind::Inbox, &format!("Human: {}", message));
     }
     
     pub fn thinking(&mut self) {
@@ -143,6 +149,7 @@ impl Trace {
                 let kind = match e.kind {
                     EventKind::Start => "START",
                     EventKind::Iteration => "ITER",
+                    EventKind::Inbox => "INBOX",
                     EventKind::Think => "THINK",
                     EventKind::Response => "RESPONSE",
                     EventKind::Code => "CODE",

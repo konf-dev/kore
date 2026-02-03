@@ -1,50 +1,88 @@
-# Build stage
+# Kore World - Isolated AI Development Environment
+# Supports: CPU, NVIDIA GPU, AMD GPU (ROCm)
+#
+# Build: docker build -t kore-world .
+# Run CPU: docker run -it --rm -v $(pwd)/world:/world kore-world
+# Run GPU: docker run -it --rm --gpus all -v $(pwd)/world:/world kore-world
+
+# =============================================================================
+# Stage 1: Build Kore
+# =============================================================================
 FROM rust:1.83-slim AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY . .
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY crates ./crates
+COPY tests ./tests
+COPY stdlib ./stdlib
 
+# Build release binaries
 RUN cargo build --release -p kore-agent
 
-# Runtime stage - Full Linux sandbox
-FROM debian:bookworm
+# =============================================================================
+# Stage 2: Runtime Environment
+# =============================================================================
+FROM debian:bookworm-slim
 
-# Install comprehensive toolset - agent can install more with apt
+# Core system utilities
 RUN apt-get update && apt-get install -y \
-    # Core utilities
+    # Essentials
     ca-certificates curl wget git \
-    # Build essentials
+    # Build tools (for installing packages)
     build-essential pkg-config \
-    # Python
-    python3 python3-pip python3-venv \
-    # Networking tools
-    net-tools iputils-ping dnsutils \
+    # Python 3.11
+    python3 python3-pip python3-venv python3-dev \
+    # Network tools
+    net-tools iputils-ping dnsutils netcat-openbsd \
     # Text processing
-    jq vim nano \
+    jq vim nano less \
     # Process management
     procps htop \
     # Archive tools
     zip unzip tar \
-    && ln -s /usr/bin/python3 /usr/bin/python \
+    # SSL/TLS
+    openssl libssl-dev \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 20 LTS (via NodeSource for modern version)
+# Install Node.js 20 LTS
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the kore-agent binary
+# Install uv (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -sf /root/.cargo/bin/uv /usr/local/bin/uv
+
+# Copy Kore binaries
 COPY --from=builder /build/target/release/kore-agent /usr/local/bin/kore-agent
 
-# Agent runs as ROOT inside sandbox - can install anything
-# The sandbox itself is isolated from host
+# Copy Kore documentation and libraries
+COPY stdlib /opt/kore/stdlib
+COPY lib /opt/kore/lib
+COPY docs/REFERENCE.md /opt/kore/docs/REFERENCE.md
+COPY PREAMBLE.md /opt/kore/docs/PREAMBLE.md
+COPY genesis-prompt.md /opt/kore/genesis-prompt.md
+COPY examples /opt/kore/examples
 
-WORKDIR /workspace
+# Environment
+ENV KORE_HOME=/opt/kore
+ENV KORE_PROMPT=/opt/kore/genesis-prompt.md
+ENV KORE_CAPS=all
+ENV PATH="/opt/kore/bin:${PATH}"
 
-# All config via environment variables
-# Required: KORE_PROMPT, KORE_GOAL, OPENAI_API_KEY
-# Optional: KORE_WORKSPACE=/workspace, KORE_LOGS=/logs
+# Working directory - mount your world here
+WORKDIR /world
 
-ENTRYPOINT ["kore-agent"]
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD pgrep kore-agent || exit 1
+
+# Default: interactive shell (override with kore-agent for autonomous mode)
+CMD ["/bin/bash"]

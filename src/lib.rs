@@ -81,6 +81,7 @@ pub mod context;
 pub mod effect;
 pub mod error;
 pub mod executor;
+pub mod lookahead;  // Runtime optimization
 pub mod memory;
 pub mod meta;
 pub mod op;
@@ -101,6 +102,7 @@ pub use context::Context;
 pub use effect::{Effect, Type};
 pub use error::{Error, Result};
 pub use executor::{execute, ExecFuture};
+pub use lookahead::execute_with_lookahead;
 pub use memory::Memory;
 pub use op::Op;
 pub use resources::{ResourceQuota, Resources};

@@ -1,0 +1,213 @@
+# Kore Algorithms Library
+# Tested implementations of common algorithms
+
+# ============================================================
+# FACTORIAL
+# (n -- n!)
+# ============================================================
+[dup 1 le [drop 1] [dup 1 sub fact mul] if] "fact" def
+
+# Test: 5 fact → 120
+
+
+# ============================================================
+# FIBONACCI  
+# (n -- fib(n))
+# ============================================================
+[dup 2 lt [] [dup 1 sub fib swap 2 sub fib add] if] "fib" def
+
+# Test: 10 fib → 55
+
+
+# ============================================================
+# BINARY SEARCH
+# (list target -- index)
+# Returns -1 if not found
+# ============================================================
+[
+  # Store arguments
+  "bs-target" swap mem-set
+  "bs-arr" swap mem-set
+  "bs-lo" 0 mem-set
+  "bs-hi" "bs-arr" mem-get list-len 1 sub mem-set
+  "bs-result" -1 mem-set
+  
+  # Loop while lo <= hi and not found
+  ["bs-lo" mem-get "bs-hi" mem-get le "bs-result" mem-get -1 eq and] [
+    # mid = (lo + hi) / 2
+    "bs-mid" "bs-lo" mem-get "bs-hi" mem-get add 2 div mem-set
+    
+    # val = arr[mid]
+    "bs-val" "bs-arr" mem-get "bs-mid" mem-get list-get mem-set
+    
+    "bs-val" mem-get "bs-target" mem-get eq [
+      # Found!
+      "bs-result" "bs-mid" mem-get mem-set
+    ] [
+      "bs-val" mem-get "bs-target" mem-get lt [
+        # Search right half
+        "bs-lo" "bs-mid" mem-get 1 add mem-set
+      ] [
+        # Search left half
+        "bs-hi" "bs-mid" mem-get 1 sub mem-set
+      ] if
+    ] if
+  ] while
+  
+  "bs-result" mem-get
+] "binary-search" def
+
+# Test: 1 2 3 4 5 6 7 8 9 10 10 collect 7 binary-search → 6
+
+
+# ============================================================
+# SUM
+# (list -- total)
+# ============================================================
+[0 [add] fold] "sum" def
+
+# Test: 1 2 3 4 5 5 collect sum → 15
+
+
+# ============================================================
+# PRODUCT
+# (list -- product)
+# ============================================================
+[1 [mul] fold] "product" def
+
+# Test: 1 2 3 4 5 5 collect product → 120
+
+
+# ============================================================
+# MAX-LIST
+# (list -- max)
+# ============================================================
+[unlist drop [max] fold] "max-list" def
+
+# Test: 3 1 4 1 5 9 2 6 8 collect max-list → 9
+
+
+# ============================================================
+# MIN-LIST
+# (list -- min)
+# ============================================================
+[unlist drop [min] fold] "min-list" def
+
+# Test: 3 1 4 1 5 9 2 6 8 collect min-list → 1
+
+
+# ============================================================
+# RANGE
+# (start end -- list)
+# Creates [start, start+1, ..., end-1]
+# ============================================================
+[
+  "range-end" swap mem-set
+  "range-start" swap mem-set
+  "range-list" list-empty mem-set
+  
+  ["range-start" mem-get "range-end" mem-get lt] [
+    "range-list" "range-list" mem-get "range-start" mem-get list-push mem-set
+    "range-start" "range-start" mem-get 1 add mem-set
+  ] while
+  
+  "range-list" mem-get
+] "range" def
+
+# Test: 0 5 range → [0 1 2 3 4]
+
+
+# ============================================================
+# REVERSE
+# (list -- reversed)
+# ============================================================
+[list-reverse] "reverse" def
+
+
+# ============================================================
+# CONTAINS
+# (list val -- bool)
+# ============================================================
+[
+  "contains-val" swap mem-set
+  false swap
+  [dup "contains-val" mem-get eq [drop true swap true] [false] if] filter
+  drop
+] "contains" def
+
+# Test: 1 2 3 4 5 5 collect 3 contains → true
+# Test: 1 2 3 4 5 5 collect 9 contains → false
+
+
+# ============================================================
+# GCD (Greatest Common Divisor)
+# (a b -- gcd)
+# Euclidean algorithm
+# ============================================================
+[
+  [dup 0 neq] [
+    swap over mod
+  ] while
+  drop
+] "gcd" def
+
+# Test: 48 18 gcd → 6
+
+
+# ============================================================
+# LCM (Least Common Multiple)
+# (a b -- lcm)
+# ============================================================
+[
+  over over gcd
+  rot rot mul swap div abs
+] "lcm" def
+
+# Test: 4 6 lcm → 12
+
+
+# ============================================================
+# IS-PRIME
+# (n -- bool)
+# ============================================================
+[
+  dup 2 lt [drop false] [
+    dup 2 eq [drop true] [
+      dup 2 mod 0 eq [drop false] [
+        # Check odd divisors up to sqrt(n)
+        true swap  # result n
+        3          # result n i
+        [over over dup mul ge] [
+          # Check if n % i == 0
+          over over mod 0 eq [
+            # divisible, not prime
+            rot drop false rot rot
+            over 1 add  # force exit
+          ] [
+            2 add  # next odd
+          ] if
+        ] while
+        drop drop
+      ] if
+    ] if
+  ] if
+] "is-prime" def
+
+# Test: 17 is-prime → true
+# Test: 18 is-prime → false
+
+
+# ============================================================
+# Quick test all algorithms
+# ============================================================
+[
+  "Testing algorithms..." println
+  
+  "fact(5) = " 5 fact to-text str-concat println
+  "fib(10) = " 10 fib to-text str-concat println
+  "sum([1,2,3,4,5]) = " 1 2 3 4 5 5 collect sum to-text str-concat println
+  "gcd(48, 18) = " 48 18 gcd to-text str-concat println
+  "is-prime(17) = " 17 is-prime to-text str-concat println
+  
+  "All tests complete." println
+] "test-all" def

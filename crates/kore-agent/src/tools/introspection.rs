@@ -33,14 +33,12 @@ pub fn tool_help_tool() -> Tool {
             
             match result {
                 Ok(tool) => {
-                    let effect_str = tool.effect.as_ref()
-                        .map(|e| e.to_string())
-                        .unwrap_or_default();
-                    let doc_str = tool.doc.clone().unwrap_or_default();
+                    let sig_str = tool.sig().unwrap_or("").to_string();
+                    let doc_str = tool.doc().unwrap_or("").to_string();
                     
                     let info = Value::Map(indexmap::indexmap! {
                         "name".into() => Value::Text(name),
-                        "effect".into() => Value::Text(effect_str),
+                        "sig".into() => Value::Text(sig_str),
                         "doc".into() => Value::Text(doc_str),
                     });
                     stack.push(info)?;

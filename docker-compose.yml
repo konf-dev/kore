@@ -1,0 +1,205 @@
+# Kore World - Docker Compose Configuration
+# 
+# SECURITY: Agent is isolated from host:
+#   - Read-only root filesystem
+#   - No host network access (bridge only for LLM API calls)
+#   - No privileged operations
+#   - Dropped capabilities
+#   - Non-root user
+#   - Only /mnt and /world are writable
+#
+# Control Channel:
+#   - inbox.txt:   Human → Agent (commands)
+#   - trace.jsonl: Agent → Human (execution trace)
+#
+# Usage:
+#   Agent:  docker compose up kore-agent
+#   Watch:  tail -f mnt/trace.jsonl
+#   Send:   echo "focus on X" >> mnt/inbox.txt
+
+services:
+  # ==========================================================================
+  # Kore Shell - Interactive development (for debugging only)
+  # ==========================================================================
+  kore:
+    build: .
+    image: kore-world:latest
+    container_name: kore-shell
+    stdin_open: true
+    tty: true
+    
+    # SECURITY: Isolation
+    read_only: true                       # Root filesystem is read-only
+    security_opt:
+      - no-new-privileges:true            # Prevent privilege escalation
+    cap_drop:
+      - ALL                               # Drop all capabilities
+    
+    # Writable areas (tmpfs = in-memory, lost on restart)
+    tmpfs:
+      - /tmp:size=1G,mode=1777
+      - /var/tmp:size=512M,mode=1777
+      - /root:size=100M,mode=700          # For pip cache etc
+    
+    volumes:
+      - ./mnt:/mnt                        # Control channel
+      - ./world:/world                    # Agent workspace
+    
+    environment:
+      - KORE_PROMPT=/opt/kore/genesis-prompt.md
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+    
+    # Network: bridge allows outbound (for LLM APIs) but no host access
+    network_mode: bridge
+    
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+    
+    working_dir: /world
+    command: ["/bin/bash"]
+
+  # ==========================================================================
+  # Kore Agent - Autonomous mode (ISOLATED)
+  # ==========================================================================
+  kore-agent:
+    build: .
+    image: kore-world:latest
+    container_name: kore-agent
+    
+    # SECURITY: Full isolation
+    read_only: true                       # Root filesystem is read-only
+    security_opt:
+      - no-new-privileges:true            # Prevent privilege escalation
+    cap_drop:
+      - ALL                               # Drop all capabilities
+    
+    # Writable areas
+    tmpfs:
+      - /tmp:size=1G,mode=1777
+      - /var/tmp:size=512M,mode=1777
+      - /root:size=100M,mode=700
+    
+    volumes:
+      - ./mnt:/mnt                        # Control channel (read/write)
+      - ./world:/world                    # Agent workspace (read/write)
+    
+    environment:
+      # Goal for the agent
+      - KORE_GOAL=${KORE_GOAL:-Explore Kore and build something useful}
+      - KORE_PROMPT=/opt/kore/genesis-prompt.md
+      - KORE_WORKSPACE=/world
+      # ONE LLM key - agent can use this for its own LLM calls
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+    
+    # Network: outbound only (for LLM API calls)
+    network_mode: bridge
+    
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+    
+    working_dir: /world
+    command: ["kore-agent"]
+    restart: unless-stopped
+
+  # ==========================================================================
+  # Baseline Agent - Standard LLM with shell access (for benchmarking)
+  # ==========================================================================
+  baseline-agent:
+    build: 
+      context: ./benchmarks/baseline
+      dockerfile: Dockerfile
+    image: baseline-agent:latest
+    container_name: baseline-agent
+    
+    # SECURITY: Network isolation, but shell access allowed for fair comparison
+    # NOTE: Less locked down than Kore to allow proper shell execution
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN       # For package managers if needed
+    
+    volumes:
+      - ./benchmarks/baseline/baseline_agent.py:/app/agent.py:ro
+      # Workspace mounted at runtime via --volume flag
+    
+    environment:
+      - AGENT_GOAL=${AGENT_GOAL:-}
+      - AGENT_MODEL=${KORE_MODEL:-gpt-4o}
+      - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-30}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+    
+    network_mode: bridge
+    
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4'
+    
+    working_dir: /workspace
+    command: ["python", "/app/agent.py"]
+
+  # ==========================================================================
+  # Kore Agent with NVIDIA GPU (ISOLATED)
+  # ==========================================================================
+  kore-agent-gpu:
+    build: .
+    image: kore-world:latest
+    container_name: kore-agent-gpu
+    
+    # SECURITY: Full isolation
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    
+    tmpfs:
+      - /tmp:size=2G,mode=1777
+      - /var/tmp:size=1G,mode=1777
+      - /root:size=100M,mode=700
+    
+    volumes:
+      - ./mnt:/mnt
+      - ./world:/world
+    
+    environment:
+      - KORE_GOAL=${KORE_GOAL:-Build a Kore world with GPU capabilities}
+      - KORE_PROMPT=/opt/kore/genesis-prompt.md
+      - KORE_WORKSPACE=/world
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    
+    network_mode: bridge
+    
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '8'
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    working_dir: /world
+    command: ["kore-agent"]
+    restart: unless-stopped
+
