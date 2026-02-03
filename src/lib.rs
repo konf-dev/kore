@@ -83,6 +83,7 @@ pub mod value;
 pub mod types;
 pub mod analyzer;
 pub mod effects;
+pub mod optimizer;
 pub mod lookahead;
 pub mod stdlib;
 

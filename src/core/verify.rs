@@ -13,8 +13,11 @@
 //! | effect-infer | (quote -- analysis) | Static analysis of quote |
 //! | io-effects | (quote -- list) | Get IO effects of quote |
 //! | pure? | (quote -- bool) | Check if quote is pure |
+//! | optimize | (quote -- quote') | Algebraically optimize code |
+//! | simplify | (quote -- quote') | Apply only algebraic identities |
 
 use crate::analyzer;
+use crate::optimizer;
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
 use crate::stack::Stack;
@@ -172,6 +175,36 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ).with_doc("Check if code is pure (no IO effects)"));
+
+    // optimize: Full algebraic optimization + constant folding
+    dict.register(Tool::native(
+        "optimize",
+        "(code:Quote -- optimized:Quote)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let ops = stack.pop()?.into_quote()?;
+                let optimized = optimizer::optimize(ops);
+                
+                stack.push(Value::Quote(optimized))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Algebraically optimize code: constant folding, identity elimination"));
+
+    // simplify: Only algebraic identities (no constant folding)
+    dict.register(Tool::native(
+        "simplify",
+        "(code:Quote -- simplified:Quote)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let ops = stack.pop()?.into_quote()?;
+                let simplified = optimizer::simplify(ops);
+                
+                stack.push(Value::Quote(simplified))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Apply algebraic identities only: swap swap → ε, rot rot rot → ε"));
 }
 
 /// Convert Value (Map) to Effect

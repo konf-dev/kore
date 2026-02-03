@@ -412,6 +412,8 @@ impl Analyzer {
             "effect-infer" => (1, 1),
             "io-effects" => (1, 1),
             "pure?" => (1, 1),
+            "optimize" => (1, 1),
+            "simplify" => (1, 1),
             
             // Combinators
             "map" | "filter" | "each" => (2, 1),
