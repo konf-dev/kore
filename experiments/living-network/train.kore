@@ -1,0 +1,40 @@
+# ============================================
+# Living Network: Self-Pruning Neural Network
+# ============================================
+# Demo: Single alpha gate with gradient
+
+"Creating 1-gate Living Network..." println
+
+# Create alpha parameter
+# stack: alpha
+1.0 1 list tensor-from-list requires-grad
+
+# Input: ones(5)
+5 tensor-ones requires-grad
+
+"" println
+"Forward pass: output = alpha * input" println
+
+# Scale by alpha (keep alpha on stack for later)
+# stack: alpha x
+over 0 tensor-get tensor-scale
+
+# Sum for loss
+tensor-sum
+"Loss: " print dup to-text println
+
+# Backward
+backward
+"" println
+"Backward pass complete!" println
+
+# Get gradients - alpha is now on top of stack
+"" println
+"Alpha gradient:" println
+swap drop  # remove x reference
+"  alpha grad: " print grad-get to-text println
+
+"" println
+"Insight: gradient = sum(input) = 5" println
+"  With SGD and L1 penalty, alpha would decrease toward 0" println
+"  Layers with high loss contribution get penalized" println

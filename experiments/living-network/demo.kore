@@ -1,0 +1,38 @@
+# Living Network Demo
+
+# make-layer: (dim seed -- layer seed')
+[
+  over over tensor-randn requires-grad
+  map-new
+  "weight" rot map-set
+  "alpha" 1.0 1 list tensor-from-list requires-grad map-set
+  rot drop
+  swap 1 add
+] "make-layer" def
+
+# layer-forward: (x layer -- x')
+[
+  "alpha" map-get
+  tensor-unwrap 0 list-get
+  tensor-scale
+] "layer-forward" def
+
+"=== Living Network Demo ===" println
+
+"Creating layer..." println
+10 42 make-layer drop
+"layer" swap mem-set
+
+"Layer alpha: " print
+"layer" mem-get "alpha" map-get tensor-unwrap 0 list-get to-text println
+
+"Input: 10 ones" println
+10 tensor-ones requires-grad
+
+"Forward pass..." println
+"layer" mem-get layer-forward
+
+"Output: " print
+tensor-unwrap to-text println
+
+"Done!" println
