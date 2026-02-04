@@ -36,7 +36,7 @@ use crate::error::Error;
 use crate::stack::Stack;
 use crate::tool::Tool;
 use crate::value::{ext, Value};
-use crate::ext::autodiff::{requires_grad_check, get_tensor_id, tensor_with_grad, tensor_with_grad_and_inputs};
+use crate::ext::autodiff::{requires_grad_check, get_tensor_id, tensor_with_grad_and_inputs};
 use indexmap::IndexMap;
 
 /// Register all tensor tools

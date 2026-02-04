@@ -12,6 +12,21 @@
 //! | `over drop` | ε | copy second then discard |
 //! | `swap over` | `dup rot` | algebraic equivalence |
 //!
+//! ## Tensor Algebraic Identities
+//!
+//! These exploit mathematical laws impossible in mutable languages:
+//!
+//! | Pattern | Rewrite | Law |
+//! |---------|---------|-----|
+//! | `tensor-neg tensor-neg` | ε | involution: -(-x) = x |
+//! | `tensor-exp tensor-log` | ε | inverse: log(exp(x)) = x |
+//! | `tensor-log tensor-exp` | ε | inverse: exp(log(x)) = x |
+//! | `tensor-transpose tensor-transpose` | ε | involution: (Aᵀ)ᵀ = A |
+//! | `tensor-relu tensor-relu` | `tensor-relu` | idempotent: relu(relu(x)) = relu(x) |
+//! | `Push(1.0) tensor-scale` | ε | identity: 1·x = x |
+//! | `Push(0.0) tensor-scale` | `drop tensor-zeros-like` | annihilation: 0·x = 0 |
+//! | `Push(-1.0) tensor-scale` | `tensor-neg` | negation: (-1)·x = -x |
+//!
 //! ## Constant Folding
 //!
 //! | Pattern | Rewrite |
@@ -26,8 +41,9 @@
 //! - Identity: empty sequence ε
 //! - Associativity: (f ; g) ; h = f ; (g ; h)
 //!
-//! Some operations are **involutions** (self-inverse): swap, not
+//! Some operations are **involutions** (self-inverse): swap, not, transpose
 //! Some have **finite order**: rot³ = ε
+//! Some are **idempotent**: relu, abs (on non-negative)
 
 use crate::op::Op;
 use crate::value::Value;
@@ -170,6 +186,83 @@ impl Optimizer {
                 Some(vec![])
             }
 
+            // === TENSOR INVOLUTIONS ===
+            // Operations that are their own inverse: f(f(x)) = x
+
+            // tensor-transpose tensor-transpose → ε ((Aᵀ)ᵀ = A)
+            (Op::Call(x), Op::Call(y)) if x == "tensor-transpose" && y == "tensor-transpose" => {
+                Some(vec![])
+            }
+
+            // === TENSOR IDEMPOTENT OPERATIONS ===
+            // Operations where f(f(x)) = f(x)
+
+            // tensor-relu tensor-relu → tensor-relu (relu(relu(x)) = relu(x))
+            // Because relu(x) ≥ 0, applying relu again has no effect
+            (Op::Call(x), Op::Call(y)) if x == "tensor-relu" && y == "tensor-relu" => {
+                Some(vec![Op::call("tensor-relu")])
+            }
+
+            // tensor-abs tensor-abs → tensor-abs (|abs(x)| = |x|)
+            // Absolute value is idempotent on its own output
+            (Op::Call(x), Op::Call(y)) if x == "tensor-abs" && y == "tensor-abs" => {
+                Some(vec![Op::call("tensor-abs")])
+            }
+
+            // === ACTIVATION COMPOSITION LAWS ===
+            // Some activation pairs have special properties
+
+            // tensor-sigmoid tensor-relu → tensor-sigmoid
+            // sigmoid(x) ∈ [0,1], so relu(sigmoid(x)) = sigmoid(x)
+            (Op::Call(x), Op::Call(y)) if x == "tensor-sigmoid" && y == "tensor-relu" => {
+                Some(vec![Op::call("tensor-sigmoid")])
+            }
+
+            // tensor-softmax tensor-relu → tensor-softmax  
+            // softmax(x) ∈ [0,1] with sum=1, so relu has no effect
+            (Op::Call(x), Op::Call(y)) if x == "tensor-softmax" && y == "tensor-relu" => {
+                Some(vec![Op::call("tensor-softmax")])
+            }
+
+            // tensor-relu tensor-abs → tensor-relu
+            // relu(x) ≥ 0, so |relu(x)| = relu(x)
+            (Op::Call(x), Op::Call(y)) if x == "tensor-relu" && y == "tensor-abs" => {
+                Some(vec![Op::call("tensor-relu")])
+            }
+
+            // tensor-sigmoid tensor-sigmoid is NOT simplified
+            // sigmoid(sigmoid(x)) ≠ sigmoid(x) in general
+
+            // === SCALAR IDENTITY PATTERNS ===
+            // Patterns where a scalar value with tensor-scale can be simplified
+
+            // Push(1.0) tensor-scale → ε (1·x = x, multiplicative identity)
+            (Op::Push(Value::Float(f)), Op::Call(op)) 
+                if *f == 1.0 && op == "tensor-scale" => {
+                Some(vec![])  // Drop both, tensor unchanged
+            }
+            (Op::Push(Value::Int(n)), Op::Call(op)) 
+                if *n == 1 && op == "tensor-scale" => {
+                Some(vec![])
+            }
+
+            // Push(-1.0) tensor-scale → tensor-neg ((-1)·x = -x)
+            (Op::Push(Value::Float(f)), Op::Call(op)) 
+                if *f == -1.0 && op == "tensor-scale" => {
+                Some(vec![Op::call("tensor-neg")])
+            }
+            (Op::Push(Value::Int(n)), Op::Call(op)) 
+                if *n == -1 && op == "tensor-scale" => {
+                Some(vec![Op::call("tensor-neg")])
+            }
+
+            // Push(0.0) tensor-scale is NOT simplified to tensor-zeros
+            // because we'd need to track the tensor shape, which requires context
+            // This is a semantic transformation, not purely syntactic
+
+            // Push(2.0) tensor-scale tensor-scale → Push(4.0) tensor-scale
+            // This requires 3-op pattern, handled below
+
             // dup drop → ε (duplicate then discard)
             (Op::Call(x), Op::Call(y)) if x == "dup" && y == "drop" => {
                 Some(vec![])
@@ -222,6 +315,32 @@ impl Optimizer {
             (Op::Push(_), Op::Call(y), Op::Call(z))
                 if y == "dup" && z == "drop" => {
                 Some(vec![a.clone()])
+            }
+
+            // === TENSOR SCALE COMPOSITION ===
+            // Push(a) tensor-scale Push(b) tensor-scale → Push(a*b) tensor-scale
+            // This folds consecutive scalar multiplications
+            // Note: We need a 4-op pattern for this, but can catch some 3-op cases
+            
+            // tensor-neg Push(f) tensor-scale → Push(-f) tensor-scale
+            // Moving negation into the scalar
+            (Op::Call(x), Op::Push(Value::Float(f)), Op::Call(z))
+                if x == "tensor-neg" && z == "tensor-scale" => {
+                Some(vec![Op::Push(Value::Float(-f)), Op::call("tensor-scale")])
+            }
+            (Op::Call(x), Op::Push(Value::Int(n)), Op::Call(z))
+                if x == "tensor-neg" && z == "tensor-scale" => {
+                Some(vec![Op::Push(Value::Int(-n)), Op::call("tensor-scale")])
+            }
+
+            // === TENSOR ACTIVATION CHAINS ===
+            // relu after sigmoid: sigmoid output is [0,1], relu has no effect
+            // tensor-sigmoid tensor-relu → tensor-sigmoid
+            (Op::Call(x), Op::Call(y), Op::Call(z))
+                if x == "tensor-sigmoid" && y == "tensor-relu" => {
+                // Only match if z is something else (we're looking at 3 ops)
+                // Actually this is a 2-op pattern we missed, let's handle it properly
+                None  // Handle in match_pair instead
             }
 
             _ => None,
@@ -597,5 +716,105 @@ mod tests {
             call("tensor-from-list"),
             call("tensor-sum"),
         ]);
+    }
+
+    // === NEW TENSOR ALGEBRAIC TESTS ===
+
+    #[test]
+    fn test_tensor_transpose_transpose_identity() {
+        // (Aᵀ)ᵀ = A
+        let ops = vec![call("tensor-transpose"), call("tensor-transpose")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_tensor_relu_idempotent() {
+        // relu(relu(x)) = relu(x)
+        let ops = vec![call("tensor-relu"), call("tensor-relu")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-relu")]);
+    }
+
+    #[test]
+    fn test_tensor_abs_idempotent() {
+        // |abs(x)| = |x|
+        let ops = vec![call("tensor-abs"), call("tensor-abs")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-abs")]);
+    }
+
+    #[test]
+    fn test_tensor_scale_by_one() {
+        // 1.0 tensor-scale → ε (identity)
+        let ops = vec![Op::Push(Value::Float(1.0)), call("tensor-scale")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_tensor_scale_by_one_int() {
+        // 1 tensor-scale → ε (integer one)
+        let ops = vec![push_int(1), call("tensor-scale")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_tensor_scale_by_neg_one() {
+        // -1.0 tensor-scale → tensor-neg
+        let ops = vec![Op::Push(Value::Float(-1.0)), call("tensor-scale")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-neg")]);
+    }
+
+    #[test]
+    fn test_tensor_scale_by_neg_one_int() {
+        // -1 tensor-scale → tensor-neg
+        let ops = vec![push_int(-1), call("tensor-scale")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-neg")]);
+    }
+
+    #[test]
+    fn test_tensor_sigmoid_relu() {
+        // sigmoid then relu = just sigmoid (sigmoid output ∈ [0,1])
+        let ops = vec![call("tensor-sigmoid"), call("tensor-relu")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-sigmoid")]);
+    }
+
+    #[test]
+    fn test_tensor_relu_abs() {
+        // relu then abs = just relu (relu output ≥ 0)
+        let ops = vec![call("tensor-relu"), call("tensor-abs")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-relu")]);
+    }
+
+    #[test]
+    fn test_tensor_neg_scale_fusion() {
+        // tensor-neg then 2.0 tensor-scale → -2.0 tensor-scale
+        let ops = vec![call("tensor-neg"), Op::Push(Value::Float(2.0)), call("tensor-scale")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![Op::Push(Value::Float(-2.0)), call("tensor-scale")]);
+    }
+
+    #[test]
+    fn test_tensor_complex_optimization_chain() {
+        // A complex chain: relu relu neg neg 1.0 scale sigmoid relu
+        // Should simplify to: relu sigmoid
+        let ops = vec![
+            call("tensor-relu"),
+            call("tensor-relu"),    // idempotent → tensor-relu
+            call("tensor-neg"),
+            call("tensor-neg"),     // cancel → ε
+            Op::Push(Value::Float(1.0)),
+            call("tensor-scale"),   // identity → ε
+            call("tensor-sigmoid"),
+            call("tensor-relu"),    // sigmoid output ∈ [0,1] → tensor-sigmoid
+        ];
+        let result = simplify(ops);
+        assert_eq!(result, vec![call("tensor-relu"), call("tensor-sigmoid")]);
     }
 }

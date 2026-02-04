@@ -539,3 +539,160 @@ mod spawn_safety {
         assert_eq!(total.net, gp_res.net, "All resources accounted for (net)");
     }
 }
+
+// ============================================================================
+// FIBER SEMANTICS PROOFS
+// ============================================================================
+
+mod fiber_proofs {
+    use kore::{execute, register_builtins, Context, Op, Stack};
+    
+    async fn setup() -> Context {
+        let mut ctx = Context::trusted();
+        register_builtins(&mut ctx).await;
+        ctx
+    }
+    
+    /// Proof: Fibers are values (P1)
+    /// Fibers can be pushed, duplicated, and passed around
+    #[tokio::test]
+    async fn proof_fibers_are_values() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+        
+        // Create fiber and duplicate it
+        let ops = vec![
+            Op::quote(vec![Op::push(1), Op::push(2), Op::call("add")]),
+            Op::call("fiber-new"),
+            Op::call("dup"),
+            Op::call("fiber-status"),
+            Op::call("swap"),
+            Op::call("fiber-status"),
+        ];
+        
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        // Both should be "pending"
+        assert_eq!(result.values().len(), 2);
+        assert_eq!(result.values()[0].as_text().unwrap(), "pending");
+        assert_eq!(result.values()[1].as_text().unwrap(), "pending");
+    }
+    
+    /// Proof: Fiber operations are pure (P2)
+    /// Same input always gives same output
+    #[tokio::test]
+    async fn proof_fiber_operations_pure() {
+        let ctx1 = setup().await;
+        let ctx2 = setup().await;
+        
+        // Run same fiber creation twice
+        let ops = vec![
+            Op::quote(vec![Op::push(5), Op::push(10), Op::call("mul")]),
+            Op::call("fiber-new"),
+            Op::call("fiber-run"),
+            Op::call("fiber-result"),
+        ];
+        
+        let (result1, _) = execute(&ops.clone(), Stack::new(), ctx1).await.unwrap();
+        let (result2, _) = execute(&ops, Stack::new(), ctx2).await.unwrap();
+        
+        // Results should be identical (determinism)
+        assert_eq!(result1.values()[0].as_int().unwrap(), 50);
+        assert_eq!(result2.values()[0].as_int().unwrap(), 50);
+    }
+    
+    /// Proof: Fibers are immutable (fork = dup)
+    /// Duplicating a fiber gives independent computations
+    #[tokio::test]
+    async fn proof_fibers_immutable() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+        
+        // Create fiber, dup it, run both independently
+        let ops = vec![
+            Op::quote(vec![Op::push(42)]),
+            Op::call("fiber-new"),
+            Op::call("dup"),
+            // Run first copy
+            Op::call("fiber-run"),
+            Op::call("fiber-result"),
+            // Swap to get second copy
+            Op::call("swap"),
+            // Run second copy
+            Op::call("fiber-run"),
+            Op::call("fiber-result"),
+        ];
+        
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        // Both should have result 42
+        assert_eq!(result.values().len(), 2);
+        assert_eq!(result.values()[0].as_int().unwrap(), 42);
+        assert_eq!(result.values()[1].as_int().unwrap(), 42);
+    }
+    
+    /// Proof: Fiber step is incremental
+    /// Each step advances exactly one operation
+    #[tokio::test]
+    async fn proof_fiber_step_incremental() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+        
+        // Step through a 3-op program: [ 1 2 3 ]
+        let ops = vec![
+            Op::quote(vec![Op::push(1), Op::push(2), Op::push(3)]),
+            Op::call("fiber-new"),
+            Op::call("fiber-step"),  // Push 1
+            Op::call("fiber-step"),  // Push 2
+            Op::call("fiber-step"),  // Push 3
+            Op::call("fiber-stack"), // Get internal stack
+        ];
+        
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        // Stack should have the list [1, 2, 3]
+        let list = result.values()[0].as_list().unwrap();
+        assert_eq!(list.len(), 3);
+    }
+    
+    /// Proof: Fiber inject pushes to internal stack
+    #[tokio::test]
+    async fn proof_fiber_inject() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+        
+        // Create empty fiber, inject values, run add
+        let ops = vec![
+            Op::quote(vec![Op::call("add")]),
+            Op::call("fiber-new"),
+            Op::push(5),
+            Op::call("fiber-inject"),
+            Op::push(10),
+            Op::call("fiber-inject"),
+            Op::call("fiber-run"),
+            Op::call("fiber-result"),
+        ];
+        
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        // Result should be 15 (5 + 10)
+        assert_eq!(result.values()[0].as_int().unwrap(), 15);
+    }
+    
+    /// Proof: Fiber run reaches done status
+    #[tokio::test]
+    async fn proof_fiber_run_completes() {
+        let ctx = setup().await;
+        let stack = Stack::new();
+        
+        let ops = vec![
+            Op::quote(vec![Op::push(2), Op::push(3), Op::call("mul")]),
+            Op::call("fiber-new"),
+            Op::call("fiber-run"),
+            Op::call("fiber-status"),
+        ];
+        
+        let (result, _) = execute(&ops, stack, ctx).await.unwrap();
+        
+        assert_eq!(result.values()[0].as_text().unwrap(), "done");
+    }
+}

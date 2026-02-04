@@ -2,10 +2,10 @@
 
 ## Current State
 
-**Tests**: 475 passing  
-**Tools**: 186 total  
+**Tests**: 495 passing  
+**Tools**: 195 total  
 **Clippy**: Clean  
-**Optimizer**: Integrated (algebraic rewrites)
+**Optimizer**: Integrated (algebraic rewrites, 13 tensor identities)
 
 ---
 
@@ -21,6 +21,7 @@ Gated operations: fs, net, spawn, io, env, mem, rom, process, time, http, json.
 - **Tensor (33)**: Multi-dimensional arrays with full autodiff support
 - **Autodiff (5)**: Automatic differentiation (requires-grad, backward, grad-get, zero-grad, detach)
 - **Linear (7)**: Linear types (linear-new, linear-unwrap, affine-new, affine-unwrap, is-linear, is-affine, linearity)
+- **Fiber (9)**: Reified computations as immutable values for incremental execution
 
 ---
 
@@ -37,21 +38,22 @@ Gated operations: fs, net, spawn, io, env, mem, rom, process, time, http, json.
 | Automatic differentiation | ✓ |
 | Linear types | ✓ |
 | Algebraic optimizer | ✓ |
+| Fiber primitives | ✓ |
 
 ---
 
 ## Test Summary
 
 ```
-lib.rs                  261 tests
+lib.rs                  275 tests
 algebra_integration      18 tests
 algorithms               34 tests  
-formal_proofs            27 tests
+formal_proofs            33 tests (including 6 fiber proofs)
 integration_tests        23 tests
 language_semantics       44 tests
 primitives               68 tests
 ----------------------------------------
-TOTAL                   475 tests
+TOTAL                   495 tests
 ```
 
 ---
