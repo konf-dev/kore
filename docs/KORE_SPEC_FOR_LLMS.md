@@ -334,7 +334,7 @@ condition [ then-branch ] [ else-branch ] if
 | `now` | `( -- timestamp)` | time | Current time |
 | `sleep` | `(ms -- )` | time | Sleep milliseconds |
 
-### 4.16 Tensor Tools (32 tools)
+### 4.16 Tensor Tools (33 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -356,8 +356,8 @@ condition [ then-branch ] [ else-branch ] if
 | `tensor-neg` | `(tensor -- tensor')` | Negate all elements |
 | `tensor-scale` | `(tensor scalar -- tensor')` | Scalar multiply |
 | `tensor-dot` | `(v₁ v₂ -- scalar)` | Dot product |
-| `tensor-matmul` | `(A B rows cols -- C)` | Matrix multiply |
-| `tensor-matmul-t` | `(A B rows cols -- C)` | Matmul with transpose |
+| `tensor-matmul` | `(A B -- C)` | Matrix multiply |
+| `tensor-matmul-t` | `(A B -- C)` | Matmul with B transposed |
 | `tensor-outer` | `(v₁ v₂ -- matrix)` | Outer product |
 | `tensor-sum` | `(tensor -- scalar)` | Sum all elements |
 | `tensor-mean` | `(tensor -- scalar)` | Mean of elements |
@@ -410,7 +410,21 @@ condition [ then-branch ] [ else-branch ] if
 | `trace-step` | `(name trace -- trace')` | Add step |
 | `trace-fingerprint` | `(trace -- hash)` | Get trace hash |
 
-### 4.20 Linear Type Tools (7 tools)
+### 4.20 Autodiff Tools (5 tools)
+
+Reverse-mode automatic differentiation for tensor operations.
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `requires-grad` | `(tensor -- tensor')` | Mark tensor for gradient tracking |
+| `backward` | `(loss -- grads)` | Compute gradients (loss must be scalar) |
+| `grad-get` | `(tensor grads -- grad)` | Get gradient of tensor |
+| `zero-grad` | `(tensor -- tensor')` | Clear gradient info |
+| `detach` | `(tensor -- tensor')` | Remove from computation graph |
+
+**Autodiff-aware operations**: tensor-add, tensor-mul, tensor-sum, tensor-relu, tensor-sigmoid, tensor-softmax, tensor-log, tensor-exp, tensor-neg, tensor-matmul
+
+### 4.21 Linear Type Tools (7 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -422,7 +436,7 @@ condition [ then-branch ] [ else-branch ] if
 | `is-affine` | `(val -- bool)` | Check if affine type |
 | `linearity` | `(val -- sym)` | Get linearity: `none`, `affine`, or `linear` |
 
-### 4.21 Tensor Type Predicate
+### 4.22 Tensor Type Predicate
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -464,6 +478,8 @@ IO effects form a semilattice: `effects(A ; B) = effects(A) ∪ effects(B)`
 
 ## 6. Algebraic Identities
 
+The optimizer automatically applies these simplifications before execution.
+
 ### 6.1 Stack Involutions
 
 ```
@@ -485,7 +501,15 @@ dup drop = ε
 over drop = ε
 ```
 
-### 6.4 Equivalences
+### 6.4 Tensor Algebraic Identities
+
+```
+tensor-neg tensor-neg = ε
+tensor-exp tensor-log = ε
+tensor-log tensor-exp = ε
+```
+
+### 6.5 Equivalences
 
 ```
 over nip = dup

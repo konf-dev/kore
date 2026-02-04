@@ -1,0 +1,98 @@
+# =====================================================================
+# KORE PROGRAM SYNTHESIS: Learning to Compose Programs
+# =====================================================================
+
+"" println
+"Kore Program Synthesis: Learning to Compose Operations" println
+"======================================================" println
+"" println
+
+# === TOOLS ===
+
+[ swap 1 list tensor-from-list requires-grad mem-set ] "make-param" def
+
+[ 
+  "_lr" swap mem-set "_g" swap mem-set
+  dup mem-get dup "_g" mem-get grad-get 
+  "_lr" mem-get -1.0 mul tensor-scale
+  tensor-add requires-grad mem-set 
+] "sgd" def
+
+[ tensor-sub dup tensor-mul tensor-sum ] "mse" def
+
+# x-plus-b: ( -- x+b)
+[
+  1.0 1.0 1.0 1.0 1.0 1.0 6 list tensor-from-list   
+  "b" mem-get tensor-scale                           
+  "x" mem-get tensor-add                             
+] "x-plus-b" def
+
+# === EXPERIMENT ===
+
+"Task: Discover y = relu(x + 1)" println
+"" println
+
+# Data
+"x" -3.0 -2.0 -1.0 0.0 1.0 2.0 6 list tensor-from-list mem-set
+"y"  0.0  0.0  0.0 1.0 2.0 3.0 6 list tensor-from-list mem-set
+
+# Learnable parameters
+0.5 "g1" make-param    
+0.25 "g2" make-param   
+0.25 "g3" make-param   
+0.5 "b"  make-param    
+1.0 "s"  make-param    
+
+# forward: ( -- pred)
+[
+  x-plus-b tensor-relu "g1" mem-get tensor-scale                
+  "x" mem-get "s" mem-get tensor-scale tensor-sigmoid "g2" mem-get tensor-scale                
+  "x" mem-get "g3" mem-get tensor-scale    
+  tensor-add tensor-add
+] "forward" def
+
+# train-step: ( -- loss)
+[
+  forward "y" mem-get mse
+  dup backward "_g" swap mem-set
+  
+  "g1" "_g" mem-get 0.002 sgd
+  "g2" "_g" mem-get 0.002 sgd
+  "g3" "_g" mem-get 0.002 sgd
+  "b"  "_g" mem-get 0.002 sgd
+  "s"  "_g" mem-get 0.002 sgd
+] "train-step" def
+
+# Training - more steps
+"Training 500 steps (lr=0.002)..." println
+
+"step" 0 mem-set
+500 [
+  drop train-step
+  "step" mem-get 100 mod 0 eq [
+    "Step " print "step" mem-get to-text print ": loss = " print
+    dup 0 tensor-get to-text println
+  ] [ ] if
+  drop
+  "step" mem-get 1 add "step" swap mem-set
+] times
+
+# Results
+"" println
+"======================================" println
+"DISCOVERED PROGRAM" println
+"======================================" println
+"" println
+"  g1 (relu)     = " print "g1" mem-get 0 tensor-get to-text println
+"  g2 (sigmoid)  = " print "g2" mem-get 0 tensor-get to-text println
+"  g3 (identity) = " print "g3" mem-get 0 tensor-get to-text println
+"  b  (bias)     = " print "b" mem-get 0 tensor-get to-text println
+"" println
+"Target: g1~1, g2~0, g3~0, b~1" println
+
+"" println
+"Predictions:" println
+forward detach "pred" swap mem-set
+"  x:    " print "x" mem-get to-text println
+"  pred: " print "pred" mem-get to-text println
+"  true: " print "y" mem-get to-text println

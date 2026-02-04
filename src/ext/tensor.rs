@@ -353,14 +353,15 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-scale: (tensor n -- tensor')
-    // Multiply all elements by scalar
-    // Autodiff-aware: records gradient info when input requires gradient
+    // Multiply all elements by scalar (Float or 1-element Tensor)
+    // Autodiff-aware: records gradient info when inputs require gradient
+    // When n is a Tensor, gradients flow to both tensor AND scalar-tensor!
     dict.register(Tool::native(
         "tensor-scale",
-        "(tensor:Tensor n:Float -- tensor:Tensor)",
+        "(tensor:Tensor n:Float|Tensor -- tensor:Tensor)",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
-                let n = stack.pop()?.as_float()?;
+                let n_val = stack.pop()?;
                 let t = stack.pop()?;
                 let ext = t.as_ext()?;
                 
@@ -371,18 +372,51 @@ pub fn register(dict: &mut Dictionary) {
                     });
                 }
                 
-                let scaled = scale_elements(&ext.data, n);
+                // Handle both Float and Tensor as scalar
+                let (scalar_val, scalar_tensor_meta, scalar_tensor_id) = match &n_val {
+                    Value::Float(f) => (*f, None, 0u64),
+                    Value::Int(i) => (*i as f64, None, 0u64),
+                    Value::Ext(scalar_ext) if scalar_ext.kind == ext::TENSOR => {
+                        // Extract scalar from 1-element tensor
+                        let flat = flatten_to_f64(&scalar_ext.data);
+                        if flat.is_empty() {
+                            return Err(Error::Runtime("tensor-scale: scalar tensor is empty".into()));
+                        }
+                        let id = get_tensor_id(&scalar_ext.meta);
+                        (flat[0], scalar_ext.meta.clone(), id)
+                    }
+                    _ => {
+                        return Err(Error::TypeError {
+                            expected: "Float or Tensor".into(),
+                            got: n_val.type_name().into(),
+                        });
+                    }
+                };
                 
-                // Check if input requires gradient
-                let req_grad = requires_grad_check(&ext.meta);
+                let x_data = flatten_to_f64(&ext.data);
+                let scaled = scale_elements(&ext.data, scalar_val);
+                
+                // Check if either input requires gradient
+                let x_req_grad = requires_grad_check(&ext.meta);
+                let s_req_grad = requires_grad_check(&scalar_tensor_meta);
+                let req_grad = x_req_grad || s_req_grad;
                 
                 let tensor = if req_grad {
-                    // Record gradient info: d/dx(c*x) = c
                     let x_id = get_tensor_id(&ext.meta);
-                    let saved = vec![vec![n]]; // Save the scalar
-                    // Store input metadata for recursive backward traversal
-                    let input_metas = vec![ext.meta.clone()];
-                    tensor_with_grad_and_inputs(scaled, ext.meta.clone(), "Scale", vec![x_id], saved, input_metas)
+                    
+                    if scalar_tensor_id != 0 {
+                        // Scalar is a tracked tensor - use Scale2 for two-input backward
+                        // saved: [scalar_value, x_data]
+                        let saved = vec![vec![scalar_val], x_data];
+                        let input_ids = vec![x_id, scalar_tensor_id];
+                        let input_metas = vec![ext.meta.clone(), scalar_tensor_meta];
+                        tensor_with_grad_and_inputs(scaled, ext.meta.clone(), "Scale2", input_ids, saved, input_metas)
+                    } else {
+                        // Scalar is a raw Float - original behavior
+                        let saved = vec![vec![scalar_val]];
+                        let input_metas = vec![ext.meta.clone()];
+                        tensor_with_grad_and_inputs(scaled, ext.meta.clone(), "Scale", vec![x_id], saved, input_metas)
+                    }
                 } else {
                     Value::tensor(scaled, ext.meta.clone())
                 };
@@ -467,6 +501,7 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-neg: (tensor -- tensor')
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-neg",
         "(tensor:Tensor -- tensor:Tensor)",
@@ -483,7 +518,23 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let negated = scale_elements(&ext.data, -1.0);
-                let tensor = Value::tensor(negated, ext.meta.clone());
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: d/dx(-x) = -1
+                    let x_id = get_tensor_id(&ext.meta);
+                    let x_data = flatten(&ext.data);
+                    let saved = vec![
+                        x_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(negated, ext.meta.clone(), "Neg", vec![x_id], saved, input_metas)
+                } else {
+                    Value::tensor(negated, ext.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -491,7 +542,8 @@ pub fn register(dict: &mut Dictionary) {
     ));
 
     // tensor-exp: (tensor -- tensor')
-    // Element-wise exp approximation
+    // Element-wise exponential
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-exp",
         "(tensor:Tensor -- tensor:Tensor)",
@@ -508,7 +560,24 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let result = map_elements(&ext.data, fast_exp);
-                let tensor = Value::tensor(result, ext.meta.clone());
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: d/dx(exp(x)) = exp(x)
+                    // Save the output (exp values) for backward
+                    let x_id = get_tensor_id(&ext.meta);
+                    let out_data = flatten(&result);
+                    let saved = vec![
+                        out_data.iter().map(|v| value_to_f64(v)).collect(),
+                    ];
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(result, ext.meta.clone(), "Exp", vec![x_id], saved, input_metas)
+                } else {
+                    Value::tensor(result, ext.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -1177,15 +1246,11 @@ where F: Fn(f64) -> f64 + Copy
     }
 }
 
-/// Fast exp approximation: (1 + x/256)^256
+/// Exponential function with proper precision
 fn fast_exp(x: f64) -> f64 {
-    let x = x.clamp(-20.0, 20.0); // Prevent overflow
-    let base = 1.0 + x / 256.0;
-    let mut result = base;
-    for _ in 0..8 {
-        result *= result; // 2^8 = 256 squarings
-    }
-    result
+    // Use stdlib exp for mathematical correctness
+    // Clamp to prevent overflow
+    x.clamp(-700.0, 700.0).exp()
 }
 
 fn elementwise_op<F>(a: &Value, b: &Value, op: F) -> Result<Value, Error>

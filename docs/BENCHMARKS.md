@@ -87,3 +87,4 @@ time ./target/release/kore -e "1000 [ drop 10 tensor-rand requires-grad 10 tenso
 - Tensor ops include creation overhead in each iteration
 - Autodiff benchmark includes forward pass, backward pass, and gradient storage
 - No SIMD or GPU acceleration (pure Rust)
+- **Algebraic optimizer** runs before execution, simplifying redundant operations (swap swap → ε, tensor-exp tensor-log → ε, etc.)

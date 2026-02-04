@@ -885,7 +885,7 @@ json-encode "/world/config.json" swap fs-write
 ### String: `str-len str-get str-slice str-concat str-split str-join str-trim str-find str-starts str-ends str-replace`
 ### List: `list-len list-get list-set list-push list-pop list-slice list-concat list-reverse list-empty collect unlist`
 ### Map: `map-new map-get map-set map-has map-del map-keys map-vals`
-### Types: `type-of is-null is-bool is-int is-float is-text is-list is-map is-quote is-error`
+### Types: `type-of is-null is-bool is-int is-float is-text is-list is-map is-quote is-error is-tensor`
 ### Convert: `to-int to-float to-text to-bool to-list`
 ### FP: `map filter fold each times`
 ### File: `fs-read fs-write fs-append fs-exists fs-list fs-mkdir fs-rm`
@@ -894,3 +894,6 @@ json-encode "/world/config.json" swap fs-write
 ### Memory: `mem-set mem-get mem-has mem-del mem-keys`
 ### System: `exec print println now sleep uuid random`
 ### Error: `try fail unwrap assert panic`
+### Tensor: `tensor-from-list tensor-zeros tensor-ones tensor-add tensor-mul tensor-sum tensor-matmul tensor-softmax tensor-relu tensor-exp tensor-log tensor-neg tensor-scale`
+### Autodiff: `requires-grad backward grad-get zero-grad detach`
+### Linear: `linear-new linear-unwrap affine-new affine-unwrap is-linear is-affine linearity`

@@ -194,11 +194,13 @@ map-new "count" 42 map-set json-encode
 | JSON | `json-parse json-encode` |
 | Error | `try is-error fail` |
 | Spawn | `spawn cap-list cap-attenuate` |
+| Tensor | `tensor-from-list tensor-add tensor-mul tensor-sum` |
+| Autodiff | `requires-grad backward grad-get` |
 
 ## Your Workspace
 
 - `/world/` - Your persistent workspace (read/write)
-- `/opt/kore/docs/REFERENCE.md` - Full reference (150+ tools)
+- `/opt/kore/docs/REFERENCE.md` - Full reference (186 tools)
 - `/opt/kore/examples/` - Working examples
 
 ## Next Steps

@@ -1,0 +1,141 @@
+# Test the composed math library (inline)
+
+# === COMPOSED MATH OPERATIONS ===
+
+# tensor-pow: (x n -- x^n) where n is scalar
+# x^n = exp(n * log(x))
+[ swap dup tensor-log rot tensor-scale tensor-exp swap drop ] "tensor-pow" def
+
+# tensor-sqrt: (x -- sqrt(x))
+# sqrt(x) = exp(0.5 * log(x))
+[ tensor-log 0.5 tensor-scale tensor-exp ] "tensor-sqrt" def
+
+# tensor-div: (x y -- x/y)
+# x/y = x * exp(-log(y))
+[ tensor-log tensor-neg tensor-exp tensor-mul ] "tensor-div" def
+
+# tensor-inv: (x -- 1/x)
+# 1/x = exp(-log(x))
+[ tensor-log tensor-neg tensor-exp ] "tensor-inv" def
+
+# tensor-tanh: (x -- tanh(x))
+# tanh(x) = (e^x - e^-x) / (e^x + e^-x)
+[
+  dup tensor-exp          # x e+
+  swap tensor-neg tensor-exp  # e+ e-
+  over over               # e+ e- e+ e-  (dup2 = over over)
+  tensor-sub              # e+ e- (e+-e-)
+  rot rot                 # (e+-e-) e+ e-
+  tensor-add              # (e+-e-) (e++e-)
+  tensor-div              # result
+] "tensor-tanh" def
+
+# tensor-abs: (x -- |x|)
+# |x| = sqrt(x^2)
+[ dup tensor-mul tensor-sqrt ] "tensor-abs" def
+
+# tensor-sin: (x -- sin(x)) - Taylor 2 terms: x - x³/6
+[
+  dup                     # x x
+  dup dup tensor-mul      # x x x²
+  tensor-mul              # x x³
+  -0.16666667 tensor-scale  # x -x³/6
+  tensor-add              # x - x³/6
+] "tensor-sin" def
+
+# tensor-cos: (x -- cos(x)) - Taylor 2 terms: 1 - x²/2
+[
+  dup tensor-mul          # x²
+  -0.5 tensor-scale       # -x²/2
+  1.0 1 list tensor-from-list  # -x²/2 [1.0]
+  tensor-add              # 1 - x²/2
+] "tensor-cos" def
+
+"=== Testing Composed Math Operations ===" println
+"" println
+
+# Test sqrt
+"sqrt(4) = " print
+4.0 1 list tensor-from-list tensor-sqrt 0 tensor-get to-text println
+
+"sqrt(2) = " print
+2.0 1 list tensor-from-list tensor-sqrt 0 tensor-get to-text println
+
+# Test pow
+"2^3 = " print
+2.0 1 list tensor-from-list 3.0 tensor-pow 0 tensor-get to-text println
+
+"2^0.5 = " print
+2.0 1 list tensor-from-list 0.5 tensor-pow 0 tensor-get to-text println
+
+# Test div
+"10 / 2 = " print
+10.0 1 list tensor-from-list 2.0 1 list tensor-from-list tensor-div 0 tensor-get to-text println
+
+# Test tanh
+"tanh(0.001) = " print
+0.001 1 list tensor-from-list tensor-tanh 0 tensor-get to-text println
+
+"tanh(1) = " print
+1.0 1 list tensor-from-list tensor-tanh 0 tensor-get to-text println
+
+# Test abs
+"abs(-3) = " print
+-3.0 1 list tensor-from-list tensor-abs 0 tensor-get to-text println
+
+# Test sin (Taylor)
+"sin(0.1) ≈ " print
+0.1 1 list tensor-from-list tensor-sin 0 tensor-get to-text println
+
+"sin(0.5) ≈ " print
+0.5 1 list tensor-from-list tensor-sin 0 tensor-get to-text println
+
+# Test cos (Taylor)
+"cos(0.1) ≈ " print
+0.1 1 list tensor-from-list tensor-cos 0 tensor-get to-text println
+
+"" println
+"=== Testing Autodiff Through Compositions ===" println
+
+# Define helper to get from memory
+[ "x" mem-get ] "x" def
+[ "y" mem-get ] "y" def
+[ "a" mem-get ] "a" def
+[ "b" mem-get ] "b" def
+[ "grads" mem-get ] "grads" def
+[ "grads2" mem-get ] "grads2" def
+[ "grads3" mem-get ] "grads3" def
+
+# Test that gradients flow through sqrt
+# d/dx sqrt(x) = 0.5 / sqrt(x) = 0.5 / 2 = 0.25 at x=4
+"x" 4.0 1 list tensor-from-list requires-grad mem-set
+x tensor-sqrt tensor-sum backward 
+"grads" swap mem-set
+"d/dx sqrt(x) at x=4: " print
+x grads grad-get tensor-unwrap 0 list-get to-text print " (expected ~0.25)" println
+
+# Test gradients through pow
+# d/dy y^3 = 3*y^2 = 3*4 = 12 at y=2
+"y" 2.0 1 list tensor-from-list requires-grad mem-set
+y 3.0 tensor-pow tensor-sum backward 
+"grads2" swap mem-set
+"d/dy y^3 at y=2: " print
+y grads2 grad-get tensor-unwrap 0 list-get to-text print " (expected ~12)" println
+
+# Test gradients through div
+# d/da (a/b) = 1/b = 0.5 at b=2
+# d/db (a/b) = -a/b² = -6/4 = -1.5
+"a" 6.0 1 list tensor-from-list requires-grad mem-set
+"b" 2.0 1 list tensor-from-list requires-grad mem-set
+a b tensor-div tensor-sum backward 
+"grads3" swap mem-set
+"d/da (a/b) at a=6,b=2: " print
+a grads3 grad-get tensor-unwrap 0 list-get to-text print " (expected ~0.5)" println
+
+"d/db (a/b) at a=6,b=2: " print
+b grads3 grad-get tensor-unwrap 0 list-get to-text print " (expected ~-1.5)" println
+
+"" println
+"=== All Composed From Primitives! ===" println
+"No Rust changes needed for pow, sqrt, div, tanh, abs" println
+"Only sin/cos need native impl for high precision" println

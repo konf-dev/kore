@@ -1,0 +1,126 @@
+# =====================================================================
+# KORE NAS: Neural Architecture Search via Tool Composition
+# =====================================================================
+# 
+# Kore Pattern: Use memory for named state, stack for data flow.
+# This keeps tools simple and composable.
+
+"" println
+"Kore NAS: Discovering which tools to compose" println
+"=============================================" println
+
+# === REUSABLE TOOL LIBRARY ===
+
+# make-param: (val name -- ) Creates a tracked parameter
+[ swap 1 list tensor-from-list requires-grad mem-set ] "make-param" def
+
+# sgd-step: (name grads lr -- ) In-place SGD update
+[
+  "lr" swap mem-set
+  "g" swap mem-set
+  dup mem-get                    # name param
+  dup "g" mem-get grad-get       # name param grad
+  "lr" mem-get -1.0 mul tensor-scale  # name param neg_lr_grad
+  tensor-add requires-grad       # name updated_param
+  mem-set                        # ()
+] "sgd-step" def
+
+# forward-nas: ( -- pred)
+# pred = s * (a1*relu(x) + a2*sigmoid(5x) + a3*x)
+[
+  "x" mem-get dup dup
+  tensor-relu "a1" mem-get tensor-scale
+  swap 5.0 tensor-scale tensor-sigmoid "a2" mem-get tensor-scale
+  tensor-add
+  swap "a3" mem-get tensor-scale
+  tensor-add
+  "s" mem-get tensor-scale
+] "forward-nas" def
+
+# mse-loss: (pred target -- loss)
+[ tensor-sub dup tensor-mul tensor-sum ] "mse-loss" def
+
+# train-step: ( -- loss)
+# Returns loss, updates all params in memory
+[
+  forward-nas "y" mem-get mse-loss
+  dup backward "grads" swap mem-set
+  
+  "a1" "grads" mem-get 0.02 sgd-step
+  "a2" "grads" mem-get 0.02 sgd-step
+  "a3" "grads" mem-get 0.02 sgd-step
+  "s"  "grads" mem-get 0.02 sgd-step
+] "train-step" def
+
+# === EXPERIMENT SETUP ===
+
+"" println
+"Task: Learn y = 2*relu(x)" println
+"" println
+
+# Data
+"x" -2.0 -1.0 0.0 1.0 2.0 5 list tensor-from-list mem-set
+"y"  0.0  0.0 0.0 2.0 4.0 5 list tensor-from-list mem-set
+
+# Initialize parameters
+0.33 "a1" make-param   # relu weight
+0.33 "a2" make-param   # sigmoid weight  
+0.34 "a3" make-param   # identity weight
+1.0  "s"  make-param   # output scale
+
+"Initial parameters:" println
+"  a1 (relu)    = 0.33" println
+"  a2 (sigmoid) = 0.33" println
+"  a3 (identity)= 0.34" println
+"  s  (scale)   = 1.0" println
+"" println
+"Training..." println
+
+# === TRAINING LOOP ===
+
+"step" 0 mem-set
+
+200 [
+  drop   # drop counter from times
+  train-step
+  
+  # Print every 40 steps
+  "step" mem-get 40 mod 0 eq [
+    "Step " print "step" mem-get to-text print ": loss = " print 
+    dup 0 tensor-get to-text println
+  ] [ ] if
+  drop  # drop loss
+  
+  "step" mem-get 1 add "step" swap mem-set
+] times
+
+# === RESULTS ===
+
+"" println
+"==============================" println
+"DISCOVERED ARCHITECTURE" println
+"==============================" println
+"" println
+"Learned weights:" println
+"  a1 (relu)     = " print "a1" mem-get 0 tensor-get to-text println
+"  a2 (sigmoid)  = " print "a2" mem-get 0 tensor-get to-text println  
+"  a3 (identity) = " print "a3" mem-get 0 tensor-get to-text println
+"  s  (scale)    = " print "s" mem-get 0 tensor-get to-text println
+"" println
+"Interpretation:" println
+"  Larger weight = more important operation" println
+"  Expected: a1 (relu) dominates since y = 2*relu(x)" println
+
+# Show predictions  
+"" println
+"Predictions vs Targets:" println
+"x" mem-get dup dup
+tensor-relu "a1" mem-get detach tensor-scale
+swap 5.0 tensor-scale tensor-sigmoid "a2" mem-get detach tensor-scale
+tensor-add
+swap "a3" mem-get detach tensor-scale
+tensor-add
+"s" mem-get detach tensor-scale
+
+"  pred: " print to-text println
+"  true: " print "y" mem-get to-text println

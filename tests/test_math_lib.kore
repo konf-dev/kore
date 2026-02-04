@@ -1,0 +1,92 @@
+# Test the composed math library
+"lib/math.kore" import
+
+"=== Testing Composed Math Operations ===" println
+"" println
+
+# Test sqrt
+"sqrt(4) = " print
+[4.0] tensor-from-list tensor-sqrt tensor-unwrap 0 list-get println
+# Expected: 2.0
+
+"sqrt(2) = " print
+[2.0] tensor-from-list tensor-sqrt tensor-unwrap 0 list-get println
+# Expected: ~1.414
+
+# Test pow
+"2^3 = " print
+[2.0] tensor-from-list 3.0 tensor-pow tensor-unwrap 0 list-get println
+# Expected: 8.0
+
+"2^0.5 = " print
+[2.0] tensor-from-list 0.5 tensor-pow tensor-unwrap 0 list-get println
+# Expected: ~1.414
+
+# Test div
+"10 / 2 = " print
+[10.0] tensor-from-list [2.0] tensor-from-list tensor-div tensor-unwrap 0 list-get println
+# Expected: 5.0
+
+# Test tanh
+"tanh(0) = " print
+[0.0] tensor-from-list tensor-tanh tensor-unwrap 0 list-get println
+# Expected: 0.0
+
+"tanh(1) = " print
+[1.0] tensor-from-list tensor-tanh tensor-unwrap 0 list-get println
+# Expected: ~0.762
+
+# Test abs
+"abs(-3) = " print
+[-3.0] tensor-from-list tensor-abs tensor-unwrap 0 list-get println
+# Expected: 3.0
+
+# Test sin
+"sin(0) = " print
+[0.0] tensor-from-list tensor-sin tensor-unwrap 0 list-get println
+# Expected: 0.0
+
+"sin(π/2) = " print
+[1.5707963] tensor-from-list tensor-sin tensor-unwrap 0 list-get println
+# Expected: ~1.0
+
+# Test cos
+"cos(0) = " print
+[0.0] tensor-from-list tensor-cos tensor-unwrap 0 list-get println
+# Expected: 1.0
+
+"cos(π/2) = " print
+[1.5707963] tensor-from-list tensor-cos tensor-unwrap 0 list-get println
+# Expected: ~0.0
+
+"" println
+"=== Testing Autodiff Through Compositions ===" println
+
+# Test that gradients flow through sqrt
+[4.0] tensor-from-list requires-grad "x" mem-set
+x tensor-sqrt tensor-sum backward "grads" mem-set
+"d/dx sqrt(x) at x=4: " print
+x grads grad-get tensor-unwrap 0 list-get println
+# Expected: 0.5 / sqrt(4) = 0.25
+
+# Test gradients through pow
+[2.0] tensor-from-list requires-grad "y" mem-set
+y 3.0 tensor-pow tensor-sum backward "grads2" mem-set
+"d/dy y^3 at y=2: " print
+y grads2 grad-get tensor-unwrap 0 list-get println
+# Expected: 3 * 2^2 = 12.0
+
+# Test gradients through div
+[6.0] tensor-from-list requires-grad "a" mem-set
+[2.0] tensor-from-list requires-grad "b" mem-set
+a b tensor-div tensor-sum backward "grads3" mem-set
+"d/da (a/b) at a=6, b=2: " print
+a grads3 grad-get tensor-unwrap 0 list-get println
+# Expected: 1/b = 0.5
+
+"d/db (a/b) at a=6, b=2: " print
+b grads3 grad-get tensor-unwrap 0 list-get println
+# Expected: -a/b^2 = -6/4 = -1.5
+
+"" println
+"=== All Composed - No Rust Changes Needed! ===" println

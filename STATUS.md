@@ -2,24 +2,25 @@
 
 ## Current State
 
-**Tests**: 469 passing (255 lib + 214 integration)  
-**Tools**: 186 total (87 core + 54 cap + 45 ext)  
+**Tests**: 475 passing  
+**Tools**: 186 total  
 **Clippy**: Clean  
+**Optimizer**: Integrated (algebraic rewrites)
 
 ---
 
 ## Architecture
 
-### Core (87 tools)
+### Core Tools
 Stack manipulation, arithmetic, logic, control flow, data structures, strings, types.
 
-### Capabilities (54 tools)
+### Capability Tools
 Gated operations: fs, net, spawn, io, env, mem, rom, process, time, http, json.
 
-### Extensions (45 tools)
-- **Tensor (25+)**: Multi-dimensional arrays with autodiff support
+### Extensions
+- **Tensor (33)**: Multi-dimensional arrays with full autodiff support
 - **Autodiff (5)**: Automatic differentiation (requires-grad, backward, grad-get, zero-grad, detach)
-- **Linear (7+)**: Linear types (use-once, affine)
+- **Linear (7)**: Linear types (linear-new, linear-unwrap, affine-new, affine-unwrap, is-linear, is-affine, linearity)
 
 ---
 
@@ -35,22 +36,22 @@ Gated operations: fs, net, spawn, io, env, mem, rom, process, time, http, json.
 | Tensor operations | ✓ |
 | Automatic differentiation | ✓ |
 | Linear types | ✓ |
+| Algebraic optimizer | ✓ |
 
 ---
 
 ## Test Summary
 
 ```
-lib.rs              255 tests
-algebra_integration  18 tests
-autodiff_tests       13 tests  
-control_tests        34 tests
-data_structure_tests 27 tests
-stack_tests          23 tests
-string_number_tests  44 tests
-tensor_tests         68 tests
+lib.rs                  261 tests
+algebra_integration      18 tests
+algorithms               34 tests  
+formal_proofs            27 tests
+integration_tests        23 tests
+language_semantics       44 tests
+primitives               68 tests
 ----------------------------------------
-TOTAL               469 tests
+TOTAL                   475 tests
 ```
 
 ---

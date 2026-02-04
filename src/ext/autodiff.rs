@@ -230,6 +230,27 @@ pub mod backward_fns {
         vec![dx]
     }
 
+    /// Scale with tracked scalar tensor: y = s * x
+    /// Returns gradients for both x and s
+    pub fn scale2_backward(upstream: &[f64], saved: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        // y = s * x (s is scalar, x is tensor)
+        // dy/dx = s (broadcast to x shape)
+        // dy/ds = sum(x * upstream) (reduce to scalar shape)
+        // saved[0] = [scalar_value], saved[1] = x_data
+        let scalar = saved[0].get(0).copied().unwrap_or(1.0);
+        let x_data = &saved[1];
+        
+        // dx = s * upstream
+        let dx: Vec<f64> = upstream.iter().map(|g| g * scalar).collect();
+        
+        // ds = sum(x * upstream) - gradient reduces to scalar
+        let ds: f64 = upstream.iter().zip(x_data.iter())
+            .map(|(g, x)| g * x)
+            .sum();
+        
+        vec![dx, vec![ds]]
+    }
+
     pub fn matmul_backward(upstream: &[f64], saved: &[Vec<f64>]) -> Vec<Vec<f64>> {
         // y = W @ x where W is (m, n) and x is (n,)
         // saved: [w_data, x_data, m, n]
@@ -327,6 +348,7 @@ fn backward_pass(
             Some("Exp") => backward_fns::exp_backward(&upstream, &saved_tensors),
             Some("Neg") => backward_fns::neg_backward(&upstream, &saved_tensors),
             Some("Scale") => backward_fns::scale_backward(&upstream, &saved_tensors),
+            Some("Scale2") => backward_fns::scale2_backward(&upstream, &saved_tensors),
             Some("MatMul") => backward_fns::matmul_backward(&upstream, &saved_tensors),
             _ => continue, // Leaf node or unknown
         };
@@ -404,6 +426,7 @@ fn process_grad_backward(
         Some("Exp") => backward_fns::exp_backward(upstream, &saved_tensors),
         Some("Neg") => backward_fns::neg_backward(upstream, &saved_tensors),
         Some("Scale") => backward_fns::scale_backward(upstream, &saved_tensors),
+        Some("Scale2") => backward_fns::scale2_backward(upstream, &saved_tensors),
         Some("MatMul") => backward_fns::matmul_backward(upstream, &saved_tensors),
         Some("Leaf") | None => return, // Leaf node - no upstream gradients
         Some(_) => return, // Unknown grad_fn

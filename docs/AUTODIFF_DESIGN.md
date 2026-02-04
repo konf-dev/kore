@@ -406,11 +406,14 @@ The key insight is making the gradient context an explicit stack value, avoiding
 | `tensor-sum` | $\nabla_x = \text{ones}$ |
 | `tensor-relu` | $\nabla_x = (x > 0) \cdot \nabla_{\text{out}}$ |
 | `tensor-log` | $\nabla_x = 1/x$ |
+| `tensor-exp` | $\nabla_x = \exp(x)$ |
+| `tensor-neg` | $\nabla_x = -1$ |
+| `tensor-sigmoid` | $\nabla_x = \sigma(x)(1-\sigma(x))$ |
 | `tensor-softmax` | Jacobian-vector product |
 | `tensor-matmul` | $\nabla_W = \nabla_y \otimes x, \nabla_x = W^T \nabla_y$ |
 
 ### Test Coverage
 
 - 13 unit tests for backward functions
-- All 250+ existing tests pass (no regressions)
-- Tests cover: add, sub, mul, sum, relu, sigmoid, softmax, log, exp, matmul
+- All 475 existing tests pass (no regressions)
+- Tests cover: add, sub, mul, sum, relu, sigmoid, softmax, log, exp, neg, matmul

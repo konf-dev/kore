@@ -578,6 +578,16 @@ rot ∘ rot ∘ rot = identity   (rot has order 3)
 dup ∘ drop = identity   (create then destroy)
 ```
 
+### Tensor Algebraic Identities
+
+Tensor operations also have algebraic properties that the optimizer exploits:
+
+```
+tensor-neg ∘ tensor-neg = identity   (negate twice = identity)
+tensor-exp ∘ tensor-log = identity   (exp and log are inverses)
+tensor-log ∘ tensor-exp = identity
+```
+
 ### Automatic Simplification
 
 Kore uses these identities to optimize code:
@@ -586,6 +596,7 @@ Kore uses these identities to optimize code:
 [ 1 2 swap swap add ] simplify   ; [ 1 2 add ]
 [ 5 dup drop ] simplify          ; [ 5 ]
 [ rot rot rot ] simplify         ; [ ]
+[ tensor-neg tensor-neg ] simplify  ; [ ]
 ```
 
 ### Constant Folding
@@ -799,7 +810,7 @@ These aren't just abstractions - they're the **formal semantics** of Kore.
 
 ### Design Principles
 
-1. **Minimal**: 2 operations, 10 types, ~100 tools
+1. **Minimal**: 2 operations, 10 types, 186 tools
 2. **Formal**: Every tool has a verified stack effect
 3. **Secure**: Capability-based, no ambient authority
 4. **Composable**: Tools are the only abstraction
@@ -855,6 +866,21 @@ call if when unless times while loop try fail unwrap
 ```
 linear-new linear-unwrap affine-new affine-unwrap
 is-linear is-affine linearity
+```
+
+### Tensor
+```
+tensor-from-list tensor-zeros tensor-ones tensor-rand
+tensor-add tensor-mul tensor-sub tensor-neg tensor-scale
+tensor-sum tensor-mean tensor-max tensor-argmax
+tensor-matmul tensor-outer tensor-dot
+tensor-relu tensor-sigmoid tensor-softmax tensor-exp tensor-log
+tensor-shape tensor-size tensor-get tensor-set is-tensor
+```
+
+### Autodiff
+```
+requires-grad backward grad-get zero-grad detach
 ```
 
 ### Analysis

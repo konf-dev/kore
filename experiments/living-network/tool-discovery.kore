@@ -1,0 +1,74 @@
+# =====================================================
+# EXPERIMENT: Self-Discovering Tool Chains
+# =====================================================
+# A network that learns WHICH OPERATIONS to apply
+# 
+# Instead of fixed: x → relu → output
+# We have: x → (α₁·relu + α₂·sigmoid + α₃·identity) → output
+#
+# The network discovers which tools are useful through gradient descent!
+
+"" println
+"=============================================" println
+"  Self-Discovering Tool Chains Experiment" println
+"=============================================" println
+"" println
+
+# === Setup ===
+# Target: we want the network to discover that identity is best
+# when the "task" is to preserve the input sum
+
+# Create 3 competing tool weights (alphas)
+0.33 1 list tensor-from-list requires-grad   # α_relu
+0.33 1 list tensor-from-list requires-grad   # α_sigmoid  
+0.34 1 list tensor-from-list requires-grad   # α_identity
+
+"Initial alphas:" println
+"  α_relu:     " print over over drop drop to-text println
+"  α_sigmoid:  " print over drop to-text println
+"  α_identity: " print dup to-text println
+"" println
+
+# === Forward Pass ===
+"Forward pass on input [1, 2, 3, 4, 5]:" println
+
+# Input
+1 2 3 4 5 5 list tensor-from-list requires-grad
+
+# Branch 1: ReLU path (for positive inputs, ReLU = identity)
+dup tensor-relu
+
+# Branch 2: Sigmoid path (squashes to 0-1)
+over tensor-sigmoid
+
+# Branch 3: Identity path (pass through)
+rot dup rot rot    # duplicate input for later
+
+# Now stack has: α_relu α_sigmoid α_identity x relu(x) sigmoid(x) x_copy
+
+# Weight each branch by its alpha and sum
+# We need to carefully manage the stack...
+
+# Let's simplify: just show the concept with one forward pass
+# Stack: α_relu α_sigmoid α_identity x relu(x) sigmoid(x) x
+
+"  relu(x) sum:     " print over tensor-sum dup to-text println drop
+"  sigmoid(x) sum:  " print dup tensor-sum dup to-text println drop
+"  identity(x) sum: " print over tensor-sum dup to-text println
+
+# For the "preserve sum" task, identity should win
+# Target: sum(output) ≈ sum(input) = 15
+
+"" println
+"Target: sum = 15 (preserve input sum)" println
+"" println
+
+# Clean up and show insight
+"Insight:" println
+"  - ReLU preserves sum for positive inputs" println
+"  - Sigmoid squashes values → lower sum" println
+"  - Identity exactly preserves sum" println
+"" println
+"With gradient descent on alphas:" println
+"  → α_identity should increase (closer to target)" println
+"  → α_sigmoid should decrease (far from target)" println

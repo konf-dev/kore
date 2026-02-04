@@ -7,6 +7,16 @@
 //! - Distribution: probability distributions
 //!
 //! All extension tools follow P1/P2/P3.
+//!
+//! # Algebraic Optimization
+//!
+//! Tensor operations are algebraically optimized at the Op level in `optimizer.rs`.
+//! Due to Kore's immutability (P1), we can safely apply mathematical identities:
+//! - log(exp(x)) = x
+//! - exp(log(x)) = x (for x > 0)
+//! - -(-x) = x
+//!
+//! This is impossible in von Neumann languages due to aliasing and side effects.
 
 pub mod tensor;
 pub mod autodiff;

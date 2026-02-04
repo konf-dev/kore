@@ -1,0 +1,89 @@
+# MINIMAL Neural Architecture Search - Kore NAS
+# Learns which operation to use: relu vs sigmoid vs identity
+
+"" println
+"=== Kore NAS: Learning which tool to use ===" println
+"" println
+"Task: Learn y = 2*relu(x)" println
+"" println
+
+# Training data
+-2 -1 0 1 2 5 list tensor-from-list "x" mem-set
+ 0  0 0 2 4 5 list tensor-from-list "y" mem-set
+
+# Learnable alphas (start equal)
+0.33 1 list tensor-from-list requires-grad "a1" mem-set
+0.33 1 list tensor-from-list requires-grad "a2" mem-set  
+0.34 1 list tensor-from-list requires-grad "a3" mem-set
+1.0 1 list tensor-from-list requires-grad "s" mem-set
+
+"Initial: α_relu=0.33, α_sig=0.33, α_id=0.34, scale=1.0" println
+"" println
+
+# Learning rate
+0.05 "lr" mem-set
+
+# Training loop - 50 steps
+0 50 [
+  # Get scalars for weighting
+  "a1" mem-get 0 tensor-get    # α_relu (float)
+  "a2" mem-get 0 tensor-get    # α_sigmoid (float)
+  "a3" mem-get 0 tensor-get    # α_identity (float)
+  "s" mem-get 0 tensor-get     # scale (float)
+  
+  # Compute outputs
+  "x" mem-get dup dup          # 3 copies of x
+  
+  # Branch 1: α1 * relu(x)
+  tensor-relu rot tensor-scale              # α1 * relu(x)
+  
+  # Branch 2: α2 * sigmoid(x) * 5 (scale sigmoid to similar range)
+  swap tensor-sigmoid 5.0 tensor-scale rot tensor-scale
+  
+  # Branch 3: α3 * x
+  swap rot tensor-scale
+  
+  # Sum all branches
+  tensor-add tensor-add
+  
+  # Apply output scale
+  swap tensor-scale
+  
+  # Compute MSE loss
+  "y" mem-get tensor-sub dup tensor-mul tensor-sum
+  
+  # Every 10 steps, print loss
+  over 10 mod 0 = [ "Step " print over to-text print " loss: " print dup to-text println ] [ ] if
+  
+  # Backward pass
+  backward
+  
+  # Update a1
+  "a1" mem-get over grad-get tensor-sum "lr" mem-get neg * 
+  "a1" mem-get 0 tensor-get + 1 list tensor-from-list requires-grad "a1" mem-set
+  
+  # Update a2
+  "a2" mem-get over grad-get tensor-sum "lr" mem-get neg *
+  "a2" mem-get 0 tensor-get + 1 list tensor-from-list requires-grad "a2" mem-set
+  
+  # Update a3
+  "a3" mem-get over grad-get tensor-sum "lr" mem-get neg *
+  "a3" mem-get 0 tensor-get + 1 list tensor-from-list requires-grad "a3" mem-set
+  
+  # Update scale
+  "s" mem-get over grad-get tensor-sum "lr" mem-get neg *
+  "s" mem-get 0 tensor-get + 1 list tensor-from-list requires-grad "s" mem-set
+  
+  drop # drop grads
+  1 +
+] times drop
+
+"" println
+"=== RESULTS ===" println
+"α_relu:     " print "a1" mem-get 0 tensor-get to-text println
+"α_sigmoid:  " print "a2" mem-get 0 tensor-get to-text println
+"α_identity: " print "a3" mem-get 0 tensor-get to-text println
+"scale:      " print "s" mem-get 0 tensor-get to-text println
+"" println
+
+"Expected: α_relu should dominate, scale ≈ 2" println

@@ -157,7 +157,7 @@ t1 t2 tensor-add                     ; Add
 t1 t2 tensor-mul                     ; Multiply
 
 ; Matrix operations
-A B 3 4 tensor-matmul                ; Matrix multiply (3 rows, 4 cols)
+A B tensor-matmul                     ; Matrix multiply
 v1 v2 tensor-outer                   ; Outer product
 
 ; Activations
@@ -739,7 +739,7 @@ cargo test
 | **Effects** | Static analysis | None | None | None |
 | **Traces** | Immutable log | None | None | None |
 | **Termination** | Bounded | Not guaranteed | Not guaranteed | Not guaranteed |
-| **Tensors** | Built-in (21 ops) | External crate | NumPy/PyTorch | tf.js |
+| **Tensors** | Built-in (33 ops) | External crate | NumPy/PyTorch | tf.js |
 | **Linearity** | Affine/Linear | Move semantics | None | None |
 | **Target** | Machine-generated | Human-written | Human-written | Human-written |
 

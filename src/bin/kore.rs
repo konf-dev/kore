@@ -226,6 +226,9 @@ async fn run_script(source: &str) {
         }
     };
     
+    // Optimize ops (algebraic rewrites + constant folding)
+    let ops = kore::optimizer::optimize(ops);
+    
     // Setup context with builtins (trusted mode for full access)
     let mut ctx = Context::trusted();
     register_builtins(&mut ctx).await;

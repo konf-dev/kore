@@ -1,0 +1,248 @@
+# =====================================================================
+# EXPERIMENT: Neural Architecture Search in a Stack Language
+# =====================================================================
+#
+# NOVEL CONTRIBUTION:
+# This is (to our knowledge) the first demonstration of differentiable
+# architecture search in a stack-based language. We let the network 
+# learn WHICH OPERATIONS to compose through gradient descent.
+#
+# The key insight: In Kore, operations ARE composition. So learning
+# which operations to use IS learning program structure.
+#
+# Architecture:
+#   output = α₁·f₁(x) + α₂·f₂(x) + ... + αₙ·fₙ(x)
+#
+# where f_i are different tools (relu, sigmoid, tanh, identity...)
+# and α_i are learnable gate parameters.
+#
+# After training, we "crystallize" - keep only operations with α > 0.5
+
+"" println
+"╔═══════════════════════════════════════════════════════════════╗" println
+"║  Neural Architecture Search in Stack Language (Kore NAS)     ║" println
+"╠═══════════════════════════════════════════════════════════════╣" println
+"║  Learning which tools to compose via gradient descent        ║" println
+"╚═══════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ===================
+# TASK DEFINITION
+# ===================
+# We want to learn a function that doubles positive values, zeros negatives
+# This is: y = 2 * relu(x)
+# But we don't tell the network this - we let it discover!
+
+# Training data (input, target pairs stored in memory)
+-2 -1 0 1 2 5 list tensor-from-list "x_train" mem-set
+ 0  0 0 2 4 5 list tensor-from-list "y_train" mem-set
+
+"Task: Learn y = 2·relu(x)" println
+"Training data:" println
+"  x: " print "x_train" mem-get to-text println
+"  y: " print "y_train" mem-get to-text println
+"" println
+
+# ===================
+# CANDIDATE OPERATIONS (our "search space")
+# ===================
+# We have 4 candidate operations. The network will learn weights for each.
+
+"Search space: [relu, sigmoid-scaled, identity, zero]" println
+"" println
+
+# ===================
+# LEARNABLE PARAMETERS
+# ===================
+# 4 alpha values (one per operation) - these control which ops to use
+# Plus 1 output scale factor
+
+0.25 1 list tensor-from-list requires-grad "α_relu" mem-set
+0.25 1 list tensor-from-list requires-grad "α_sigmoid" mem-set
+0.25 1 list tensor-from-list requires-grad "α_identity" mem-set
+0.25 1 list tensor-from-list requires-grad "α_zero" mem-set
+1.0 1 list tensor-from-list requires-grad "scale" mem-set
+
+# Learning rate
+0.1 "lr" mem-set
+
+# ===================
+# TRAINING LOOP
+# ===================
+
+"Training for 50 steps..." println
+"" println
+
+# Define step counter
+0 "step" mem-set
+
+# === STEP 1 ===
+"Step 1:" print
+
+# Forward: compute weighted sum of operations
+"x_train" mem-get dup dup dup   # 4 copies of x for 4 ops
+
+# op1: relu(x)
+tensor-relu "α_relu" mem-get 0 tensor-get tensor-scale
+
+# op2: 10*sigmoid(x) - 5 (roughly maps to [-5, 5])
+rot tensor-sigmoid 10.0 tensor-scale "α_sigmoid" mem-get 0 tensor-get tensor-scale
+
+# op3: identity
+rot "α_identity" mem-get 0 tensor-get tensor-scale
+
+# op4: zeros
+rot 0.0 tensor-scale "α_zero" mem-get 0 tensor-get tensor-scale
+
+# Sum all weighted operations
+tensor-add tensor-add tensor-add
+
+# Scale output
+"scale" mem-get 0 tensor-get tensor-scale
+
+# Compute loss: MSE = sum((pred - target)^2)
+"y_train" mem-get tensor-sub dup tensor-mul tensor-sum
+
+" loss = " print dup to-text println
+
+# Backward pass
+backward
+
+# Update α_relu
+"α_relu" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_relu" mem-set
+
+# Update α_sigmoid
+"α_sigmoid" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_sigmoid" mem-set
+
+# Update α_identity
+"α_identity" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_identity" mem-set
+
+# Update α_zero
+"α_zero" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_zero" mem-set
+
+# Update scale
+"scale" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "scale" mem-set
+
+drop  # drop grads map
+
+# === Step 2-10: Training loop (repeated inline since we don't have true loops) ===
+
+# Helper: we need to repeat this... let me do 10 more steps manually
+
+1 9 [ dup "step" mem-set
+  # Forward
+  "x_train" mem-get dup dup dup
+  tensor-relu "α_relu" mem-get 0 tensor-get tensor-scale
+  rot tensor-sigmoid 10.0 tensor-scale "α_sigmoid" mem-get 0 tensor-get tensor-scale
+  rot "α_identity" mem-get 0 tensor-get tensor-scale
+  rot 0.0 tensor-scale "α_zero" mem-get 0 tensor-get tensor-scale
+  tensor-add tensor-add tensor-add
+  "scale" mem-get 0 tensor-get tensor-scale
+  "y_train" mem-get tensor-sub dup tensor-mul tensor-sum
+  
+  "Step " print "step" mem-get to-text print ": loss = " print dup to-text println
+  
+  # Backward
+  backward
+  
+  # Update all params
+  "α_relu" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_relu" mem-set
+  "α_sigmoid" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_sigmoid" mem-set
+  "α_identity" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_identity" mem-set
+  "α_zero" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_zero" mem-set
+  "scale" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "scale" mem-set
+  drop
+  
+  1 +
+] times drop
+
+# === More training (10-20) ===
+10 10 [ dup "step" mem-set
+  "x_train" mem-get dup dup dup
+  tensor-relu "α_relu" mem-get 0 tensor-get tensor-scale
+  rot tensor-sigmoid 10.0 tensor-scale "α_sigmoid" mem-get 0 tensor-get tensor-scale
+  rot "α_identity" mem-get 0 tensor-get tensor-scale
+  rot 0.0 tensor-scale "α_zero" mem-get 0 tensor-get tensor-scale
+  tensor-add tensor-add tensor-add
+  "scale" mem-get 0 tensor-get tensor-scale
+  "y_train" mem-get tensor-sub dup tensor-mul tensor-sum
+  
+  "Step " print "step" mem-get to-text print ": loss = " print dup to-text println
+  
+  backward
+  "α_relu" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_relu" mem-set
+  "α_sigmoid" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_sigmoid" mem-set
+  "α_identity" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_identity" mem-set
+  "α_zero" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_zero" mem-set
+  "scale" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "scale" mem-set
+  drop
+  1 +
+] times drop
+
+# === More training (20-40) ===
+20 20 [ dup "step" mem-set
+  "x_train" mem-get dup dup dup
+  tensor-relu "α_relu" mem-get 0 tensor-get tensor-scale
+  rot tensor-sigmoid 10.0 tensor-scale "α_sigmoid" mem-get 0 tensor-get tensor-scale
+  rot "α_identity" mem-get 0 tensor-get tensor-scale
+  rot 0.0 tensor-scale "α_zero" mem-get 0 tensor-get tensor-scale
+  tensor-add tensor-add tensor-add
+  "scale" mem-get 0 tensor-get tensor-scale
+  "y_train" mem-get tensor-sub dup tensor-mul tensor-sum
+  
+  "Step " print "step" mem-get to-text print ": loss = " print dup to-text println
+  
+  backward
+  "α_relu" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_relu" mem-set
+  "α_sigmoid" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_sigmoid" mem-set
+  "α_identity" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_identity" mem-set
+  "α_zero" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "α_zero" mem-set
+  "scale" mem-get over grad-get "lr" mem-get neg tensor-scale tensor-add "scale" mem-set
+  drop
+  1 +
+] times drop
+
+# ===================
+# RESULTS
+# ===================
+"" println
+"═══════════════════════════════════════════" println
+"DISCOVERED ARCHITECTURE" println
+"═══════════════════════════════════════════" println
+"" println
+"Learned operation weights:" println
+"  α_relu     = " print "α_relu" mem-get 0 tensor-get to-text println
+"  α_sigmoid  = " print "α_sigmoid" mem-get 0 tensor-get to-text println
+"  α_identity = " print "α_identity" mem-get 0 tensor-get to-text println
+"  α_zero     = " print "α_zero" mem-get 0 tensor-get to-text println
+"  scale      = " print "scale" mem-get 0 tensor-get to-text println
+"" println
+
+# Determine which ops to keep (threshold: α > 0.3)
+"Crystallized program (α > 0.3):" println
+"  y = " print
+
+"α_relu" mem-get 0 tensor-get 0.3 > [ "relu(x)" print ] [ ] if
+"α_sigmoid" mem-get 0 tensor-get 0.3 > [ " + sigmoid(x)" print ] [ ] if
+"α_identity" mem-get 0 tensor-get 0.3 > [ " + identity(x)" print ] [ ] if
+"α_zero" mem-get 0 tensor-get 0.3 > [ " + zeros" print ] [ ] if
+
+" scaled by " print "scale" mem-get 0 tensor-get to-text println
+
+"" println
+"Expected: The network should discover that RELU with scale≈2 is the answer!" println
+"" println
+
+# === Test on new data ===
+"Test on new input [-3, -1, 0, 1, 3]:" println
+-3 -1 0 1 3 5 list tensor-from-list
+dup dup dup
+tensor-relu "α_relu" mem-get 0 tensor-get tensor-scale
+rot tensor-sigmoid 10.0 tensor-scale "α_sigmoid" mem-get 0 tensor-get tensor-scale
+rot "α_identity" mem-get 0 tensor-get tensor-scale
+rot 0.0 tensor-scale "α_zero" mem-get 0 tensor-get tensor-scale
+tensor-add tensor-add tensor-add
+"scale" mem-get 0 tensor-get tensor-scale
+
+"  Predicted: " print to-text println
+"  Expected:  [0, 0, 0, 2, 6]" println

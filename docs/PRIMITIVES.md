@@ -1,6 +1,6 @@
 # Kore Primitives Reference
 
-**Total: 130 primitives**
+**Total: 186 primitives**
 
 All primitives do exactly one thing. No magic.
 
@@ -287,3 +287,104 @@ KORE_ROM_LIMIT=100     # Persistent storage units
 KORE_COMPUTE_LIMIT=0   # 0 = unlimited
 KORE_NET_LIMIT=0       # 0 = unlimited
 ```
+
+---
+
+## Tensor Operations (33)
+
+Multi-dimensional arrays with automatic differentiation support.
+
+### Creation
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `tensor-zeros` | `(shape:List -- tensor:Tensor)` | Create zero tensor |
+| `tensor-ones` | `(shape:List -- tensor:Tensor)` | Create ones tensor |
+| `tensor-rand` | `(shape:List -- tensor:Tensor)` | Random uniform [0,1] |
+| `tensor-randn` | `(shape:List seed:Int -- tensor:Tensor)` | Random normal (seeded) |
+| `tensor-from-list` | `(values:List -- tensor:Tensor)` | Create from flat list |
+
+### Element-wise Operations
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `tensor-add` | `(a:Tensor b:Tensor -- c:Tensor)` | Element-wise add |
+| `tensor-sub` | `(a:Tensor b:Tensor -- c:Tensor)` | Element-wise subtract |
+| `tensor-mul` | `(a:Tensor b:Tensor -- c:Tensor)` | Element-wise multiply |
+| `tensor-neg` | `(a:Tensor -- b:Tensor)` | Negate all elements |
+| `tensor-scale` | `(a:Tensor s:Float -- b:Tensor)` | Multiply by scalar |
+
+### Math Functions
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `tensor-exp` | `(a:Tensor -- b:Tensor)` | Element-wise exp |
+| `tensor-log` | `(a:Tensor -- b:Tensor)` | Element-wise natural log |
+| `tensor-relu` | `(a:Tensor -- b:Tensor)` | ReLU activation |
+| `tensor-sigmoid` | `(a:Tensor -- b:Tensor)` | Sigmoid activation |
+| `tensor-softmax` | `(a:Tensor -- b:Tensor)` | Softmax (last axis) |
+
+### Reductions
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `tensor-sum` | `(a:Tensor -- b:Tensor)` | Sum all elements |
+| `tensor-mean` | `(a:Tensor -- b:Tensor)` | Mean of all elements |
+| `tensor-max` | `(a:Tensor -- b:Tensor)` | Max element |
+| `tensor-argmax` | `(a:Tensor -- idx:Int)` | Index of max element |
+
+### Matrix Operations
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `tensor-matmul` | `(a:Tensor b:Tensor -- c:Tensor)` | Matrix multiplication |
+| `tensor-matmul-t` | `(a:Tensor b:Tensor -- c:Tensor)` | Matmul with B transposed |
+| `tensor-outer` | `(a:Tensor b:Tensor -- c:Tensor)` | Outer product |
+| `tensor-dot` | `(a:Tensor b:Tensor -- c:Tensor)` | Dot product |
+
+### Shape & Access
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `tensor-shape` | `(a:Tensor -- shape:List)` | Get tensor shape |
+| `tensor-rank` | `(a:Tensor -- n:Int)` | Number of dimensions |
+| `tensor-size` | `(a:Tensor -- n:Int)` | Total elements |
+| `tensor-get` | `(a:Tensor idx:Int -- v:Float)` | Get element |
+| `tensor-set` | `(a:Tensor idx:Int v:Float -- b:Tensor)` | Set element |
+| `tensor-unwrap` | `(a:Tensor -- list:List)` | Convert to list |
+| `tensor-copy` | `(a:Tensor -- b:Tensor)` | Deep copy |
+| `tensor-clip` | `(a:Tensor min:Float max:Float -- b:Tensor)` | Clamp values |
+| `is-tensor` | `(v:Any -- result:Bool)` | Type check |
+
+---
+
+## Automatic Differentiation (5)
+
+Reverse-mode automatic differentiation for tensor operations.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `requires-grad` | `(t:Tensor -- t:Tensor)` | Mark for gradient tracking |
+| `backward` | `(loss:Tensor -- grads:Map)` | Compute all gradients |
+| `grad-get` | `(t:Tensor grads:Map -- grad:Tensor)` | Get gradient of tensor |
+| `zero-grad` | `(t:Tensor -- t:Tensor)` | Reset gradient |
+| `detach` | `(t:Tensor -- t:Tensor)` | Create copy without tracking |
+
+### Example
+```kore
+# d/dx(x²) at x=2 should be 4
+2.0 1 list tensor-from-list requires-grad
+dup tensor-mul tensor-sum   # x² = 4
+backward                     # compute gradients
+# gradient is 4 (2 * x = 2 * 2)
+```
+
+---
+
+## Linear Types (7)
+
+Affine (use at most once) and linear (use exactly once) types for resource management.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `linear-new` | `(v:Any -- linear:Linear)` | Create linear value |
+| `linear-unwrap` | `(linear:Linear -- v:Any)` | Consume linear value |
+| `affine-new` | `(v:Any -- affine:Affine)` | Create affine value |
+| `affine-unwrap` | `(affine:Affine -- v:Any)` | Consume affine value |
+| `is-linear` | `(v:Any -- result:Bool)` | Check if linear |
+| `is-affine` | `(v:Any -- result:Bool)` | Check if affine |
+| `linearity` | `(v:Any -- type:Text)` | Get linearity type |

@@ -149,6 +149,27 @@ impl Optimizer {
                 Some(vec![])
             }
 
+            // === TENSOR ALGEBRAIC IDENTITIES ===
+            // These exploit mathematical laws that von Neumann languages cannot use
+            // because Kore's immutability (P1) guarantees no aliasing.
+
+            // tensor-neg tensor-neg → ε (-(-x) = x)
+            (Op::Call(x), Op::Call(y)) if x == "tensor-neg" && y == "tensor-neg" => {
+                Some(vec![])
+            }
+
+            // tensor-exp tensor-log → ε (log(exp(x)) = x for all real x)
+            (Op::Call(x), Op::Call(y)) if x == "tensor-exp" && y == "tensor-log" => {
+                Some(vec![])
+            }
+
+            // tensor-log tensor-exp → ε (exp(log(x)) = x for x > 0)
+            // Note: This is mathematically valid only for x > 0, but tensors
+            // typically clamp log input to avoid -inf, so this is safe.
+            (Op::Call(x), Op::Call(y)) if x == "tensor-log" && y == "tensor-exp" => {
+                Some(vec![])
+            }
+
             // dup drop → ε (duplicate then discard)
             (Op::Call(x), Op::Call(y)) if x == "dup" && y == "drop" => {
                 Some(vec![])
@@ -503,5 +524,78 @@ mod tests {
         ];
         let result = optimize(ops);
         assert_eq!(result, vec![Op::Push(Value::Text("Hello, World!".into()))]);
+    }
+
+    // === TENSOR ALGEBRAIC OPTIMIZATION TESTS ===
+    // These test the mathematical laws that Kore can exploit due to immutability (P1)
+
+    #[test]
+    fn test_tensor_neg_neg_identity() {
+        // tensor-neg tensor-neg → ε  (-(-x) = x)
+        let ops = vec![call("tensor-neg"), call("tensor-neg")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);  // Both ops cancelled
+    }
+
+    #[test]
+    fn test_tensor_exp_log_identity() {
+        // tensor-exp tensor-log → ε  (log(exp(x)) = x)
+        let ops = vec![call("tensor-exp"), call("tensor-log")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);  // Inverse functions cancel
+    }
+
+    #[test]
+    fn test_tensor_log_exp_identity() {
+        // tensor-log tensor-exp → ε  (exp(log(x)) = x for x > 0)
+        let ops = vec![call("tensor-log"), call("tensor-exp")];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);  // Inverse functions cancel
+    }
+
+    #[test]
+    fn test_tensor_chained_inverses() {
+        // Multiple chained inverse pairs should all cancel
+        // exp(log(exp(log(x)))) = exp(log(x)) = x
+        let ops = vec![
+            call("tensor-exp"), call("tensor-log"),  // cancel
+            call("tensor-exp"), call("tensor-log"),  // cancel
+        ];
+        let result = simplify(ops);
+        assert_eq!(result, vec![]);  // All cancelled
+    }
+
+    #[test]
+    fn test_tensor_partial_cancellation() {
+        // Only adjacent pairs cancel
+        // log(x) then neg then exp - neg breaks the chain, can't cancel
+        let ops = vec![
+            call("tensor-log"),
+            call("tensor-neg"),
+            call("tensor-exp"),
+        ];
+        let result = simplify(ops);
+        // No cancellation possible
+        assert_eq!(result, vec![
+            call("tensor-log"),
+            call("tensor-neg"),
+            call("tensor-exp"),
+        ]);
+    }
+
+    #[test]
+    fn test_tensor_neg_in_longer_chain() {
+        // tensor-neg tensor-neg in a longer program
+        let ops = vec![
+            call("tensor-from-list"),
+            call("tensor-neg"),
+            call("tensor-neg"),  // These two cancel
+            call("tensor-sum"),
+        ];
+        let result = simplify(ops);
+        assert_eq!(result, vec![
+            call("tensor-from-list"),
+            call("tensor-sum"),
+        ]);
     }
 }

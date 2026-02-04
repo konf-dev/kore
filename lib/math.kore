@@ -1,0 +1,236 @@
+# =====================================================================
+# KORE MATH LIBRARY: Composed Mathematical Operations
+# =====================================================================
+#
+# All operations here are COMPOSED from Kore primitives.
+# No magic, no special treatment - just tool composition.
+#
+# Primitives used: tensor-exp, tensor-log, tensor-mul, tensor-add,
+#                  tensor-sub, tensor-neg, tensor-scale
+#
+# These compositions preserve autodiff because the primitives do.
+
+# === POWER OPERATIONS ===
+
+# tensor-pow: (x n -- x^n)
+# Power function: x^n = exp(n * log(x))
+# Works for any real exponent n (scalar)
+# Autodiff: dx = n * x^(n-1), dn = x^n * log(x)
+[
+  swap                    # n x
+  dup tensor-log          # n x log(x)
+  rot tensor-scale        # x n*log(x)
+  tensor-exp              # x exp(n*log(x)) = x^n
+  swap drop               # x^n
+] "tensor-pow" def
+
+# tensor-sqrt: (x -- sqrt(x))
+# Square root: sqrt(x) = x^0.5 = exp(0.5 * log(x))
+# Autodiff: dx = 0.5 / sqrt(x)
+[
+  tensor-log              # log(x)
+  0.5 tensor-scale        # 0.5 * log(x)
+  tensor-exp              # exp(0.5 * log(x)) = sqrt(x)
+] "tensor-sqrt" def
+
+# tensor-square: (x -- x^2)
+# Square: x^2 = x * x
+# More efficient than pow for integer exponent 2
+[
+  dup tensor-mul          # x * x
+] "tensor-square" def
+
+# tensor-cube: (x -- x^3)
+# Cube: x^3 = x * x * x
+[
+  dup dup tensor-mul tensor-mul
+] "tensor-cube" def
+
+# === DIVISION ===
+
+# tensor-div: (x y -- x/y)
+# Element-wise division: x/y = x * exp(-log(y))
+# Autodiff: dx = 1/y, dy = -x/y^2
+[
+  tensor-log tensor-neg tensor-exp   # 1/y = exp(-log(y))
+  tensor-mul                         # x * (1/y)
+] "tensor-div" def
+
+# tensor-inv: (x -- 1/x)
+# Multiplicative inverse: 1/x = exp(-log(x))
+[
+  tensor-log tensor-neg tensor-exp
+] "tensor-inv" def
+
+# === HYPERBOLIC FUNCTIONS ===
+
+# tensor-tanh: (x -- tanh(x))
+# Hyperbolic tangent: tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))
+# Autodiff: dx = 1 - tanh(x)^2 = sech(x)^2
+[
+  dup tensor-exp          # x exp(x)
+  swap tensor-neg tensor-exp  # exp(x) exp(-x)
+  dup2                    # e+ e- e+ e-
+  tensor-sub              # e+ e- (e+ - e-)
+  rot rot                 # (e+ - e-) e+ e-
+  tensor-add              # (e+ - e-) (e+ + e-)
+  tensor-div              # (e+ - e-) / (e+ + e-)
+] "tensor-tanh" def
+
+# tensor-sinh: (x -- sinh(x))
+# Hyperbolic sine: sinh(x) = (exp(x) - exp(-x)) / 2
+[
+  dup tensor-exp          # x exp(x)
+  swap tensor-neg tensor-exp  # exp(x) exp(-x)
+  tensor-sub              # exp(x) - exp(-x)
+  0.5 tensor-scale        # / 2
+] "tensor-sinh" def
+
+# tensor-cosh: (x -- cosh(x))
+# Hyperbolic cosine: cosh(x) = (exp(x) + exp(-x)) / 2
+[
+  dup tensor-exp          # x exp(x)
+  swap tensor-neg tensor-exp  # exp(x) exp(-x)
+  tensor-add              # exp(x) + exp(-x)
+  0.5 tensor-scale        # / 2
+] "tensor-cosh" def
+
+# === ABSOLUTE VALUE ===
+
+# tensor-abs: (x -- |x|)
+# Absolute value: |x| = sqrt(x^2)
+# Autodiff: dx = sign(x) (undefined at 0, using subgradient 0)
+[
+  dup tensor-mul          # x^2
+  tensor-sqrt             # sqrt(x^2) = |x|
+] "tensor-abs" def
+
+# === TRIGONOMETRIC FUNCTIONS (Taylor Series) ===
+# Note: These use Taylor series truncated at reasonable precision.
+# For high precision, more terms can be added.
+
+# tensor-sin: (x -- sin(x))
+# Taylor series: sin(x) = x - x³/6 + x⁵/120 - x⁷/5040 + ...
+# Accurate for |x| < π
+[
+  dup                     # x x
+  dup tensor-square       # x x x²
+  dup                     # x x x² x²
+  
+  # Term 1: x
+  rot                     # x x² x² x
+  
+  # Term 2: -x³/6
+  over tensor-mul         # x x² x² x³
+  dup -0.16666666667 tensor-scale  # x x² x² x³ -x³/6
+  4 rot tensor-add        # x² x² x³ (x - x³/6)
+  
+  # Term 3: +x⁵/120
+  swap                    # x² x² (partial) x³
+  rot tensor-mul          # x² (partial) x⁵
+  dup 0.00833333333 tensor-scale  # x² (partial) x⁵ x⁵/120
+  rot tensor-add          # x² x⁵ (partial)
+  
+  # Term 4: -x⁷/5040
+  swap rot tensor-mul     # (partial) x⁷
+  -0.00019841270 tensor-scale  # (partial) -x⁷/5040
+  tensor-add              # result
+] "tensor-sin" def
+
+# tensor-cos: (x -- cos(x))
+# Taylor series: cos(x) = 1 - x²/2 + x⁴/24 - x⁶/720 + ...
+# Accurate for |x| < π
+[
+  tensor-square           # x²
+  dup                     # x² x²
+  
+  # Term 1: 1
+  [1.0] tensor-from-list  # x² x² [1]
+  
+  # Term 2: -x²/2
+  rot dup                 # x² [1] x² x²
+  -0.5 tensor-scale       # x² [1] x² -x²/2
+  rot tensor-add          # x² x² (1 - x²/2)
+  
+  # Term 3: +x⁴/24
+  rot dup tensor-mul      # x² (partial) x⁴
+  dup 0.04166666667 tensor-scale  # x² (partial) x⁴ x⁴/24
+  rot tensor-add          # x² x⁴ (partial)
+  
+  # Term 4: -x⁶/720
+  swap rot tensor-mul     # (partial) x⁶
+  -0.00138888889 tensor-scale
+  tensor-add
+] "tensor-cos" def
+
+# tensor-tan: (x -- tan(x))
+# Tangent: tan(x) = sin(x) / cos(x)
+[
+  dup tensor-sin          # x sin(x)
+  swap tensor-cos         # sin(x) cos(x)
+  tensor-div              # sin(x) / cos(x)
+] "tensor-tan" def
+
+# === SMOOTH APPROXIMATIONS ===
+
+# tensor-softplus: (x -- softplus(x))
+# Smooth approximation to ReLU: softplus(x) = log(1 + exp(x))
+[
+  tensor-exp              # exp(x)
+  [1.0] tensor-from-list tensor-add  # 1 + exp(x)
+  tensor-log              # log(1 + exp(x))
+] "tensor-softplus" def
+
+# tensor-softsign: (x -- x / (1 + |x|))
+# Smooth approximation to sign function
+[
+  dup tensor-abs          # x |x|
+  [1.0] tensor-from-list tensor-add  # x (1 + |x|)
+  tensor-div              # x / (1 + |x|)
+] "tensor-softsign" def
+
+# tensor-gelu: (x -- gelu(x))
+# Gaussian Error Linear Unit (approximation)
+# gelu(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
+[
+  dup                     # x x
+  dup tensor-cube         # x x x³
+  0.044715 tensor-scale   # x x 0.044715*x³
+  tensor-add              # x (x + 0.044715*x³)
+  0.7978845608 tensor-scale  # x sqrt(2/π)*(...)
+  tensor-tanh             # x tanh(...)
+  [1.0] tensor-from-list tensor-add  # x (1 + tanh(...))
+  tensor-mul              # x * (1 + tanh(...))
+  0.5 tensor-scale        # 0.5 * x * (...)
+] "tensor-gelu" def
+
+# === UTILITY ===
+
+# tensor-clamp: (x min max -- clamped)
+# Already exists as native tensor-clip, this is an alias
+# [ tensor-clip ] "tensor-clamp" def
+
+# tensor-lerp: (a b t -- lerp)
+# Linear interpolation: a + t * (b - a)
+[
+  rot                     # b t a
+  dup 3 rot               # b a a t
+  rot rot                 # b a t a
+  3 rot                   # a t a b
+  tensor-sub              # a t (b-a)
+  tensor-mul              # a t*(b-a)
+  tensor-add              # a + t*(b-a)
+] "tensor-lerp" def
+
+# === TESTS ===
+
+# Run quick sanity checks
+# "Testing math library..." println
+
+# [2.0] tensor-from-list tensor-sqrt tensor-unwrap 0 list-get
+# # Should be ~1.414
+# "sqrt(2) = " print println
+
+# [1.0] tensor-from-list tensor-exp tensor-unwrap 0 list-get
+# # Should be ~2.718
+# "e = " print println

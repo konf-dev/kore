@@ -1,0 +1,77 @@
+# =====================================================================
+# KORE ML LIBRARY: Reusable Tool Compositions for Machine Learning
+# =====================================================================
+#
+# This library defines common ML patterns as Kore tools.
+# Import with: "experiments/living-network/lib/ml.kore" import
+#
+# Philosophy: Memory for state, Stack for data flow, Tools for composition
+
+# === PARAMETER TOOLS ===
+
+# make-param: (val name -- ) 
+# Creates a tracked scalar parameter stored in memory
+[ swap 1 list tensor-from-list requires-grad mem-set ] "make-param" def
+
+# make-tensor-param: (list name -- )
+# Creates a tracked tensor parameter from a list
+[ swap tensor-from-list requires-grad mem-set ] "make-tensor-param" def
+
+# === OPTIMIZER TOOLS ===
+
+# sgd-step: (name grads lr -- ) 
+# In-place SGD update: param = param - lr * grad
+[
+  "_sgd_lr" swap mem-set
+  "_sgd_g" swap mem-set
+  dup mem-get                              # name param
+  dup "_sgd_g" mem-get grad-get            # name param grad
+  "_sgd_lr" mem-get -1.0 mul tensor-scale  # name param neg_lr_grad
+  tensor-add requires-grad                 # name updated_param
+  mem-set                                  # ()
+] "sgd-step" def
+
+# === LOSS TOOLS ===
+
+# mse-loss: (pred target -- loss)
+# Mean squared error: sum((pred - target)^2)
+[ tensor-sub dup tensor-mul tensor-sum ] "mse-loss" def
+
+# === ACTIVATION TOOLS ===
+# Note: These are thin wrappers, mainly for documentation
+
+# soft-gate: (x alpha -- gated)
+# Smooth gate: x * sigmoid(alpha * x)
+# Learns whether to pass or block signal
+[
+  dup 2 rot                 # alpha x x
+  swap tensor-scale         # x alpha*x
+  tensor-sigmoid            # x gate
+  tensor-mul                # gated
+] "soft-gate" def
+
+# === TRAINING UTILITIES ===
+
+# train-loop: (n body -- )
+# Execute body n times, tracking step count in memory
+# Body should return loss on stack (will be dropped)
+[
+  "_train_body" swap mem-set
+  "_train_step" 0 mem-set
+  [
+    drop  # drop counter from times
+    "_train_body" mem-get call
+    drop  # drop loss from body
+    "_train_step" mem-get 1 add "_train_step" swap mem-set
+  ] times
+] "train-loop" def
+
+# print-step-loss: (loss interval -- loss)
+# Print loss every N steps, leaves loss on stack
+[
+  "_psl_interval" swap mem-set
+  "_train_step" mem-get "_psl_interval" mem-get mod 0 eq [
+    "Step " print "_train_step" mem-get to-text print ": loss = " print
+    dup 0 tensor-get to-text println
+  ] [ ] if
+] "print-step-loss" def
