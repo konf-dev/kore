@@ -52,13 +52,13 @@
 # Main entry point
 "codegen" [
     "" swap  # result ast
-    [dup list-len 0 gt]
+    [dup list-len 0 swap lt]   # while list-len > 0 (i.e., 0 < list-len)
     [
         dup 0 list-get codegen-one  # result ast text
         rot                         # ast text result
         swap str-concat " " str-concat  # ast result
         swap                        # result ast
-        1 999999 list-slice         # result rest
+        1 swap list-len list-slice  # result rest
     ]
     while
     drop

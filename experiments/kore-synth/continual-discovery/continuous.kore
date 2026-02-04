@@ -1,0 +1,284 @@
+# CONTINUOUS MATHEMATICAL DISCOVERY
+# Runs forever, continuously discovering new mathematical operations
+# Auto-names discoveries based on their behavior
+
+[ swap lt ] "gt" def
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  CONTINUOUS MATHEMATICAL DISCOVERY                               ║" println
+"║  Running forever, building infinite mathematical knowledge      ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# STORAGE PATH DETECTION
+# ====================================================================
+
+# Storage path - use ./mnt for local runs
+"./mnt" "storage-path" mem-set
+
+"Using storage: " print "storage-path" mem-get println
+"" println
+
+"storage-path" mem-get "/knowledge.kore" str-concat "kb-path" mem-set
+"storage-path" mem-get "/registry.kore" str-concat "reg-path" mem-set
+"storage-path" mem-get "/trace.log" str-concat "trace-path" mem-set
+
+# ====================================================================
+# KNOWLEDGE BASE SYSTEM
+# ====================================================================
+
+0 list "kb-registry" mem-set
+0 "generation" mem-set
+0 "discoveries" mem-set
+
+# Try to load existing knowledge
+[
+  "kb-path" mem-get fs-read "kb-content" mem-set
+  "kb-content" mem-get text-to-quote call
+  "✓ Loaded existing knowledge base" println
+  
+  # Load registry (rebuilds kb-registry in memory)
+  "reg-path" mem-get fs-read text-to-quote call
+  "  Loaded " print "kb-registry" mem-get list-len to-text print " tools from registry" println
+  
+  # Update discoveries count
+  "kb-registry" mem-get list-len "discoveries" mem-set
+] try dup is-error [ drop "○ Starting fresh - no existing knowledge" println ] [ drop ] if
+"" println
+
+# Learn a new tool
+[ # ( quote name description -- )
+  "desc" mem-set
+  "name" mem-set  
+  "code" mem-set
+  
+  # Define in current session (quote then name for def)
+  "code" mem-get "name" mem-get def
+  
+  # Add to registry
+  "kb-registry" mem-get
+  "name" mem-get "code" mem-get "desc" mem-get 3 list
+  list-push "kb-registry" mem-set
+  
+  "discoveries" mem-get 1 add "discoveries" mem-set
+  
+  "  ✦ [" print "discoveries" mem-get to-text print "] " print 
+  "name" mem-get print " = " print "code" mem-get quote-to-text println
+  
+  # Log trace
+  "storage-path" mem-get "/trace.log" str-concat
+  now to-text " | " str-concat "discoveries" mem-get to-text str-concat 
+  " | " str-concat "name" mem-get str-concat 
+  " | " str-concat "code" mem-get quote-to-text str-concat "\n" str-concat
+  fs-append
+] "discover" def
+
+# Save knowledge base
+[
+  "# Kore Knowledge Base - Generation " "generation" mem-get to-text str-concat
+  "\n# Discovered " str-concat "kb-registry" mem-get list-len to-text str-concat " tools\n\n" str-concat
+  "content" mem-set
+  
+  "kb-registry" mem-get [
+    "entry" mem-set
+    "entry" mem-get 0 list-get "n" mem-set
+    "entry" mem-get 1 list-get "c" mem-set
+    "entry" mem-get 2 list-get "d" mem-set
+    
+    "content" mem-get
+    "# " str-concat "d" mem-get str-concat "\n" str-concat
+    "c" mem-get quote-to-text str-concat
+    " \"" str-concat "n" mem-get str-concat "\" def\n\n" str-concat
+    "content" mem-set
+  ] each
+  
+  "kb-path" mem-get "content" mem-get fs-write
+  
+  # Save registry
+  "\"kb-registry\" mem-get list-len 0 gt [ ] [ \n" "reg-code" mem-set
+  "kb-registry" mem-get [
+    "entry" mem-set
+    "reg-code" mem-get
+    "  \"kb-registry\" mem-get " str-concat
+    "entry" mem-get 0 list-get "n" mem-set
+    "entry" mem-get 1 list-get "c" mem-set
+    "entry" mem-get 2 list-get "d" mem-set
+    "\"" str-concat "n" mem-get str-concat "\" " str-concat
+    "c" mem-get quote-to-text str-concat " " str-concat
+    "\"" str-concat "d" mem-get str-concat "\" 3 list list-push \"kb-registry\" mem-set\n" str-concat
+    "reg-code" mem-set
+  ] each
+  "reg-code" mem-get "] if\n" str-concat "reg-code" mem-set
+  "reg-path" mem-get "reg-code" mem-get fs-write
+] "save-knowledge" def
+
+# ====================================================================
+# AUTO-NAMING: Generate names based on behavior
+# ====================================================================
+
+# Test a quote on several inputs and characterize behavior
+[ # ( quote -- name-suggestion )
+  "test-fn" mem-set
+  
+  # Test on small integers
+  [ "test-fn" mem-get fiber-new 2 fiber-inject fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop null ] [ ] if "r2" mem-set
+  
+  [ "test-fn" mem-get fiber-new 3 fiber-inject fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop null ] [ ] if "r3" mem-set
+  
+  [ "test-fn" mem-get fiber-new 4 fiber-inject fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop null ] [ ] if "r4" mem-set
+  
+  # Pattern recognition
+  "unknown" "suggested-name" mem-set
+  
+  # Check if all results are valid numbers
+  "r2" mem-get null eq not
+  "r3" mem-get null eq not and
+  "r4" mem-get null eq not and [
+    # Check patterns
+    "r2" mem-get 4 eq "r3" mem-get 6 eq and "r4" mem-get 8 eq and [
+      "double" "suggested-name" mem-set
+    ] [ ] if
+    
+    "r2" mem-get 4 eq "r3" mem-get 9 eq and "r4" mem-get 16 eq and [
+      "square" "suggested-name" mem-set
+    ] [ ] if
+    
+    "r2" mem-get 8 eq "r3" mem-get 27 eq and "r4" mem-get 64 eq and [
+      "cube" "suggested-name" mem-set
+    ] [ ] if
+    
+    "r2" mem-get 3 eq "r3" mem-get 4 eq and "r4" mem-get 5 eq and [
+      "succ" "suggested-name" mem-set
+    ] [ ] if
+    
+    "r2" mem-get 1 eq "r3" mem-get 2 eq and "r4" mem-get 3 eq and [
+      "pred" "suggested-name" mem-set
+    ] [ ] if
+    
+    # If still unknown, use result pattern
+    "suggested-name" mem-get "unknown" eq [
+      "op-" "r2" mem-get to-text str-concat 
+      "-" str-concat "r3" mem-get to-text str-concat
+      "-" str-concat "r4" mem-get to-text str-concat
+      "suggested-name" mem-set
+    ] [ ] if
+  ] [ ] if
+  
+  "suggested-name" mem-get
+] "auto-name" def
+
+# ====================================================================
+# BOOTSTRAP: Ensure we have basic operations
+# ====================================================================
+
+# Only bootstrap if we're starting fresh (no loaded knowledge)
+"discoveries" mem-get 0 eq [
+  "═══════════════════════════════════════════════════════════════════" println
+  "BOOTSTRAP: Creating primitive operations" println
+  "═══════════════════════════════════════════════════════════════════" println
+  "" println
+  
+  [ 1 add ] "succ" "n+1" discover
+  [ 1 sub ] "pred" "n-1" discover
+  [ dup add ] "double" "2n" discover
+  [ dup mul ] "square" "n²" discover
+  [ neg ] "negate" "-n" discover
+  [ dup 0 lt [ neg ] [ ] if ] "abs" "|n|" discover
+  
+  save-knowledge
+  "" println
+] [ ] if
+
+# ====================================================================
+# CONTINUOUS DISCOVERY LOOP
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"CONTINUOUS DISCOVERY ENGINE" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Running forever... (Ctrl+C to stop)" println
+"Saving every 10 discoveries" println
+"" println
+
+# Random number generator
+12345 "rng-seed" mem-set
+[ "rng-seed" mem-get 1103515245 mul 12345 add 2147483647 mod dup "rng-seed" mem-set ] "rand" def
+[ rand swap mod dup 0 lt [ neg ] [ ] if ] "rand-max" def
+
+# Pick random tool from registry
+[ "kb-registry" mem-get list-len rand-max "kb-registry" mem-get swap list-get 1 list-get ] "rand-tool" def
+
+# Helper: concat two quotes by merging their text (remove outer brackets)
+[ # ( q1 q2 -- q3 )
+  quote-to-text "q1-text" mem-set
+  quote-to-text "q2-text" mem-set
+  
+  # Strip outer [ ] from q1: get substring from index 1 to len-1
+  "q1-text" mem-get dup str-len 1 sub 1 swap str-slice "q1-body" mem-set
+  
+  # Strip outer [ ] from q2
+  "q2-text" mem-get dup str-len 1 sub 1 swap str-slice "q2-body" mem-set
+  
+  # Combine: "[ q1-body q2-body ]"
+  "[ " "q1-body" mem-get str-concat " " str-concat "q2-body" mem-get str-concat " ]" str-concat
+  
+  text-to-quote
+] "quote-concat" def
+
+# Generate random composition  
+[
+  # Just compose two random tools
+  rand-tool rand-tool quote-concat
+] "gen-composition" def
+
+# Main discovery loop
+0 "iteration" mem-set
+[ # Infinite loop - runs until killed
+  "iteration" mem-get 1 add "iteration" mem-set
+  
+  # Generate a new composition
+  gen-composition "new-fn" mem-set
+  
+  # Auto-name it
+  "new-fn" mem-get auto-name "new-name" mem-set
+  
+  # Check if name already exists in registry
+  0 "exists" mem-set
+  "kb-registry" mem-get [
+    0 list-get "new-name" mem-get eq [ 1 "exists" mem-set ] [ ] if
+  ] each
+  
+  # If new, discover it
+  "exists" mem-get 0 eq [
+    "new-fn" mem-get 
+    "new-name" mem-get 
+    "auto-discovered composition" 
+    discover
+    
+    # Save every 10 discoveries
+    "discoveries" mem-get 10 mod 0 eq [
+      "" println
+      "  💾 Autosaving... (total: " print "kb-registry" mem-get list-len to-text print " tools)" println
+      save-knowledge
+      "" println
+    ] [ ] if
+  ] [ ] if
+  
+  # Progress indicator every 100 iterations
+  "iteration" mem-get 100 mod 0 eq [
+    "." print
+  ] [ ] if
+  
+  # Continue forever (this never becomes false)
+  1
+] [ ] while
+
+# This line never executes
+"Discovery complete!" println

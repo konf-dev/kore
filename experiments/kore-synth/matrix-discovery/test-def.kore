@@ -1,0 +1,18 @@
+#!/usr/bin/env kore
+
+"Testing quote behavior..." print
+
+# Define a simple function
+[ 10 ] "get-ten" def
+
+# Use it at top level - should work
+get-ten dup "Top level result: " print dup to-text print "" print drop
+
+# Define another function that uses get-ten
+[ get-ten 5 add ] "get-fifteen" def
+
+# Try to use it
+"Trying get-fifteen..." print
+get-fifteen dup "Result: " print dup to-text print "" print
+
+"If we got here, nested defs work!" print

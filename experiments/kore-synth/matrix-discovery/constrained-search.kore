@@ -1,0 +1,294 @@
+# CONSTRAINED SEARCH FOR MATRIX MULTIPLICATION ALGORITHMS
+# Using mathematical properties to reduce search space
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  CONSTRAINED ALGORITHM SEARCH                                    ║" println
+"║  Exploiting mathematical structure to find better algorithms     ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# KEY INSIGHT: CONSTRAINTS REDUCE SEARCH SPACE EXPONENTIALLY
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"SEARCH SPACE REDUCTION" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Naive search for 3×3 with 23 multiplications:" println
+"  - Coefficient matrices: U(23×9), V(23×9), W(23×9)" println
+"  - If coefficients in {-2,-1,0,1,2}: 5^(23×9×3) = 5^621" println
+"  - That's ~10^434 combinations!" println
+"  - Age of universe: ~10^17 seconds" println
+"  - Even at 10^20 tests/sec: impossible!" println
+"" println
+
+"With constraints:" println
+"" println
+
+"1. SPARSITY CONSTRAINT:" println
+"   - Most coefficients are 0 (sparse matrices)" println
+"   - Strassen: only ~30% non-zero coefficients" println
+"   - If we limit to ≤3 non-zeros per row:" println
+"   - Reduces from 5^621 to ~C(9,3)^621 × 4^(3×621)" println
+"   - Still huge but more structured" println
+"" println
+
+"2. COEFFICIENT MAGNITUDE:" println
+"   - Limit to {-1, 0, 1} instead of {-2,-1,0,1,2}" println
+"   - Reduces each choice from 5 to 3" println
+"   - Changes 5^621 to 3^621 (~10^296)" println
+"   - Still too big, but 10^138 times smaller!" println
+"" println
+
+"3. STRUCTURAL PATTERNS:" println
+"   - Many algorithms use pairs: (a+b), (a-b)" println
+"   - Coefficients often symmetric or antisymmetric" println
+"   - Can parameterize by these patterns" println
+"   - Reduces to ~10^50 meaningful configurations" println
+"" println
+
+"4. START FROM KNOWN ALGORITHMS:" println
+"   - Strassen uses 7 muls for 2×2" println
+"   - Laderman uses 23 muls for 3×3" println
+"   - Mutate one coefficient at a time" println
+"   - Local search: ~1000s of neighbors per state" println
+"   - Can explore 10^6-10^9 candidates (feasible!)" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"MATHEMATICAL GUARANTEES WE CAN EXPLOIT" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"BILINEARITY TEST:" println
+"  If algorithm works for:" println
+"    (A+A')×B = A×B + A'×B (linear in first argument)" println
+"    A×(B+B') = A×B + A×B' (linear in second argument)" println
+"  Then we can verify with far fewer test cases!" println
+"" println
+
+"POLYNOMIAL IDENTITY:" println
+"  Matrix multiplication is polynomial in entries" println
+"  Only need to test with ~20 random matrices" println
+"  Probability of false positive: < 10^-20" println
+"  (Schwartz-Zippel lemma)" println
+"" println
+
+"RANK LOWER BOUND:" println
+"  Tensor rank ≥ certain algebraic bounds" println
+"  For 3×3: proven that rank ≥ 19" println
+"  So we don't waste time searching for <19 multiplications" println
+"" println
+
+"SYMMETRY:" println
+"  Can assume certain orderings without loss of generality" println
+"  Reduces search by factor of n! (factorial)" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"PRACTICAL VERIFICATION FUNCTION" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# For 2×2 case: A = [a,b,c,d], B = [e,f,g,h]
+# Standard result: C = [ae+bg, af+bh, ce+dg, cf+dh]
+
+[ # Test if algorithm produces correct 2×2 multiplication
+  # Input: list of 7 multiplication specs, each is [Au Av Bu Bv Wu Wv]
+  # where m_i = (Au[0]×a + Au[1]×b + Au[2]×c + Au[3]×d) × (Bu[0]×e + Bu[1]×f + Bu[2]×g + Bu[3]×h)
+  # and C[j] = sum over i of W[i,j] × m_i
+  
+  "alg" mem-set
+  
+  # Test with specific values
+  1 2 3 4 4 list "A" mem-set  # A = [[1,2],[3,4]]
+  5 6 7 8 4 list "B" mem-set  # B = [[5,6],[7,8]]
+  
+  # Expected: C = [[19,22],[43,50]]
+  # 19 = 1×5 + 2×7
+  # 22 = 1×6 + 2×8
+  # 43 = 3×5 + 4×7
+  # 50 = 3×6 + 4×8
+  
+  # For simplicity, just show framework
+  1 # Return true (placeholder)
+] "verify-2x2-algorithm" def
+
+"Verification strategy:" println
+"  1. Test with small integers: A=[1,2,3,4], B=[5,6,7,8]" println
+"  2. Test with random integers" println
+"  3. Test bilinearity: (A+A')×B = A×B + A'×B" println
+"  4. If all pass: very likely correct" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"LOCAL SEARCH STRATEGY" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Start: Strassen's algorithm (7 multiplications)" println
+"" println
+
+"Mutations to try:" println
+"  1. Change one coefficient: 0→1, 1→-1, -1→0, etc" println
+"  2. Swap two rows in U, V, or W" println
+"  3. Add/subtract one row from another" println
+"  4. Scale a row by -1" println
+"" println
+
+"For each mutation:" println
+"  - Apply change" println
+"  - Verify correctness (fast: ~20 matrix tests)" println
+"  - If correct: keep as new candidate" println
+"  - If simpler (fewer non-zeros): even better!" println
+"  - If incorrect: try next mutation" println
+"" println
+
+"Expected results:" println
+"  - Won't beat Strassen for 2×2 (proven optimal at 7)" println
+"  - Might find different 7-multiplication algorithms" println
+"  - For 3×3: could rediscover Laderman or variants" println
+"  - Learn why this is hard!" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"STRASSEN'S ALGORITHM (REFERENCE)" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"For 2×2 matrices A=[[a,b],[c,d]], B=[[e,f],[g,h]]:" println
+"" println
+
+"M1 = (a + d) × (e + h)" println
+"M2 = (c + d) × e" println
+"M3 = a × (f - h)" println
+"M4 = d × (g - e)" println
+"M5 = (a + b) × h" println
+"M6 = (c - a) × (e + f)" println
+"M7 = (b - d) × (g + h)" println
+"" println
+
+"Result:" println
+"C00 = M1 + M4 - M5 + M7" println
+"C01 = M3 + M5" println
+"C10 = M2 + M4" println
+"C11 = M1 - M2 + M3 + M6" println
+"" println
+
+"Notice the structure:" println
+"  - Each M_i uses 2-3 elements from A and B" println
+"  - Coefficients are {-1, 0, 1}" println
+"  - Symmetric patterns: (a+b), (a-b)" println
+"  - Final combinations use {-1, 1}" println
+"" println
+
+"This structure guides our search!" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"COMPUTATIONAL EXPERIMENT" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"What we CAN do in reasonable time:" println
+"" println
+
+"1. VERIFY STRASSEN:" println
+"   Test that Strassen's formula actually works" println
+"   Time: milliseconds" println
+"" println
+
+"2. ENUMERATE SPARSE PATTERNS:" println
+"   All 2×2 algorithms with ≤7 muls, ≤2 non-zeros per mul" println
+"   Estimate: ~10^6 candidates" println
+"   Time: minutes to hours" println
+"" println
+
+"3. LOCAL SEARCH FROM STRASSEN:" println
+"   Try all single-coefficient mutations" println
+"   Estimate: ~100 mutations × verify" println
+"   Time: seconds" println
+"" println
+
+"4. GUIDED SEARCH FOR 3×3:" println
+"   Start from Strassen-based construction" println
+"   Use block matrix techniques" println
+"   Time: hours to days" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"WHY ALPHATENSOR NEEDED MASSIVE COMPUTE" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Even with constraints:" println
+"  - Search space still exponential" println
+"  - Need to explore 10^9 - 10^12 candidates" println
+"  - Each verification needs matrix operations" println
+"  - Dead ends are common (99.99%+ candidates fail)" println
+"  - Need sophisticated exploration strategy" println
+"" println
+
+"AlphaTensor innovations:" println
+"  1. Learned value function (which states are promising)" println
+"  2. Learned policy (which mutations to try)" println
+"  3. Massive parallelization (1000s of TPUs)" println
+"  4. Months of training time" println
+"  5. Found 47 different 23-mul algorithms for 3×3" println
+"  6. Some better for specific hardware/precision" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"WHAT WE LEARNED" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Key insights:" println
+"" println
+
+"✓ Constraints matter: reduce 10^434 to ~10^50" println
+"  But 10^50 is still astronomical!" println
+"" println
+
+"✓ Mathematical structure helps:" println
+"  - Bilinearity reduces test cases needed" println
+"  - Sparsity limits coefficient choices" println
+"  - Symmetry eliminates redundant search" println
+"" println
+
+"✓ Local search is feasible:" println
+"  - Can explore neighborhood of known algorithms" println
+"  - Might find equivalent or slightly different variants" println
+"  - Won't beat proven optimal (like Strassen's 7)" println
+"" println
+
+"✓ Global optimum is hard:" println
+"  - Non-convex, discrete optimization" println
+"  - No gradient information" println
+"  - Verification easy, discovery hard" println
+"  - Why deep RL succeeded where others failed" println
+"" println
+
+"✗ Can't beat AlphaTensor without similar resources:" println
+"  - Would need months of GPU/TPU time" println
+"  - Sophisticated ML infrastructure" println
+"  - Large-scale experimentation" println
+"" println
+
+"Realistic goal for us:" println
+"  ✓ Understand the problem deeply" println
+"  ✓ Implement verification correctly" println
+"  ✓ Build constraint-based search framework" println
+"  ✓ Rediscover known algorithms (validation)" println
+"  ✓ Appreciate why this is hard!" println
+"" println
+
+"Next steps if we had more time/compute:" println
+"  1. Implement full Strassen verification" println
+"  2. Build mutation-based local search" println
+"  3. Try to rediscover Strassen from scratch" println
+"  4. Extend to 3×3 with block-matrix construction" println
+"  5. Run overnight to explore variants" println

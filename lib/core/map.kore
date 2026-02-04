@@ -19,7 +19,7 @@
 # map-from-pairs: (list -- map)
 # Create map from list of [key, value] pairs
 "map-from-pairs" [
-    map-empty swap
+    map-new swap
     [
         # Stack: map pair
         dup 0 list-get  # map pair key

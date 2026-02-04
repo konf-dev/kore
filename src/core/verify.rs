@@ -205,6 +205,134 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ).with_doc("Apply algebraic identities only: swap swap → ε, rot rot rot → ε"));
+
+    // axioms: ( -- list)
+    // Returns all algebraic identities as a list of {pattern: "...", reduces_to: "..."}
+    dict.register(Tool::native(
+        "axioms",
+        "( -- axioms:List)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let axioms = vec![
+                    // Involutions (self-inverse: f∘f = ε)
+                    axiom_map("swap swap", "", "involution"),
+                    axiom_map("not not", "", "involution"),
+                    axiom_map("neg neg", "", "involution"),
+                    axiom_map("tensor-neg tensor-neg", "", "involution"),
+                    axiom_map("tensor-transpose tensor-transpose", "", "involution"),
+                    
+                    // Inverse pairs (f∘g = ε)
+                    axiom_map("tensor-exp tensor-log", "", "inverse"),
+                    axiom_map("tensor-log tensor-exp", "", "inverse"),
+                    
+                    // Idempotent (f∘f = f)
+                    axiom_map("tensor-relu tensor-relu", "tensor-relu", "idempotent"),
+                    axiom_map("tensor-abs tensor-abs", "tensor-abs", "idempotent"),
+                    
+                    // Absorption laws (f∘g = f)
+                    axiom_map("tensor-sigmoid tensor-relu", "tensor-sigmoid", "absorption"),
+                    axiom_map("tensor-softmax tensor-relu", "tensor-softmax", "absorption"),
+                    axiom_map("tensor-relu tensor-abs", "tensor-relu", "absorption"),
+                    
+                    // Stack laws
+                    axiom_map("dup drop", "", "annihilation"),
+                    axiom_map("over drop", "", "annihilation"),
+                    axiom_map("over nip", "dup", "reduction"),
+                    axiom_map("swap nip", "drop", "reduction"),
+                    
+                    // Rotation (order 3: f³ = ε)
+                    axiom_map("rot rot rot", "", "cyclic"),
+                    
+                    // Scalar identities
+                    axiom_map("1 tensor-scale", "", "identity"),
+                    axiom_map("-1 tensor-scale", "tensor-neg", "reduction"),
+                ];
+                
+                stack.push(Value::List(axioms))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Export algebraic identities used by optimizer"));
+
+    // selftest: ( -- result:Map)
+    // Verifies runtime invariants
+    dict.register(Tool::native(
+        "selftest",
+        "( -- result:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                use crate::op::Op;
+                
+                let mut results = IndexMap::new();
+                let mut all_passed = true;
+                
+                // Test 1: Effect composition is associative
+                let e1 = Effect::new(1, 2);
+                let e2 = Effect::new(2, 1);
+                let e3 = Effect::new(1, 3);
+                let left = e1.compose(e2).compose(e3);
+                let right = e1.compose(e2.compose(e3));
+                let assoc_ok = left == right;
+                results.insert("effect_associativity".into(), Value::Bool(assoc_ok));
+                all_passed &= assoc_ok;
+                
+                // Test 2: Identity is neutral
+                let id = Effect::new(0, 0);
+                let e = Effect::new(2, 3);
+                let left_id = id.compose(e);
+                let right_id = e.compose(id);
+                let id_ok = left_id == e && right_id == e;
+                results.insert("effect_identity".into(), Value::Bool(id_ok));
+                all_passed &= id_ok;
+                
+                // Test 3: swap swap = ε (involution)
+                let ops = vec![Op::call("swap"), Op::call("swap")];
+                let optimized = optimizer::optimize(ops);
+                let swap_ok = optimized.is_empty();
+                results.insert("swap_involution".into(), Value::Bool(swap_ok));
+                all_passed &= swap_ok;
+                
+                // Test 4: Effect composition formula
+                // compose((a,b), (c,d)) = if b >= c then (a, b-c+d) else (a+c-b, d)
+                let e1 = Effect::new(2, 3);
+                let e2 = Effect::new(1, 2);
+                let composed = e1.compose(e2);
+                // 3 >= 1, so (2, 3-1+2) = (2, 4)
+                let formula_ok = composed == Effect::new(2, 4);
+                results.insert("composition_formula".into(), Value::Bool(formula_ok));
+                all_passed &= formula_ok;
+                
+                // Test 5: rot³ = ε
+                let ops = vec![Op::call("rot"), Op::call("rot"), Op::call("rot")];
+                let optimized = optimizer::optimize(ops);
+                let rot_ok = optimized.is_empty();
+                results.insert("rot_order_3".into(), Value::Bool(rot_ok));
+                all_passed &= rot_ok;
+                
+                // Test 6: dup drop = ε
+                let ops = vec![Op::call("dup"), Op::call("drop")];
+                let optimized = optimizer::optimize(ops);
+                let dup_drop_ok = optimized.is_empty();
+                results.insert("dup_drop_annihilation".into(), Value::Bool(dup_drop_ok));
+                all_passed &= dup_drop_ok;
+                
+                results.insert("passed".into(), Value::Bool(all_passed));
+                results.insert("tests_run".into(), Value::Int(6));
+                
+                stack.push(Value::Map(results))?;
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Verify runtime invariants: effect algebra, optimizer axioms"));
+}
+
+/// Helper to create axiom map
+fn axiom_map(pattern: &str, reduces_to: &str, law_type: &str) -> Value {
+    let mut m = IndexMap::new();
+    m.insert("pattern".into(), Value::Text(pattern.into()));
+    m.insert("reduces_to".into(), Value::Text(reduces_to.into()));
+    m.insert("law".into(), Value::Text(law_type.into()));
+    Value::Map(m)
 }
 
 /// Convert Value (Map) to Effect

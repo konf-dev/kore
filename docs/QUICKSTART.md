@@ -43,15 +43,15 @@ true false null         # Booleans and null
 ## 2. Variables (use mem-set/mem-get)
 
 ```kore
-# Store: key value mem-set
-"x" 10 mem-set
-"y" 20 mem-set
+# Store: value "key" mem-set (value first, like def)
+10 "x" mem-set
+20 "y" mem-set
 
-# Retrieve: key mem-get
+# Retrieve: "key" mem-get
 "x" mem-get "y" mem-get add    # → 30
 
-# Update: key new-value mem-set
-"x" "x" mem-get 1 add mem-set  # x = x + 1
+# Update: get, modify, set
+"x" mem-get 1 add "x" mem-set  # x = x + 1
 ```
 
 ## 3. Control Flow
@@ -61,10 +61,10 @@ true false null         # Booleans and null
 5 3 gt ["big"] ["small"] if    # → "big"
 
 # while: [condition] [body] while
-"i" 0 mem-set
+0 "i" mem-set
 ["i" mem-get 5 lt] [
   "i" mem-get println
-  "i" "i" mem-get 1 add mem-set
+  "i" mem-get 1 add "i" mem-set
 ] while
 # prints 0, 1, 2, 3, 4
 ```

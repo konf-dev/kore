@@ -1,0 +1,359 @@
+#!/usr/bin/env kore
+
+# ============================================================================
+# 3×3 MATRIX MULTIPLICATION ALGORITHM DISCOVERY
+# ============================================================================
+#
+# BOUNDS:
+#   - Standard:     27 multiplications (naive O(n³))
+#   - Laderman:     23 multiplications (1976, best known)
+#   - Lower bound:  19 multiplications (theoretical)
+#
+# LADERMAN ALGORITHM (arXiv:1703.08298):
+#   Constructed from 4 optimal 2×2 algorithms (Strassen/Winograd)
+#   plus corrections. Uses Klein four-group symmetry on the tensor.
+#
+# ============================================================================
+
+"" print
+"3x3 MATRIX MULTIPLICATION ALGORITHM DISCOVERY" print
+"==============================================" print
+"Standard: 27 muls | Laderman: 23 muls | Lower: 19 muls" print
+"" print
+
+# ----------------------------------------------------------------------------
+# PSEUDO-RANDOM NUMBER GENERATOR
+# ----------------------------------------------------------------------------
+
+1234567 "rng-state" mem-set
+
+[
+  "rng-state" mem-get
+  1103515245 mul 12345 add
+  2147483647 mod
+  dup "rng-state" mem-set
+] "rng-next" def
+
+# Random int in [lo, hi]
+[
+  over sub 1 add
+  rng-next swap mod
+  add
+] "rng-range" def
+
+# ----------------------------------------------------------------------------
+# MATRIX UTILITIES
+# ----------------------------------------------------------------------------
+
+# Create random 3×3 with elements in [-5, 5]
+[
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list swap list-push swap list-push swap list-push
+] "rand-3x3" def
+
+# ----------------------------------------------------------------------------
+# STANDARD MULTIPLICATION (27 multiplications)
+# ----------------------------------------------------------------------------
+
+[
+  "B" mem-set "A" mem-set
+  
+  # Extract A
+  "A" mem-get 0 list-get 0 list-get "a11" mem-set
+  "A" mem-get 0 list-get 1 list-get "a12" mem-set
+  "A" mem-get 0 list-get 2 list-get "a13" mem-set
+  "A" mem-get 1 list-get 0 list-get "a21" mem-set
+  "A" mem-get 1 list-get 1 list-get "a22" mem-set
+  "A" mem-get 1 list-get 2 list-get "a23" mem-set
+  "A" mem-get 2 list-get 0 list-get "a31" mem-set
+  "A" mem-get 2 list-get 1 list-get "a32" mem-set
+  "A" mem-get 2 list-get 2 list-get "a33" mem-set
+  
+  # Extract B
+  "B" mem-get 0 list-get 0 list-get "b11" mem-set
+  "B" mem-get 0 list-get 1 list-get "b12" mem-set
+  "B" mem-get 0 list-get 2 list-get "b13" mem-set
+  "B" mem-get 1 list-get 0 list-get "b21" mem-set
+  "B" mem-get 1 list-get 1 list-get "b22" mem-set
+  "B" mem-get 1 list-get 2 list-get "b23" mem-set
+  "B" mem-get 2 list-get 0 list-get "b31" mem-set
+  "B" mem-get 2 list-get 1 list-get "b32" mem-set
+  "B" mem-get 2 list-get 2 list-get "b33" mem-set
+  
+  # c[i][j] = sum(a[i][k] * b[k][j])
+  "a11" mem-get "b11" mem-get mul "a12" mem-get "b21" mem-get mul add "a13" mem-get "b31" mem-get mul add "c11" mem-set
+  "a11" mem-get "b12" mem-get mul "a12" mem-get "b22" mem-get mul add "a13" mem-get "b32" mem-get mul add "c12" mem-set
+  "a11" mem-get "b13" mem-get mul "a12" mem-get "b23" mem-get mul add "a13" mem-get "b33" mem-get mul add "c13" mem-set
+  "a21" mem-get "b11" mem-get mul "a22" mem-get "b21" mem-get mul add "a23" mem-get "b31" mem-get mul add "c21" mem-set
+  "a21" mem-get "b12" mem-get mul "a22" mem-get "b22" mem-get mul add "a23" mem-get "b32" mem-get mul add "c22" mem-set
+  "a21" mem-get "b13" mem-get mul "a22" mem-get "b23" mem-get mul add "a23" mem-get "b33" mem-get mul add "c23" mem-set
+  "a31" mem-get "b11" mem-get mul "a32" mem-get "b21" mem-get mul add "a33" mem-get "b31" mem-get mul add "c31" mem-set
+  "a31" mem-get "b12" mem-get mul "a32" mem-get "b22" mem-get mul add "a33" mem-get "b32" mem-get mul add "c32" mem-set
+  "a31" mem-get "b13" mem-get mul "a32" mem-get "b23" mem-get mul add "a33" mem-get "b33" mem-get mul add "c33" mem-set
+  
+  # Build result
+  0 list "c11" mem-get list-push "c12" mem-get list-push "c13" mem-get list-push
+  0 list "c21" mem-get list-push "c22" mem-get list-push "c23" mem-get list-push
+  0 list "c31" mem-get list-push "c32" mem-get list-push "c33" mem-get list-push
+  0 list swap list-push swap list-push swap list-push
+] "mat-mul-std" def
+
+# ----------------------------------------------------------------------------
+# MATRIX COMPARISON
+# ----------------------------------------------------------------------------
+
+[
+  "B" mem-set "A" mem-set
+  true
+  "A" mem-get 0 list-get 0 list-get "B" mem-get 0 list-get 0 list-get eq and
+  "A" mem-get 0 list-get 1 list-get "B" mem-get 0 list-get 1 list-get eq and
+  "A" mem-get 0 list-get 2 list-get "B" mem-get 0 list-get 2 list-get eq and
+  "A" mem-get 1 list-get 0 list-get "B" mem-get 1 list-get 0 list-get eq and
+  "A" mem-get 1 list-get 1 list-get "B" mem-get 1 list-get 1 list-get eq and
+  "A" mem-get 1 list-get 2 list-get "B" mem-get 1 list-get 2 list-get eq and
+  "A" mem-get 2 list-get 0 list-get "B" mem-get 2 list-get 0 list-get eq and
+  "A" mem-get 2 list-get 1 list-get "B" mem-get 2 list-get 1 list-get eq and
+  "A" mem-get 2 list-get 2 list-get "B" mem-get 2 list-get 2 list-get eq and
+] "mat-eq" def
+
+# ----------------------------------------------------------------------------
+# LADERMAN'S 23-MULTIPLICATION ALGORITHM (1976)
+# ----------------------------------------------------------------------------
+# Reference: Laderman, "A noncommutative algorithm for multiplying 3×3
+# matrices using 23 multiplications" (Bull. AMS, 1976)
+#
+# Geometric structure (arXiv:1703.08298): Composed of 4 optimal 2×2 
+# algorithms under Klein four-group action, plus corrections.
+
+[
+  "B" mem-set "A" mem-set
+  
+  # Extract A (1-indexed to match Laderman's paper)
+  "A" mem-get 0 list-get 0 list-get "a11" mem-set
+  "A" mem-get 0 list-get 1 list-get "a12" mem-set
+  "A" mem-get 0 list-get 2 list-get "a13" mem-set
+  "A" mem-get 1 list-get 0 list-get "a21" mem-set
+  "A" mem-get 1 list-get 1 list-get "a22" mem-set
+  "A" mem-get 1 list-get 2 list-get "a23" mem-set
+  "A" mem-get 2 list-get 0 list-get "a31" mem-set
+  "A" mem-get 2 list-get 1 list-get "a32" mem-set
+  "A" mem-get 2 list-get 2 list-get "a33" mem-set
+  
+  # Extract B
+  "B" mem-get 0 list-get 0 list-get "b11" mem-set
+  "B" mem-get 0 list-get 1 list-get "b12" mem-set
+  "B" mem-get 0 list-get 2 list-get "b13" mem-set
+  "B" mem-get 1 list-get 0 list-get "b21" mem-set
+  "B" mem-get 1 list-get 1 list-get "b22" mem-set
+  "B" mem-get 1 list-get 2 list-get "b23" mem-set
+  "B" mem-get 2 list-get 0 list-get "b31" mem-set
+  "B" mem-get 2 list-get 1 list-get "b32" mem-set
+  "B" mem-get 2 list-get 2 list-get "b33" mem-set
+  
+  # ========== 23 INTERMEDIATE PRODUCTS ==========
+  
+  # m1 = (a11 + a12 + a13 - a21 - a22 - a32 - a33) * b22
+  "a11" mem-get "a12" mem-get add "a13" mem-get add
+  "a21" mem-get sub "a22" mem-get sub "a32" mem-get sub "a33" mem-get sub
+  "b22" mem-get mul "m1" mem-set
+  
+  # m2 = (a11 - a21) * (-b12 + b22)
+  "a11" mem-get "a21" mem-get sub
+  "b22" mem-get "b12" mem-get sub mul "m2" mem-set
+  
+  # m3 = a22 * (-b11 + b12 + b21 - b22 - b23 - b31 + b33)
+  "a22" mem-get
+  "b12" mem-get "b11" mem-get sub "b21" mem-get add
+  "b22" mem-get sub "b23" mem-get sub "b31" mem-get sub "b33" mem-get add
+  mul "m3" mem-set
+  
+  # m4 = (-a11 + a21 + a22) * (b11 - b12 + b22)
+  "a21" mem-get "a11" mem-get sub "a22" mem-get add
+  "b11" mem-get "b12" mem-get sub "b22" mem-get add mul "m4" mem-set
+  
+  # m5 = (a21 + a22) * (-b11 + b12)
+  "a21" mem-get "a22" mem-get add
+  "b12" mem-get "b11" mem-get sub mul "m5" mem-set
+  
+  # m6 = a11 * b11
+  "a11" mem-get "b11" mem-get mul "m6" mem-set
+  
+  # m7 = (-a11 + a31 + a32) * (b11 - b13 + b23)
+  "a31" mem-get "a11" mem-get sub "a32" mem-get add
+  "b11" mem-get "b13" mem-get sub "b23" mem-get add mul "m7" mem-set
+  
+  # m8 = (-a11 + a31) * (b13 - b23)
+  "a31" mem-get "a11" mem-get sub
+  "b13" mem-get "b23" mem-get sub mul "m8" mem-set
+  
+  # m9 = (a31 + a32) * (-b11 + b13)
+  "a31" mem-get "a32" mem-get add
+  "b13" mem-get "b11" mem-get sub mul "m9" mem-set
+  
+  # m10 = (a11 + a12 + a13 - a22 - a23 - a31 - a32) * b23
+  "a11" mem-get "a12" mem-get add "a13" mem-get add
+  "a22" mem-get sub "a23" mem-get sub "a31" mem-get sub "a32" mem-get sub
+  "b23" mem-get mul "m10" mem-set
+  
+  # m11 = a32 * (-b11 + b13 + b21 - b22 - b23 - b31 + b32)
+  "a32" mem-get
+  "b13" mem-get "b11" mem-get sub "b21" mem-get add
+  "b22" mem-get sub "b23" mem-get sub "b31" mem-get sub "b32" mem-get add
+  mul "m11" mem-set
+  
+  # m12 = (-a13 + a32 + a33) * (b22 + b31 - b32)
+  "a32" mem-get "a13" mem-get sub "a33" mem-get add
+  "b22" mem-get "b31" mem-get add "b32" mem-get sub mul "m12" mem-set
+  
+  # m13 = (a13 - a33) * (b22 - b32)
+  "a13" mem-get "a33" mem-get sub
+  "b22" mem-get "b32" mem-get sub mul "m13" mem-set
+  
+  # m14 = a13 * b31
+  "a13" mem-get "b31" mem-get mul "m14" mem-set
+  
+  # m15 = (a32 + a33) * (-b31 + b32)
+  "a32" mem-get "a33" mem-get add
+  "b32" mem-get "b31" mem-get sub mul "m15" mem-set
+  
+  # m16 = (-a13 + a22 + a23) * (b23 + b31 - b33)
+  "a22" mem-get "a13" mem-get sub "a23" mem-get add
+  "b23" mem-get "b31" mem-get add "b33" mem-get sub mul "m16" mem-set
+  
+  # m17 = (a13 - a23) * (b23 - b33)
+  "a13" mem-get "a23" mem-get sub
+  "b23" mem-get "b33" mem-get sub mul "m17" mem-set
+  
+  # m18 = (a22 + a23) * (-b31 + b33)
+  "a22" mem-get "a23" mem-get add
+  "b33" mem-get "b31" mem-get sub mul "m18" mem-set
+  
+  # m19 = a12 * b21 (contributes to c11)
+  "a12" mem-get "b21" mem-get mul "m19" mem-set
+  
+  # m20 = a23 * b32 (contributes to c22)
+  "a23" mem-get "b32" mem-get mul "m20" mem-set
+  
+  # m21 = a21 * b13 (contributes to c23)
+  "a21" mem-get "b13" mem-get mul "m21" mem-set
+  
+  # m22 = a31 * b12 (contributes to c32)
+  "a31" mem-get "b12" mem-get mul "m22" mem-set
+  
+  # m23 = a33 * b33 (contributes to c33)
+  "a33" mem-get "b33" mem-get mul "m23" mem-set
+  
+  # ========== RESULT MATRIX ==========
+  
+  # c11 = m6 + m14 + m19
+  "m6" mem-get "m14" mem-get add "m19" mem-get add "c11" mem-set
+  
+  # c12 = m1 + m4 + m5 + m6 + m12 + m14 + m15
+  "m1" mem-get "m4" mem-get add "m5" mem-get add "m6" mem-get add
+  "m12" mem-get add "m14" mem-get add "m15" mem-get add "c12" mem-set
+  
+  # c13 = m6 + m7 + m9 + m10 + m14 + m16 + m18
+  "m6" mem-get "m7" mem-get add "m9" mem-get add "m10" mem-get add
+  "m14" mem-get add "m16" mem-get add "m18" mem-get add "c13" mem-set
+  
+  # c21 = m2 + m3 + m4 + m6 + m14 + m16 + m17
+  "m2" mem-get "m3" mem-get add "m4" mem-get add "m6" mem-get add
+  "m14" mem-get add "m16" mem-get add "m17" mem-get add "c21" mem-set
+  
+  # c22 = m2 + m4 + m5 + m6 + m20
+  "m2" mem-get "m4" mem-get add "m5" mem-get add "m6" mem-get add
+  "m20" mem-get add "c22" mem-set
+  
+  # c23 = m14 + m16 + m17 + m18 + m21
+  "m14" mem-get "m16" mem-get add "m17" mem-get add "m18" mem-get add
+  "m21" mem-get add "c23" mem-set
+  
+  # c31 = m6 + m7 + m8 + m11 + m12 + m13 + m14
+  "m6" mem-get "m7" mem-get add "m8" mem-get add "m11" mem-get add
+  "m12" mem-get add "m13" mem-get add "m14" mem-get add "c31" mem-set
+  
+  # c32 = m12 + m13 + m14 + m15 + m22
+  "m12" mem-get "m13" mem-get add "m14" mem-get add "m15" mem-get add
+  "m22" mem-get add "c32" mem-set
+  
+  # c33 = m6 + m7 + m8 + m9 + m23
+  "m6" mem-get "m7" mem-get add "m8" mem-get add "m9" mem-get add
+  "m23" mem-get add "c33" mem-set
+  
+  # Build result
+  0 list "c11" mem-get list-push "c12" mem-get list-push "c13" mem-get list-push
+  0 list "c21" mem-get list-push "c22" mem-get list-push "c23" mem-get list-push
+  0 list "c31" mem-get list-push "c32" mem-get list-push "c33" mem-get list-push
+  0 list swap list-push swap list-push swap list-push
+] "mat-mul-lad" def
+
+# ----------------------------------------------------------------------------
+# VERIFICATION
+# ----------------------------------------------------------------------------
+
+0 "passed" mem-set
+0 "failed" mem-set
+
+[
+  rand-3x3 "tA" mem-set
+  rand-3x3 "tB" mem-set
+  "tA" mem-get "tB" mem-get mat-mul-std "rStd" mem-set
+  "tA" mem-get "tB" mem-get mat-mul-lad "rLad" mem-set
+  "rStd" mem-get "rLad" mem-get mat-eq
+  [ "passed" mem-get 1 add "passed" mem-set ]
+  [ "failed" mem-get 1 add "failed" mem-set ] if
+] "run-test" def
+
+[
+  "n" mem-set
+  0 "i" mem-set
+  [ "i" mem-get "n" mem-get lt ]
+  [ run-test "i" mem-get 1 add "i" mem-set ] while
+] "run-n-tests" def
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+"[1] Generating test matrices..." print
+rand-3x3 "A" mem-set
+rand-3x3 "B" mem-set
+" DONE" print
+
+"[2] Standard multiplication (27 muls)..." print
+"A" mem-get "B" mem-get mat-mul-std "Cstd" mem-set
+" DONE" print
+
+"[3] Laderman multiplication (23 muls)..." print
+"A" mem-get "B" mem-get mat-mul-lad "Clad" mem-set
+" DONE" print
+
+"[4] Comparing results..." print
+"Cstd" mem-get "Clad" mem-get mat-eq
+[ " MATCH!" print ] [ " DIFFER!" print ] if
+
+"[5] Running 100 random tests..." print
+100 run-n-tests
+"    Passed: " print "passed" mem-get to-text print "" print
+"    Failed: " print "failed" mem-get to-text print "" print
+
+"failed" mem-get 0 eq
+[
+  "" print
+  "==============================================" print
+  "SUCCESS: Laderman algorithm verified!" print
+  "" print
+  "Multiplication savings: 4 ops (27->23 = 15%)" print
+  "Recursive savings: O(n^2.85) vs O(n^3)" print
+  "==============================================" print
+] [
+  "" print
+  "==============================================" print
+  "FAILURE: Algorithm mismatch detected" print
+  "==============================================" print
+] if

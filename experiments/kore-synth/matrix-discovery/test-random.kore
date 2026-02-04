@@ -1,0 +1,46 @@
+#!/usr/bin/env kore
+
+# Test random number generation and matrix building
+
+1234567 "rand-seed" mem-set
+
+[
+  "rand-seed" mem-get
+  1103515245 mul
+  12345 add
+  2147483647 mod
+  dup "rand-seed" mem-set
+] "rand-next" def
+
+[
+  over sub 1 add
+  "range" mem-set
+  "min" mem-set
+  rand-next
+  "range" mem-get mod
+  "min" mem-get add
+] "rand-int" def
+
+"Testing random number generation..." print
+"" print
+
+"First 5 random numbers:" print
+rand-next dup "Random 1: " print dup to-text print "" print drop
+rand-next dup "Random 2: " print dup to-text print "" print drop
+rand-next dup "Random 3: " print dup to-text print "" print drop
+rand-next dup "Random 4: " print dup to-text print "" print drop
+rand-next dup "Random 5: " print dup to-text print "" print drop
+
+"" print
+"Random integers in range [-5, 5]:" print
+-5 5 rand-int dup "Int 1: " print dup to-text print "" print drop
+-5 5 rand-int dup "Int 2: " print dup to-text print "" print drop
+-5 5 rand-int dup "Int 3: " print dup to-text print "" print drop
+
+"" print
+"Building a list..." print
+[] 1 list-push 2 list-push 3 list-push
+dup "List: " print dup to-text print "" print
+
+"" print
+"Success! Random generation works." print

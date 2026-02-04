@@ -131,4 +131,59 @@ impl Error {
             Self::LinearDiscard(_) => "E_LINEAR_DROP",
         }
     }
+
+    /// Convert error to machine-parseable map (for error-info tool)
+    pub fn to_map(&self) -> indexmap::IndexMap<String, crate::value::Value> {
+        use crate::value::Value;
+        use indexmap::IndexMap;
+        
+        let mut m = IndexMap::new();
+        m.insert("code".into(), Value::Text(self.code().into()));
+        m.insert("message".into(), Value::Text(self.to_string()));
+        
+        // Add structured fields based on variant
+        match self {
+            Self::StackUnderflow { expected, actual } => {
+                m.insert("expected".into(), Value::Int(*expected as i64));
+                m.insert("actual".into(), Value::Int(*actual as i64));
+            }
+            Self::StackOverflow { max } => {
+                m.insert("max".into(), Value::Int(*max as i64));
+            }
+            Self::TypeError { expected, got } => {
+                m.insert("expected_type".into(), Value::Text(expected.clone()));
+                m.insert("got_type".into(), Value::Text(got.clone()));
+            }
+            Self::EffectMismatch { expected, got } => {
+                m.insert("expected_effect".into(), Value::Text(expected.clone()));
+                m.insert("got_effect".into(), Value::Text(got.clone()));
+            }
+            Self::CapabilityDenied { capability, tool } => {
+                m.insert("capability".into(), Value::Text(capability.clone()));
+                m.insert("tool".into(), Value::Text(tool.clone()));
+            }
+            Self::IndexOutOfBounds { index, length } => {
+                m.insert("index".into(), Value::Int(*index));
+                m.insert("length".into(), Value::Int(*length as i64));
+            }
+            Self::ResourceExhausted { resource, requested, available } => {
+                m.insert("resource".into(), Value::Text(resource.clone()));
+                m.insert("requested".into(), Value::Int(*requested as i64));
+                m.insert("available".into(), Value::Int(*available as i64));
+            }
+            Self::ToolNotFound(name) => {
+                m.insert("tool".into(), Value::Text(name.clone()));
+            }
+            Self::KeyNotFound(key) => {
+                m.insert("key".into(), Value::Text(key.clone()));
+            }
+            Self::Custom { code, message } => {
+                m.insert("custom_code".into(), Value::Text(code.clone()));
+                m.insert("custom_message".into(), Value::Text(message.clone()));
+            }
+            _ => {}
+        }
+        
+        m
+    }
 }

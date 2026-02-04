@@ -1,0 +1,121 @@
+# KORE-SYNTH: Minimal beam search in pure Kore
+# Test the fiber-based search approach
+
+# ==============================================
+# TOOLS
+# ==============================================
+
+[ dup mul ] "square" def
+[ dup add ] "double" def
+
+# ==============================================
+# TEST FIBER OPERATIONS
+# ==============================================
+
+"" println
+"=== KORE-SYNTH: Fiber-based Search ===" println
+"" println
+
+# Test 1: Create and run a fiber
+"Test 1: Basic fiber" println
+[ 3 4 add ] fiber-new
+dup fiber-status "  Status: " print println
+fiber-run 
+dup fiber-status "  After run: " print println
+fiber-stack "  Stack: " print to-text println
+"" println
+
+# Test 2: Step through a fiber
+"Test 2: Stepping through fiber" println
+[ 5 6 mul ] fiber-new
+dup fiber-status "  Initial: " print println
+fiber-step
+dup fiber-status "  After step 1: " print println
+dup fiber-stack "  Stack: " print to-text println
+fiber-step
+dup fiber-status "  After step 2: " print println
+dup fiber-stack "  Stack: " print to-text println
+fiber-step
+dup fiber-status "  After step 3: " print println
+fiber-stack "  Final stack: " print to-text println
+"" println
+
+# Test 3: Goal matching
+"Test 3: Goal matching" println
+"goal" 7 1 list mem-set
+[ 7 ] fiber-new fiber-run fiber-stack
+"goal" mem-get eq
+"  [7] matches goal [7]: " print to-text println
+
+[ 5 ] fiber-new fiber-run fiber-stack  
+"goal" mem-get eq
+"  [5] matches goal [7]: " print to-text println
+"" println
+
+# Test 4: Search one level for goal [7]
+"Test 4: One-level search for goal [7]" println
+"goal" 7 1 list mem-set
+"found" false mem-set
+"solution" "" mem-set
+
+# Try each number 0-10
+0 [
+  dup                           
+  "found" mem-get not [         
+    # Create fiber with just this number on stack
+    [ ] fiber-new swap fiber-inject fiber-stack  
+    "goal" mem-get eq [         
+      "  Found! " print dup to-text println
+      true "found" mem-set
+      dup to-text "solution" mem-set
+    ] [ ] if
+  ] [ drop ] if
+  1 add
+] 11 times
+drop
+
+"found" mem-get [
+  "  Solution: " print "solution" mem-get println
+] [
+  "  Not found in single numbers" println
+] if
+"" println
+
+# Test 5: Two-level search for 42 = 6 * 7
+"Test 5: Two-level search for goal [42]" println
+"goal" 42 1 list mem-set
+"found" false mem-set
+
+# Try n1 n2 mul for all pairs
+0 [
+  dup "i" mem-set
+  0 [
+    dup "j" mem-set
+    "found" mem-get not [
+      # Build fiber [ i j mul ]
+      "i" mem-get 1 list    
+      "j" mem-get 1 list    
+      list-concat           
+      [ mul ] list-concat   
+      fiber-new fiber-run fiber-stack
+      
+      "goal" mem-get eq [
+        "  Found: " print 
+        "i" mem-get print " " print 
+        "j" mem-get print " mul = 42" println
+        true "found" mem-set
+      ] [ ] if
+    ] [ ] if
+    1 add
+  ] 11 times
+  drop
+  1 add
+] 11 times
+drop
+
+"found" mem-get not [
+  "  Not found (need larger numbers)" println
+] [ ] if
+"" println
+
+"=== Done ===" println

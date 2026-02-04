@@ -14,8 +14,8 @@
 # Check if character is 0-9
 "is-digit" [
     char-code
-    dup 48 ge   # >= '0'
-    swap 57 le  # <= '9'
+    dup 48 lt not         # >= '0' (i.e., NOT < 48)
+    swap 57 swap lt not   # <= '9' (i.e., NOT 57 < code)
     and
 ] def
 
@@ -23,8 +23,8 @@
 # Check if character is a-z or A-Z
 "is-alpha" [
     char-code
-    dup dup 65 ge swap 90 le and   # A-Z
-    swap dup 97 ge swap 122 le and # a-z
+    dup dup 65 lt not swap 90 swap lt not and   # A-Z: code >= 65 AND code <= 90
+    swap dup 97 lt not swap 122 swap lt not and # a-z: code >= 97 AND code <= 122
     or
 ] def
 

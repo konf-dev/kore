@@ -306,13 +306,13 @@ impl Analyzer {
             
             // Arithmetic
             "add" | "sub" | "mul" | "div" | "mod" => (2, 1),
-            "neg" | "abs" => (1, 1),
+            "neg" => (1, 1),
             
             // Conversion
             "to-float" | "to-int" | "to-text" | "to-bool" => (1, 1),
             
-            // Comparison
-            "eq" | "neq" | "lt" | "lte" | "gt" | "gte" => (2, 1),
+            // Comparison (only eq and lt are primitives, others compose from these)
+            "eq" | "lt" => (2, 1),
             
             // Logic
             "and" | "or" => (2, 1),
@@ -371,7 +371,6 @@ impl Analyzer {
             "if" => (3, 0),   // cond then else --, branches may push
             "times" => (2, 0), // n quote --
             "while" => (2, 0), // cond-q body-q --
-            "when" | "unless" => (2, 0), // cond quote --
             "loop" => (1, 0), // quote --
             "spawn" => (3, 1), // quote caps ratio -- result
             "try" => (1, 1),  // quote -- result (approx, may push error)

@@ -1,0 +1,156 @@
+# FORMULA DISCOVERY
+# Can the system discover that sum(1..n) = n*(n+1)/2 ?
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  FORMULA DISCOVERY                                       ║" println
+"║  Can we discover: sum(1..n) = n×(n+1)/2 ?                ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+"" println
+
+# First, compute the actual sums by brute force
+# sum(1) = 1
+# sum(2) = 1+2 = 3
+# sum(3) = 1+2+3 = 6
+# sum(4) = 1+2+3+4 = 10
+# sum(5) = 1+2+3+4+5 = 15
+
+"=== Computing sums manually ===" println
+
+[ # sum-to: ( n -- sum )
+  "limit" swap mem-set
+  "sum" 0 mem-set
+  "i" 1 mem-set
+  
+  # Loop: while i <= limit
+  [
+    "i" mem-get "limit" mem-get 1 add lt
+  ] [
+    "sum" mem-get "i" mem-get add "sum" swap mem-set
+    "i" mem-get 1 add "i" swap mem-set
+  ] while
+  
+  "sum" mem-get
+] "sum-to" def
+
+1 sum-to "sum(1) = " swap to-text str-concat println
+2 sum-to "sum(2) = " swap to-text str-concat println
+3 sum-to "sum(3) = " swap to-text str-concat println
+4 sum-to "sum(4) = " swap to-text str-concat println
+5 sum-to "sum(5) = " swap to-text str-concat println
+6 sum-to "sum(6) = " swap to-text str-concat println
+7 sum-to "sum(7) = " swap to-text str-concat println
+8 sum-to "sum(8) = " swap to-text str-concat println
+9 sum-to "sum(9) = " swap to-text str-concat println
+10 sum-to "sum(10) = " swap to-text str-concat println
+
+"" println
+"=== Searching for closed-form formula ===" println
+"Can we find f(n) such that f(n) = sum(1..n)?" println
+"" println
+
+# Search strategy: try expressions of form n op1 (n op2 c) op3 d
+# Target: n*(n+1)/2
+
+# For each n, we know the sum. Search for expression that matches.
+
+"formulas-found" 0 mem-set
+
+1 2 3 4 5 6 7 8 9 10 10 list
+[
+  "n" swap mem-set
+  "target" "n" mem-get sum-to mem-set
+  
+  # Try: n * (n + 1) / 2
+  "n" mem-get 
+  "n" mem-get 1 add 
+  mul 2 div
+  "result" swap mem-set
+  
+  "result" mem-get "target" mem-get eq [
+    "formulas-found" mem-get 1 add "formulas-found" swap mem-set
+  ] [ ] if
+  
+  "n=" print "n" mem-get to-text print
+  ": sum=" print "target" mem-get to-text print
+  ", n*(n+1)/2=" print "result" mem-get to-text print
+  "target" mem-get "result" mem-get eq [ " ✓" println ] [ " ✗" println ] if
+  
+] each
+
+"" println
+"formulas-found" mem-get to-text " out of 10 match the formula n×(n+1)/2" str-concat println
+
+"" println
+"=== Now: Can SEARCH discover this formula? ===" println
+"" println
+
+# The challenge: given pairs (n, sum), find the formula
+# This is HARD - we need to search over expression structures
+
+# Simpler version: verify candidate formulas
+"Testing candidate formulas..." println
+"" println
+
+# Formula 1: n * n (wrong)
+"Formula: n×n" println
+"verified" 0 mem-set
+1 2 3 4 5 6 7 8 9 10 10 list
+[
+  "n" swap mem-set
+  "n" mem-get dup mul
+  "n" mem-get sum-to eq [
+    "verified" mem-get 1 add "verified" swap mem-set
+  ] [ ] if
+] each
+"  Matches: " print "verified" mem-get to-text print "/10" println
+
+# Formula 2: n * (n + 1) / 2 (correct)
+"Formula: n×(n+1)/2" println
+"verified" 0 mem-set
+1 2 3 4 5 6 7 8 9 10 10 list
+[
+  "n" swap mem-set
+  "n" mem-get "n" mem-get 1 add mul 2 div
+  "n" mem-get sum-to eq [
+    "verified" mem-get 1 add "verified" swap mem-set
+  ] [ ] if
+] each
+"  Matches: " print "verified" mem-get to-text print "/10" println
+
+# Formula 3: (n * n + n) / 2 (equivalent, correct)
+"Formula: (n×n+n)/2" println
+"verified" 0 mem-set
+1 2 3 4 5 6 7 8 9 10 10 list
+[
+  "n" swap mem-set
+  "n" mem-get dup mul "n" mem-get add 2 div
+  "n" mem-get sum-to eq [
+    "verified" mem-get 1 add "verified" swap mem-set
+  ] [ ] if
+] each
+"  Matches: " print "verified" mem-get to-text print "/10" println
+
+# Formula 4: n + n * (n - 1) / 2 (equivalent, correct)
+"Formula: n + n×(n-1)/2" println
+"verified" 0 mem-set
+1 2 3 4 5 6 7 8 9 10 10 list
+[
+  "n" swap mem-set
+  "n" mem-get "n" mem-get 1 sub mul 2 div "n" mem-get add
+  "n" mem-get sum-to eq [
+    "verified" mem-get 1 add "verified" swap mem-set
+  ] [ ] if
+] each
+"  Matches: " print "verified" mem-get to-text print "/10" println
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  RESULT                                                  ║" println
+"║                                                          ║" println
+"║  The system can VERIFY formulas (test on many inputs)    ║" println
+"║  but DISCOVERING the formula requires structured search  ║" println
+"║  over expression trees - not just value enumeration.     ║" println
+"║                                                          ║" println
+"║  Next step: search over PROGRAM STRUCTURES, not VALUES   ║" println
+"╚══════════════════════════════════════════════════════════╝" println

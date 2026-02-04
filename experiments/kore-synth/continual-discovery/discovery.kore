@@ -1,0 +1,356 @@
+# CONTINUAL MATHEMATICAL DISCOVERY
+# A self-improving system that discovers and composes new operations
+# Runs in Docker, persists to /mnt/knowledge.kore
+
+[ swap lt ] "gt" def
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  CONTINUAL MATHEMATICAL DISCOVERY                                ║" println
+"║  Building knowledge through composition and exploration          ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# KNOWLEDGE BASE SYSTEM
+# ====================================================================
+
+# Storage location - /mnt is mounted from host in Docker
+"/mnt/knowledge.kore" "kb-path" mem-set
+"/mnt/registry.kore" "reg-path" mem-set
+
+0 list "kb-registry" mem-set    # List of [name, code, description]
+0 "generation" mem-set          # Which generation we're on
+
+# Try to load existing knowledge
+[
+  "kb-path" mem-get fs-read "kb-content" mem-set
+  "kb-content" mem-get text-to-quote call
+  "✓ Loaded existing knowledge base" println
+  
+  # Count tools by counting "def" occurrences (rough estimate)
+  # Actually parse the registry file if it exists
+  "reg-path" mem-get fs-read text-to-quote call
+  "  Registry loaded with " print "kb-registry" mem-get list-len to-text print " tools" println
+  1  # Push success marker
+] try 
+dup is-error [ 
+  drop 
+  "○ Starting fresh - no existing knowledge" println 
+] [ 
+  drop  # Drop the success marker
+] if
+
+# Check if we already have a complete knowledge base
+"kb-registry" mem-get list-len 16 lt not "complete" mem-set
+
+"complete" mem-get [
+  "" println
+  "╔══════════════════════════════════════════════════════════════════╗" println
+  "║  Knowledge base already complete (16 tools).                     ║" println
+  "║  Using existing tools from /mnt/knowledge.kore                   ║" println
+  "╚══════════════════════════════════════════════════════════════════╝" println
+  "" println
+  
+  # Verify they work
+  "═══════════════════════════════════════════════════════════════════" println
+  "VERIFICATION: Testing loaded tools" println
+  "═══════════════════════════════════════════════════════════════════" println
+  "" println
+  
+  "  5 double = " print 5 double to-text println
+  "  3 square = " print 3 square to-text println
+  "  4 cube = " print 4 cube to-text println
+  "  3 triangular = " print 3 triangular to-text println
+  "  4 power-of-2 = " print 4 power-of-2 to-text println
+  "" println
+  
+  "All tools verified working!" println
+] [ ] if
+
+# Learn a new tool and add to registry
+[ # ( quote name description -- )
+  "desc" mem-set
+  "name" mem-set  
+  "code" mem-set
+  
+  # Define in current session
+  "code" mem-get "name" mem-get def
+  
+  # Add to registry: [name, code, description]
+  "kb-registry" mem-get
+  "name" mem-get "code" mem-get "desc" mem-get 3 list
+  list-push "kb-registry" mem-set
+  
+  "  ✦ Discovered: " print "name" mem-get print " - " print "desc" mem-get println
+] "discover" def
+
+# Save knowledge base
+[
+  # Save executable definitions
+  "# Kore Knowledge Base - Generation " "generation" mem-get to-text str-concat
+  "\n# Auto-discovered mathematical operations\n\n" str-concat
+  "content" mem-set
+  
+  "kb-registry" mem-get [
+    "entry" mem-set
+    "entry" mem-get 0 list-get "n" mem-set
+    "entry" mem-get 1 list-get "c" mem-set
+    "entry" mem-get 2 list-get "d" mem-set
+    
+    "content" mem-get
+    "# " str-concat "d" mem-get str-concat "\n" str-concat
+    "c" mem-get quote-to-text str-concat
+    " \"" str-concat "n" mem-get str-concat "\" def\n\n" str-concat
+    "content" mem-set
+  ] each
+  
+  "kb-path" mem-get "content" mem-get fs-write
+  
+  # Save registry as data structure
+  "\"kb-registry\" mem-get list-len 0 gt [ ] [ \n" "reg-code" mem-set
+  "kb-registry" mem-get [
+    "entry" mem-set
+    "reg-code" mem-get
+    "  \"kb-registry\" mem-get " str-concat
+    "entry" mem-get 0 list-get "n" mem-set
+    "entry" mem-get 1 list-get "c" mem-set
+    "entry" mem-get 2 list-get "d" mem-set
+    "\"" str-concat "n" mem-get str-concat "\" " str-concat
+    "c" mem-get quote-to-text str-concat " " str-concat
+    "\"" str-concat "d" mem-get str-concat "\" 3 list list-push \"kb-registry\" mem-set\n" str-concat
+    "reg-code" mem-set
+  ] each
+  "reg-code" mem-get "] if\n" str-concat "reg-code" mem-set
+  "reg-path" mem-get "reg-code" mem-get fs-write
+  
+  "✓ Saved " print "kb-registry" mem-get list-len to-text print " tools to " print "kb-path" mem-get println
+] "save-knowledge" def
+
+# ====================================================================
+# PRIMITIVE OPERATIONS (Building Blocks)
+# ====================================================================
+
+"complete" mem-get not [
+  "═══════════════════════════════════════════════════════════════════" println
+  "PHASE 1: Primitive Operations" println
+  "═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# Check if we already have basics
+"kb-registry" mem-get list-len 0 eq [
+  [ 1 add ] "succ" "successor: n → n+1" discover
+  [ 1 sub ] "pred" "predecessor: n → n-1" discover
+  [ dup add ] "double" "double: n → 2n" discover
+  [ dup mul ] "square" "square: n → n²" discover
+  [ neg ] "negate" "negate: n → -n" discover
+  [ dup 0 lt [ neg ] [ ] if ] "absolute" "absolute value: n → |n|" discover
+] [ "  (primitives already known)" println ] if
+"" println
+
+# ====================================================================
+# PHASE 2: COMPOSITION - Combine known tools to make new ones
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"PHASE 2: Compositional Discovery" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# Generate compositions of existing tools
+# For each pair of tools, try composing them
+
+# Quadruple = double ∘ double
+[ dup add dup add ] "quadruple" "quadruple: n → 4n (double composed)" discover
+
+# Fourth power = square ∘ square  
+[ dup mul dup mul ] "fourth-power" "fourth power: n → n⁴" discover
+
+# Cube = n × square(n)
+[ dup dup mul mul ] "cube" "cube: n → n³" discover
+
+# Double-succ = double then add 1
+[ dup add 1 add ] "double-succ" "2n+1: odd numbers" discover
+
+# Double-pred = double then subtract 1
+[ dup add 1 sub ] "double-pred" "2n-1: odd numbers (other form)" discover
+
+"" println
+
+# ====================================================================
+# PHASE 3: PATTERN DISCOVERY - Find programs from examples
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"PHASE 3: Pattern Discovery (synthesis from examples)" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# Synthesizer: find program matching input/output pairs
+[ # ( examples candidates -- quote|null )
+  "synth-candidates" mem-set
+  "synth-examples" mem-set
+  null "synth-found" mem-set
+  
+  "synth-candidates" mem-get [
+    "synth-c" mem-set
+    "synth-found" mem-get null eq [
+      0 "synth-pass" mem-set
+      "synth-examples" mem-get [
+        "synth-ex" mem-set
+        "synth-ex" mem-get 0 list-get "synth-in" mem-set
+        "synth-ex" mem-get 1 list-get "synth-out" mem-set
+        
+        "synth-c" mem-get fiber-new "synth-in" mem-get fiber-inject 
+        [ fiber-run fiber-stack 0 list-get ] try
+        dup is-error not [
+          "synth-out" mem-get eq [ "synth-pass" mem-get 1 add "synth-pass" mem-set ] [ ] if
+        ] [ drop ] if
+      ] each
+      
+      "synth-pass" mem-get "synth-examples" mem-get list-len eq [
+        "synth-c" mem-get "synth-found" mem-set
+      ] [ ] if
+    ] [ ] if
+  ] each
+  
+  "synth-found" mem-get
+] "synthesize" def
+
+# Discover triangular numbers: T(n) = n(n+1)/2
+# T(1)=1, T(2)=3, T(3)=6, T(4)=10
+1 1 2 list  2 3 2 list  3 6 2 list  4 10 2 list  4 list "tri-examples" mem-set
+[ dup 1 add mul 2 div ] [ dup dup 1 add mul 2 div ] 2 list "tri-candidates" mem-set
+"tri-examples" mem-get "tri-candidates" mem-get synthesize "tri-result" mem-set
+"tri-result" mem-get null eq not [
+  "tri-result" mem-get "triangular" "triangular number: n → n(n+1)/2" discover
+] [ "  ✗ Could not discover triangular" println ] if
+
+# Discover factorial pattern for small n
+# We can't easily synthesize factorial, but we can define it
+[ # factorial via recursion simulation
+  dup 1 gt [
+    dup 1 sub dup 1 gt [ dup 1 sub dup 1 gt [ dup 1 sub mul ] [ ] if mul ] [ ] if mul
+  ] [ drop 1 ] if
+] "factorial-3" "factorial (up to 3): limited recursive simulation" discover
+
+# Power of 2: 2^n (using mem for accumulator)
+[ "pow-n" mem-set 1 "pow-acc" mem-set
+  "pow-n" mem-get [ drop "pow-acc" mem-get 2 mul "pow-acc" mem-set ] times
+  "pow-acc" mem-get
+] "power-of-2" "2^n: exponential" discover
+
+"" println
+
+# ====================================================================
+# PHASE 4: VERIFICATION - Test that compositions work
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"PHASE 4: Verification" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+0 "tests-passed" mem-set
+0 "tests-total" mem-set
+
+[ # ( actual expected name -- )
+  "test-name" mem-set
+  "test-expected" mem-set
+  "test-actual" mem-set
+  "tests-total" mem-get 1 add "tests-total" mem-set
+  
+  "test-expected" mem-get "test-actual" mem-get eq [
+    "tests-passed" mem-get 1 add "tests-passed" mem-set
+    "  ✓ " print "test-name" mem-get println
+  ] [
+    "  ✗ " print "test-name" mem-get print 
+    " (expected " print "test-expected" mem-get to-text print
+    ", got " print "test-actual" mem-get to-text print ")" println
+  ] if
+] "verify" def
+
+# Test primitives
+3 succ 4 "succ(3)=4" verify
+5 pred 4 "pred(5)=4" verify
+5 double 10 "double(5)=10" verify
+5 square 25 "square(5)=25" verify
+7 negate -7 "negate(7)=-7" verify
+-5 absolute 5 "absolute(-5)=5" verify
+
+# Test compositions
+5 quadruple 20 "quadruple(5)=20" verify
+2 fourth-power 16 "fourth-power(2)=16" verify
+3 cube 27 "cube(3)=27" verify
+5 double-succ 11 "double-succ(5)=11" verify
+5 double-pred 9 "double-pred(5)=9" verify
+
+# Test discoveries
+3 triangular 6 "triangular(3)=6" verify
+4 triangular 10 "triangular(4)=10" verify
+3 power-of-2 8 "power-of-2(3)=8" verify
+4 power-of-2 16 "power-of-2(4)=16" verify
+
+"" println
+"Tests: " print "tests-passed" mem-get to-text print "/" print "tests-total" mem-get to-text print " passed" println
+"" println
+
+# ====================================================================
+# PHASE 5: META-DISCOVERY - Tools that generate tools
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"PHASE 5: Meta-Discovery (tools that generate tools)" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# make-adder: given n, produce a tool that adds n
+# Uses text-to-quote to build the code dynamically
+[ # ( n -- quote )
+  to-text " add" str-concat "[ " swap str-concat " ]" str-concat
+  text-to-quote
+] "make-adder" "meta: n → [n add]" discover
+
+# make-multiplier: given n, produce a tool that multiplies by n
+[ # ( n -- quote )
+  to-text " mul" str-concat "[ " swap str-concat " ]" str-concat
+  text-to-quote
+] "make-multiplier" "meta: n → [n mul]" discover
+
+# Define tools using meta-tools
+5 make-adder "add5" def
+3 make-multiplier "mul3" def
+
+# Verify they work
+10 add5 15 "add5(10)=15" verify
+7 mul3 21 "mul3(7)=21" verify
+
+"" println
+
+# ====================================================================
+# SAVE AND REPORT
+# ====================================================================
+
+  "generation" mem-get 1 add "generation" mem-set
+  save-knowledge
+] [ ] if
+
+"" println
+"═══════════════════════════════════════════════════════════════════" println
+"KNOWLEDGE BASE SUMMARY - Generation " print "generation" mem-get to-text println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Total operations discovered: " print "kb-registry" mem-get list-len to-text println
+"" println
+
+"Operations by category:" println
+"  Primitives:   succ, pred, double, square, negate, absolute" println
+"  Compositions: quadruple, fourth-power, cube, double-succ, double-pred" println
+"  Patterns:     triangular, factorial-3, power-of-2" println
+"  Meta-tools:   make-adder, make-multiplier" println
+"" println
+
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  Discovery complete! Knowledge persisted to /mnt/knowledge.kore ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println

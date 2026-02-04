@@ -1,11 +1,15 @@
-//! Definition primitives (2)
+//! Definition primitives (3)
 //!
 //! - def: (quote name -- ) define a new tool
+//! - def-verified: (quote name sig -- ) define with effect verification
 //! - words: ( -- list) list all defined tools
 
+use crate::analyzer;
 use crate::context::{Context, Dictionary};
+use crate::error::Error;
 use crate::stack::Stack;
 use crate::tool::Tool;
+use crate::types::Effect;
 use crate::value::Value;
 
 pub fn register(dict: &mut Dictionary) {
@@ -27,6 +31,56 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ));
+
+    // def-verified: (quote name sig -- )
+    // Defines tool ONLY if inferred effect matches declared signature
+    // Usage: [ dup mul ] "square" "(n -- n)" def-verified
+    dict.register(Tool::native(
+        "def-verified",
+        "(code:Quote name:Text sig:Text -- )",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let sig = stack.pop()?.into_text()?;
+                let name = stack.pop()?.into_text()?;
+                let quote = stack.pop()?.into_quote()?;
+                
+                // Parse declared effect
+                let declared = Effect::parse(&sig)
+                    .map_err(|e| Error::Runtime(format!("def-verified: invalid signature: {}", e)))?;
+                
+                // Infer actual effect
+                let analysis = analyzer::analyze(&quote);
+                
+                // Check for stack errors
+                if analysis.has_errors() {
+                    let error_msgs: Vec<String> = analysis.errors.iter()
+                        .map(|e| e.message.clone())
+                        .collect();
+                    return Err(Error::Runtime(format!(
+                        "def-verified: quote has stack errors: {}", 
+                        error_msgs.join(", ")
+                    )));
+                }
+                
+                // Compare effects
+                if analysis.effect != declared {
+                    return Err(Error::EffectMismatch {
+                        expected: format!("{}", declared),
+                        got: format!("{}", analysis.effect),
+                    });
+                }
+                
+                // Define the tool with verified signature
+                let tool = Tool::composed(&name, Some(&sig), quote);
+                {
+                    let mut dict = ctx.dict.write().await;
+                    dict.register(tool);
+                }
+                
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Define tool only if inferred effect matches declared signature"));
 
     // words: ( -- list)
     dict.register(Tool::native(

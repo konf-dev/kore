@@ -4,7 +4,7 @@
 //!
 //! | Tool | Signature | Description |
 //! |------|-----------|-------------|
-//! | rom-set | (key value -- ) | Store value |
+//! | rom-set | (value key -- ) | Store value |
 //! | rom-get | (key -- value) | Get value |
 //! | rom-del | (key -- ) | Delete key |
 //! | rom-has | (key -- bool) | Check if key exists |
@@ -19,11 +19,11 @@ use crate::value::Value;
 pub fn register(dict: &mut Dictionary) {
     dict.register(Tool::native(
         "rom-set",
-        "(key value -- )",
+        "(value key -- )",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
-                let value = stack.pop()?;
                 let key = stack.pop()?.into_text()?;
+                let value = stack.pop()?;
                 let storage = ctx.storage.as_ref().ok_or_else(|| {
                     crate::error::Error::Runtime("rom-set: storage not initialized".into())
                 })?;

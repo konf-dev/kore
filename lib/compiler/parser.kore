@@ -14,23 +14,23 @@
 # is-int-str: (text -- bool)
 # Check if text represents an integer (just first char for simplicity)
 "is-int-str" [
-    dup str-len 0 gt
+    dup str-len 0 swap lt   # str-len > 0 (i.e., 0 < str-len)
     [
         0 str-get char-code  # get first char code
-        dup 48 ge swap 57 le and  # is digit? (0-9)
+        dup 48 lt not swap 57 swap lt not and  # >= 48 AND <= 57
     ]
     [drop false]
     if
 ] def
 
 # make-push: (value -- op)
-"make-push" [map-empty swap "value" swap map-set "push" "op" swap map-set] def
+"make-push" [map-new swap "value" swap map-set "push" "op" swap map-set] def
 
 # make-call: (name -- op)
-"make-call" [map-empty swap "name" swap map-set "call" "op" swap map-set] def
+"make-call" [map-new swap "name" swap map-set "call" "op" swap map-set] def
 
 # make-quote: (body -- op)
-"make-quote" [map-empty swap "body" swap map-set "quote" "op" swap map-set] def
+"make-quote" [map-new swap "body" swap map-set "quote" "op" swap map-set] def
 
 # === Token access ===
 
@@ -62,7 +62,7 @@
 # Called after consuming [
 # Returns remaining tokens and the body list
 "parse-quote" [
-    list-empty swap  # body tokens
+    0 list swap  # body tokens
     
     [
         dup tokens-empty not
@@ -115,7 +115,7 @@
 # parse: (tokens -- ast)
 # Main entry point
 "parse" [
-    list-empty swap  # ast tokens
+    0 list swap  # ast tokens
     
     [dup tokens-empty not]
     [

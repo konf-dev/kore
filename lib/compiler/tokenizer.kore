@@ -11,7 +11,7 @@
 
 # skip-spaces: (source -- source)
 "skip-spaces" [
-    [dup str-len 0 gt [dup 0 str-get is-space] [false] if]
+    [dup str-len 0 swap lt [dup 0 str-get is-space] [false] if]
     [1 999999 str-slice]
     while
 ] def
@@ -19,23 +19,23 @@
 # read-word: (source -- source word)
 "read-word" [
     "" swap   
-    [dup str-len 0 gt [dup 0 str-get dup is-space not over "[" eq not and swap "]" eq not and] [false] if]
+    [dup str-len 0 swap lt [dup 0 str-get dup is-space not over "[" eq not and swap "]" eq not and] [false] if]
     [dup 0 str-get rot swap str-concat swap 1 999999 str-slice]
     while
     swap  
 ] def
 
 # make-token: (type value -- token)
-"make-token" [map-empty swap "value" swap map-set swap "type" swap map-set] def
+"make-token" [map-new swap "value" swap map-set swap "type" swap map-set] def
 
 # tokenize: (source -- tokens)
 "tokenize" [
-    list-empty swap
+    0 list swap                   # use 0 list instead of list-empty
     
-    [dup str-len 0 gt]
+    [dup str-len 0 swap lt not]   # while str-len > 0 (i.e., NOT 0 > str-len)
     [
         skip-spaces
-        dup str-len 0 gt
+        dup str-len 0 swap lt not # if str-len > 0
         [
             dup 0 str-get
             
@@ -59,7 +59,7 @@
             ]
             if
         ]
-        []
+        [ ]
         if
     ]
     while

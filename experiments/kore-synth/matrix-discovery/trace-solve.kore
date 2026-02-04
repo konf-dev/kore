@@ -1,0 +1,57 @@
+# Trace through solve-2x2 step by step
+
+[ "m" mem-set
+  "m" mem-get 0 list-get "m" mem-get 3 list-get mul
+  "m" mem-get 1 list-get "m" mem-get 2 list-get mul sub
+] "det-2x2" def
+
+[ "vec" mem-set "i" mem-set "m" mem-set
+  "i" mem-get 0 eq [
+    "vec" mem-get 0 list-get "m" mem-get 1 list-get
+    "vec" mem-get 1 list-get "m" mem-get 3 list-get 4 list
+  ] [
+    "m" mem-get 0 list-get "vec" mem-get 0 list-get
+    "m" mem-get 2 list-get "vec" mem-get 1 list-get 4 list
+  ] if
+] "replace-col" def
+
+"Step-by-step solve of 3x - 2y = 5, -x + 4y = 3:" println
+"" println
+
+3 -2 -1 4 4 list "A" mem-set
+5 3 2 list "b" mem-set
+
+"A = [3, -2, -1, 4]" println
+"b = [5, 3]" println
+"" println
+
+"Step 1: det(A)" println
+"A" mem-get det-2x2 "det-A" mem-set
+"det(A) = " print "det-A" mem-get to-text println
+"" println
+
+"Step 2: A1 = A with column 0 replaced by b" println
+"A" mem-get 0 "b" mem-get replace-col "A1" mem-set
+"A1 = [5, -2, 3, 4]" println
+"A1" mem-get det-2x2 "det-A1" mem-set
+"det(A1) = " print "det-A1" mem-get to-text println
+"" println
+
+"Step 3: A2 = A with column 1 replaced by b" println
+"A" mem-get 1 "b" mem-get replace-col "A2" mem-set
+"A2 = [3, 5, -1, 3]" println
+"A2" mem-get det-2x2 "det-A2" mem-set
+"det(A2) = " print "det-A2" mem-get to-text println
+"" println
+
+"Step 4: x = det(A1) / det(A), y = det(A2) / det(A)" println
+"det-A1" mem-get to-text print " / " print "det-A" mem-get to-text print " = " print
+"det-A1" mem-get "det-A" mem-get div "x" mem-set
+"x" mem-get to-text println
+
+"det-A2" mem-get to-text print " / " print "det-A" mem-get to-text print " = " print
+"det-A2" mem-get "det-A" mem-get div "y" mem-set
+"y" mem-get to-text println
+"" println
+
+"Solution: x = " print "x" mem-get to-text print ", y = " print "y" mem-get to-text println

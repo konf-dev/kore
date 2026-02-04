@@ -1,4 +1,4 @@
-//! Type primitives (14)
+//! Type primitives (16)
 //!
 //! Type inspection and conversion operations.
 //! These require runtime type information.
@@ -19,9 +19,12 @@
 //! | is-map | (a -- bool) | Check if map |
 //! | is-quote | (a -- bool) | Check if quote |
 //! | unwrap | (a -- a) | Extract value or fail if error |
+//! | quote-to-text | (q -- s) | Serialize quote to Kore source |
+//! | text-to-quote | (s -- q) | Parse Kore source to quote |
 
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
+use crate::op::Op;
 use crate::stack::Stack;
 use crate::tool::Tool;
 use crate::value::Value;
@@ -275,6 +278,96 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ));
+
+    // quote-to-text: serialize quote to Kore source
+    dict.register(Tool::native(
+        "quote-to-text",
+        "(q -- s)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let v = stack.pop()?;
+                match v {
+                    Value::Quote(ops) => {
+                        let source = ops_to_source(&ops);
+                        stack.push(Value::Text(format!("[ {} ]", source)))?;
+                        Ok((stack, ctx))
+                    }
+                    _ => Err(Error::TypeError {
+                        expected: "quote".into(),
+                        got: v.type_name().into(),
+                    }),
+                }
+            })
+        },
+    ));
+
+    // text-to-quote: parse Kore source to quote
+    dict.register(Tool::native(
+        "text-to-quote",
+        "(s -- q)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let text = stack.pop()?.into_text()?;
+                let ops = Op::parse(&text).map_err(|e| {
+                    Error::Runtime(format!("text-to-quote: {}", e))
+                })?;
+                // If parsed as a single quote, unwrap it
+                if ops.len() == 1 {
+                    if let Op::Push(Value::Quote(inner)) = &ops[0] {
+                        stack.push(Value::Quote(inner.clone()))?;
+                        return Ok((stack, ctx));
+                    }
+                }
+                // Otherwise wrap the whole thing as a quote
+                stack.push(Value::Quote(ops))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+}
+
+/// Convert ops to Kore source code
+fn ops_to_source(ops: &[Op]) -> String {
+    ops.iter()
+        .map(|op| op_to_source(op))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Convert a single op to Kore source
+fn op_to_source(op: &Op) -> String {
+    match op {
+        Op::Call(name) => name.clone(),
+        Op::Push(value) => value_to_source(value),
+    }
+}
+
+/// Convert a value to Kore source
+fn value_to_source(v: &Value) -> String {
+    match v {
+        Value::Null => "null".into(),
+        Value::Bool(b) => if *b { "true" } else { "false" }.into(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => {
+            let s = f.to_string();
+            if s.contains('.') { s } else { format!("{}.0", s) }
+        }
+        Value::Text(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        Value::List(items) => {
+            let inner: Vec<_> = items.iter().map(value_to_source).collect();
+            format!("[{}]", inner.join(" "))
+        }
+        Value::Map(m) => {
+            let pairs: Vec<_> = m.iter()
+                .map(|(k, v)| format!("{}: {}", k, value_to_source(v)))
+                .collect();
+            format!("{{{}}}", pairs.join(" "))
+        }
+        Value::Quote(ops) => format!("[ {} ]", ops_to_source(ops)),
+        Value::Handle(h) => format!("<handle:{}>", h.id),
+        Value::Error(e) => format!("<error:{}>", e.message),
+        Value::Ext(e) => format!("<ext:{}:{}>", e.kind, e.data),
+    }
 }
 
 #[cfg(test)]

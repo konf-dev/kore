@@ -11,27 +11,29 @@
 
 # list-rest: (list -- list)
 # Get all but first element
-"list-rest" [1 999999 list-slice] def
+"list-rest" [1 swap list-len list-slice] def
 
 # list-init: (list -- list)
 # Get all but last element
 "list-init" [dup list-len 1 sub 0 swap list-slice] def
 
+# list-empty: ( -- list)
+# Create empty list
+"list-empty" [0 list] def
+
 # list-contains: (list item -- bool)
-# Check if list contains item
+# Check if list contains item using fold
 "list-contains" [
-    swap false swap  # found? list
-    [dup list-len 0 gt]
-    [
-        dup list-first   # found? list item
-        rot rot          # item found? list
-        dup list-rest    # item found? list rest
-        rot rot          # item rest found? list
-        drop             # item rest found?
-        rot              # rest found? item
-        3 2 roll         # found? item rest (need to compare)
-        # Actually let's simplify
-    ]
-    while
-    drop
+    swap                    # item list
+    false                   # item list false
+    rot rot                 # false item list
+    swap                    # false list item
+    [                       # predicate: (acc elem -- acc')
+        rot                 # elem acc item
+        over over eq        # elem acc item (elem==item)
+        rot or              # elem item (acc || elem==item)
+        swap drop           # item new_acc
+        swap                # new_acc item
+    ] fold
+    swap drop               # result
 ] def

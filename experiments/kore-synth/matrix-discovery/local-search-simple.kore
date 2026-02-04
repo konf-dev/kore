@@ -1,0 +1,291 @@
+#!/usr/bin/env kore
+
+# LOCAL SEARCH FOR MATRIX MULTIPLICATION ALGORITHMS
+# ==================================================
+# 
+# Exploiting Kore's constraints to make algorithm discovery tractable.
+# Based on the proof in kore-constraints-proof.kore
+
+# PROOF SUMMARY
+# =============
+#
+# Without Kore constraints: Search space = 10^50
+# With Kore constraints:    Search space = 10^10
+#
+# Key reductions:
+#   1. Stack ordering (DAG structure): ÷10^10
+#   2. Bounded stack depth: ÷10^5
+#   3. Compositionality enables local search
+#
+# Result: 10^10 candidates @ 10^6 tests/sec = 3 hours (or 10 sec with 1000 cores)
+
+"KORE CONSTRAINTS REDUCE SEARCH SPACE BY 10^40x" print
+"==================================================" print
+"" print
+"Starting point: 10^50 (with mathematical constraints)" print
+"" print
+
+"Kore-specific constraints:" print
+"" print
+
+"1. STACK ORDERING (K1)" print
+"   Operations execute in fixed total order (straight-line program)" print
+"   Dependency graph must have valid topological sorting" print
+"   Reduction: ÷10^10" print
+"" print
+
+"2. INTEGER ARITHMETIC (K2)" print
+"   All intermediate results are integers" print
+"   Coefficients in {-1,0,1}" print  
+"   Reduction: Already accounted for in math constraints" print
+"" print
+
+"3. BOUNDED STACK DEPTH (K3)" print
+"   Finite stack (~10^6 values) limits parallelism" print
+"   Must sequence operations to respect depth" print
+"   Reduction: ÷10^5" print
+"" print
+
+"4. FAST VERIFICATION (K4)" print
+"   Bilinearity + 20 random tests = 99.99% confidence" print
+"   O(n^3) per test, ~10^6 tests/second possible" print
+"   Enables: Rapid exploration of candidate space" print
+"" print
+
+"5. COMPOSITIONALITY (K5)" print
+"   Programs compose via concatenation" print
+"   Enables: LOCAL SEARCH from known algorithms" print
+"   Search neighborhood: ~10^4 mutations per algorithm" print
+"" print
+
+"==================================================" print
+"FINAL SEARCH SPACE: 10^10 candidates" print
+"This is FEASIBLE on modern hardware!" print
+"==================================================" print
+"" print
+
+# EXAMPLE: Verifying Strassen's Algorithm
+# ========================================
+
+"EXAMPLE: Strassen's 2×2 Algorithm" print
+"==================================================" print
+"" print
+
+"Standard: 8 multiplications" print
+"  c11 = a11*b11 + a12*b21" print
+"  c12 = a11*b12 + a12*b22" print
+"  c21 = a21*b11 + a22*b21" print
+"  c22 = a21*b12 + a22*b22" print
+"" print
+
+"Strassen: 7 multiplications" print
+"  m1 = (a11+a22) * (b11+b22)" print
+"  m2 = (a21+a22) * b11" print
+"  m3 = a11 * (b12-b22)" print
+"  m4 = a22 * (b21-b11)" print
+"  m5 = (a11+a12) * b22" print
+"  m6 = (a21-a11) * (b11+b12)" print
+"  m7 = (a12-a22) * (b21+b22)" print
+"" print
+"  c11 = m1 + m4 - m5 + m7" print
+"  c12 = m3 + m5" print
+"  c21 = m2 + m4" print
+"  c22 = m1 - m2 + m3 + m6" print
+"" print
+
+# Manual verification with A = [[1,2],[3,4]], B = [[5,6],[7,8]]
+"Test case: A = [[1,2],[3,4]], B = [[5,6],[7,8]]" print
+"" print
+
+# Extract elements
+1 "a11" mem-set
+2 "a12" mem-set
+3 "a21" mem-set
+4 "a22" mem-set
+
+5 "b11" mem-set
+6 "b12" mem-set
+7 "b21" mem-set
+8 "b22" mem-set
+
+"Computing standard result..." print
+
+# Standard multiplication
+# c11 = a11*b11 + a12*b21 = 1*5 + 2*7 = 5 + 14 = 19
+"a11" mem-get "b11" mem-get mul
+"a12" mem-get "b21" mem-get mul
+add
+dup "c11-std" mem-set
+"  c11 = " print dup to-text print "" print
+
+# c12 = a11*b12 + a12*b22 = 1*6 + 2*8 = 6 + 16 = 22
+"a11" mem-get "b12" mem-get mul
+"a12" mem-get "b22" mem-get mul
+add
+dup "c12-std" mem-set
+"  c12 = " print dup to-text print "" print
+
+# c21 = a21*b11 + a22*b21 = 3*5 + 4*7 = 15 + 28 = 43
+"a21" mem-get "b11" mem-get mul
+"a22" mem-get "b21" mem-get mul
+add
+dup "c21-std" mem-set
+"  c21 = " print dup to-text print "" print
+
+# c22 = a21*b12 + a22*b22 = 3*6 + 4*8 = 18 + 32 = 50
+"a21" mem-get "b12" mem-get mul
+"a22" mem-get "b22" mem-get mul
+add
+dup "c22-std" mem-set
+"  c22 = " print dup to-text print "" print
+
+"Standard result: [[19, 22], [43, 50]]" print
+"" print
+
+"Computing Strassen result..." print
+
+# Strassen's 7 multiplications
+# m1 = (a11+a22) * (b11+b22) = (1+4) * (5+8) = 5 * 13 = 65
+"a11" mem-get "a22" mem-get add
+"b11" mem-get "b22" mem-get add
+mul
+dup "m1" mem-set
+"  m1 = " print dup to-text print "" print
+
+# m2 = (a21+a22) * b11 = (3+4) * 5 = 7 * 5 = 35
+"a21" mem-get "a22" mem-get add
+"b11" mem-get mul
+dup "m2" mem-set
+"  m2 = " print dup to-text print "" print
+
+# m3 = a11 * (b12-b22) = 1 * (6-8) = 1 * (-2) = -2
+"a11" mem-get
+"b12" mem-get "b22" mem-get sub
+mul
+dup "m3" mem-set
+"  m3 = " print dup to-text print "" print
+
+# m4 = a22 * (b21-b11) = 4 * (7-5) = 4 * 2 = 8
+"a22" mem-get
+"b21" mem-get "b11" mem-get sub
+mul
+dup "m4" mem-set
+"  m4 = " print dup to-text print "" print
+
+# m5 = (a11+a12) * b22 = (1+2) * 8 = 3 * 8 = 24
+"a11" mem-get "a12" mem-get add
+"b22" mem-get mul
+dup "m5" mem-set
+"  m5 = " print dup to-text print "" print
+
+# m6 = (a21-a11) * (b11+b12) = (3-1) * (5+6) = 2 * 11 = 22
+"a21" mem-get "a11" mem-get sub
+"b11" mem-get "b12" mem-get add
+mul
+dup "m6" mem-set
+"  m6 = " print dup to-text print "" print
+
+# m7 = (a12-a22) * (b21+b22) = (2-4) * (7+8) = (-2) * 15 = -30
+"a12" mem-get "a22" mem-get sub
+"b21" mem-get "b22" mem-get add
+mul
+dup "m7" mem-set
+"  m7 = " print dup to-text print "" print
+
+"" print
+"Computing output elements..." print
+
+# c11 = m1 + m4 - m5 + m7 = 65 + 8 - 24 + (-30) = 73 - 24 - 30 = 19
+"m1" mem-get "m4" mem-get add
+"m5" mem-get sub
+"m7" mem-get add
+dup "c11-str" mem-set
+"  c11 = " print dup to-text print "" print
+
+# c12 = m3 + m5 = -2 + 24 = 22
+"m3" mem-get "m5" mem-get add
+dup "c12-str" mem-set
+"  c12 = " print dup to-text print "" print
+
+# c21 = m2 + m4 = 35 + 8 = 43
+"m2" mem-get "m4" mem-get add
+dup "c21-str" mem-set
+"  c21 = " print dup to-text print "" print
+
+# c22 = m1 - m2 + m3 + m6 = 65 - 35 + (-2) + 22 = 30 - 2 + 22 = 50
+"m1" mem-get "m2" mem-get sub
+"m3" mem-get add
+"m6" mem-get add
+dup "c22-str" mem-set
+"  c22 = " print dup to-text print "" print
+
+"Strassen result: [[19, 22], [43, 50]]" print
+"" print
+
+# Verify results match
+"c11-std" mem-get "c11-str" mem-get eq
+"c12-std" mem-get "c12-str" mem-get eq and
+"c21-std" mem-get "c21-str" mem-get eq and
+"c22-std" mem-get "c22-str" mem-get eq and
+
+[ 
+  "✓ SUCCESS: Strassen matches standard multiplication!" print
+] [
+  "✗ FAILURE: Results differ!" print
+] if
+
+"" print
+"==================================================" print
+
+# IMPLICATIONS
+"" print
+"IMPLICATIONS FOR ALGORITHM DISCOVERY:" print
+"==================================================" print
+"" print
+
+"1. Strassen is PROVEN optimal for 2×2 (Winograd, 1971)" print
+"   Lower bound: 7 multiplications (rank argument)" print
+"   Upper bound: 7 multiplications (Strassen achieves it)" print
+"" print
+
+"2. For 3×3:" print
+"   Lower bound: 19 multiplications (Blaser, 2003)" print
+"   Upper bound: 23 multiplications (Laderman, 1976)" print
+"   OPEN QUESTION: Is there a 19-22 algorithm?" print
+"" print
+
+"3. AlphaTensor found:" print
+"   - 47 different 23-multiplication algorithms for 3×3" print
+"   - Better algorithms for specific fields (e.g., GF(2))" print
+"   - But nothing below 23 for standard arithmetic" print
+"" print
+
+"4. Kore's advantage:" print
+"   - Express algorithms concisely (stack-based)" print
+"   - Verify quickly (bilinearity + 20 tests)" print
+"   - Search systematically (local mutations)" print
+"   - Compose incrementally (concatenative)" print
+"" print
+
+"5. Local search strategy:" print
+"   - Start from Laderman's 23-mul algorithm" print
+"   - Mutate coefficients: ~3000 candidates" print
+"   - Reorder operations: ~5000 candidates" print
+"   - Verify each: ~10ms per test" print
+"   - Total time: ~80 seconds for one local neighborhood" print
+"" print
+
+"6. Expected outcomes:" print
+"   - Rediscover Laderman (validation)" print
+"   - Find equivalent 23-mul formulations" print
+"   - Unlikely to find <23 (would be major breakthrough!)" print
+"" print
+
+"==================================================" print
+"NEXT STEPS:" print
+"1. Implement Laderman's algorithm in Kore" print
+"2. Create coefficient mutation function" print
+"3. Build verification harness (20 random tests)" print
+"4. Run local search overnight" print
+"5. Analyze discovered variants" print
+"==================================================" print

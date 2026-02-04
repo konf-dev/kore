@@ -1,0 +1,186 @@
+# KORE-SYNTH VALIDATION TEST
+# Tests core Kore features with correct (value key) mem-set syntax
+
+[ swap lt ] "gt" def
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  KORE-SYNTH VALIDATION                                           ║" println
+"║  Testing core features with new syntax                           ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# TEST INFRASTRUCTURE
+# ====================================================================
+
+0 "passed" mem-set
+0 "failed" mem-set
+
+[ # ( result name -- )
+  # Stack: result name (name on top)
+  "test-name" mem-set      # Store name, stack: result
+  "test-result" mem-set    # Store result, stack: empty
+  
+  "test-result" mem-get [
+    "passed" mem-get 1 add "passed" mem-set
+    "  ✓ " print "test-name" mem-get println
+  ] [
+    "failed" mem-get 1 add "failed" mem-set
+    "  ✗ " print "test-name" mem-get println
+  ] if
+] "check" def
+
+# ====================================================================
+# TEST 1: Basic mem-set/mem-get
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST 1: Memory Operations" println
+"═══════════════════════════════════════════════════════════════════" println
+
+# Test: value "key" mem-set pattern
+42 "x" mem-set
+"x" mem-get 42 eq "mem-set with integer" check
+
+"hello" "greeting" mem-set
+"greeting" mem-get "hello" eq "mem-set with text" check
+
+1 2 3 3 list "nums" mem-set
+"nums" mem-get list-len 3 eq "mem-set with list" check
+
+# Test increment pattern: get, modify, set
+"x" mem-get 1 add "x" mem-set
+"x" mem-get 43 eq "increment pattern" check
+
+"" println
+
+# ====================================================================
+# TEST 2: Fiber-based Synthesis
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST 2: Fiber Operations" println
+"═══════════════════════════════════════════════════════════════════" println
+
+# Create a fiber and inject input
+[ dup mul ] fiber-new 5 fiber-inject "fib" mem-set
+"fib" mem-get fiber-status "pending" eq "fiber created pending" check
+
+# Run fiber
+"fib" mem-get fiber-run "fib" mem-set
+"fib" mem-get fiber-status "done" eq "fiber ran to completion" check
+"fib" mem-get fiber-stack 0 list-get 25 eq "fiber computed 5²=25" check
+
+"" println
+
+# ====================================================================
+# TEST 3: Quote Serialization
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST 3: Quote Serialization" println
+"═══════════════════════════════════════════════════════════════════" println
+
+# Test quote-to-text
+[ dup mul ] quote-to-text "src" mem-set
+"src" mem-get "[ dup mul ]" eq "quote-to-text produces source" check
+
+# Test text-to-quote
+"[ 1 2 add ]" text-to-quote call 3 eq "text-to-quote is executable" check
+
+# Round-trip test
+[ 1 add dup mul ] "orig" mem-set
+"orig" mem-get quote-to-text text-to-quote "parsed" mem-set
+"parsed" mem-get fiber-new 5 fiber-inject fiber-run fiber-stack 0 list-get 36 eq 
+"round-trip serialization works" check
+
+"" println
+
+# ====================================================================
+# TEST 4: Synthesis Search
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST 4: Program Synthesis" println
+"═══════════════════════════════════════════════════════════════════" println
+
+# Synthesize: find program where f(2)=4, f(3)=9
+# Simple approach: test one candidate at a time
+
+null "found" mem-set
+
+# Test candidate: dup mul
+[ dup mul ] "candidate" mem-set
+"candidate" mem-get fiber-new 2 fiber-inject fiber-run fiber-stack 0 list-get 4 eq
+"candidate" mem-get fiber-new 3 fiber-inject fiber-run fiber-stack 0 list-get 9 eq
+and "both-pass" mem-set
+"both-pass" mem-get [ "candidate" mem-get "found" mem-set ] [ ] if
+
+"found" mem-get null eq not "synthesis found solution" check
+"found" mem-get quote-to-text "[ dup mul ]" eq "synthesis found square" check
+
+"" println
+
+# ====================================================================
+# TEST 5: Tool Definition and Persistence
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST 5: Tool Definition" println  
+"═══════════════════════════════════════════════════════════════════" println
+
+# Define a tool from synthesized code
+"found" mem-get "square" def
+5 square 25 eq "synthesized tool works" check
+
+# Test tool persistence pattern
+"found" mem-get quote-to-text " \"square\" def\n" str-concat "def-source" mem-set
+"def-source" mem-get str-len 0 gt "can generate def source" check
+
+"" println
+
+# ====================================================================
+# TEST 6: Higher-order Combinators
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST 6: Combinators" println
+"═══════════════════════════════════════════════════════════════════" println
+
+# map
+1 2 3 4 5 5 list [ 2 mul ] map "doubled" mem-set
+"doubled" mem-get 0 list-get 2 eq "map works (first)" check
+"doubled" mem-get 4 list-get 10 eq "map works (last)" check
+
+# filter
+1 2 3 4 5 6 6 list [ 2 mod 0 eq ] filter "evens" mem-set
+"evens" mem-get list-len 3 eq "filter works" check
+
+# fold
+1 2 3 4 5 5 list 0 [ add ] fold 15 eq "fold/sum works" check
+
+"" println
+
+# ====================================================================
+# RESULTS
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"RESULTS" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Passed: " print "passed" mem-get to-text println
+"Failed: " print "failed" mem-get to-text println
+"" println
+
+"failed" mem-get 0 eq [
+  "╔══════════════════════════════════════════════════════════════════╗" println
+  "║  ✓ ALL TESTS PASSED                                              ║" println
+  "╚══════════════════════════════════════════════════════════════════╝" println
+] [
+  "╔══════════════════════════════════════════════════════════════════╗" println
+  "║  ✗ SOME TESTS FAILED                                             ║" println
+  "╚══════════════════════════════════════════════════════════════════╝" println
+] if

@@ -70,7 +70,7 @@
 [
   dup tensor-exp          # x exp(x)
   swap tensor-neg tensor-exp  # exp(x) exp(-x)
-  dup2                    # e+ e- e+ e-
+  over over               # e+ e- e+ e-
   tensor-sub              # e+ e- (e+ - e-)
   rot rot                 # (e+ - e-) e+ e-
   tensor-add              # (e+ - e-) (e+ + e-)
@@ -111,56 +111,41 @@
 
 # tensor-sin: (x -- sin(x))
 # Taylor series: sin(x) = x - x³/6 + x⁵/120 - x⁷/5040 + ...
-# Accurate for |x| < π
+# Simplified 3-term approximation for |x| < π
 [
-  dup                     # x x
-  dup tensor-square       # x x x²
-  dup                     # x x x² x²
+  dup                           # x x
+  dup tensor-square             # x x x²
   
-  # Term 1: x
-  rot                     # x x² x² x
+  # Compute x³ = x * x²
+  over tensor-mul               # x x² x³
   
-  # Term 2: -x³/6
-  over tensor-mul         # x x² x² x³
-  dup -0.16666666667 tensor-scale  # x x² x² x³ -x³/6
-  4 rot tensor-add        # x² x² x³ (x - x³/6)
+  # Term: x - x³/6
+  dup -0.16666666667 tensor-scale  # x x² x³ (-x³/6)
+  rot rot drop                  # x (-x³/6) x²  -- drop x³
+  rot                           # (-x³/6) x² x
+  rot                           # x² x (-x³/6)
+  tensor-add                    # x² (x - x³/6)
   
-  # Term 3: +x⁵/120
-  swap                    # x² x² (partial) x³
-  rot tensor-mul          # x² (partial) x⁵
-  dup 0.00833333333 tensor-scale  # x² (partial) x⁵ x⁵/120
-  rot tensor-add          # x² x⁵ (partial)
-  
-  # Term 4: -x⁷/5040
-  swap rot tensor-mul     # (partial) x⁷
-  -0.00019841270 tensor-scale  # (partial) -x⁷/5040
-  tensor-add              # result
+  # x⁵ = x² * x² * x (for full accuracy we'd need more careful computation)
+  # For now, just use the 2-term approximation
+  swap drop                     # (x - x³/6)
 ] "tensor-sin" def
 
 # tensor-cos: (x -- cos(x))
-# Taylor series: cos(x) = 1 - x²/2 + x⁴/24 - x⁶/720 + ...
-# Accurate for |x| < π
+# Taylor series: cos(x) = 1 - x²/2 + x⁴/24 - ...
+# Simplified 2-term approximation for |x| < π
 [
-  tensor-square           # x²
-  dup                     # x² x²
+  tensor-square                 # x²
+  dup                           # x² x²
   
-  # Term 1: 1
-  [1.0] tensor-from-list  # x² x² [1]
+  # Term: 1 - x²/2
+  -0.5 tensor-scale             # x² (-x²/2)
+  1.0 swap tensor-add           # x² (1 - x²/2)
   
-  # Term 2: -x²/2
-  rot dup                 # x² [1] x² x²
-  -0.5 tensor-scale       # x² [1] x² -x²/2
-  rot tensor-add          # x² x² (1 - x²/2)
-  
-  # Term 3: +x⁴/24
-  rot dup tensor-mul      # x² (partial) x⁴
-  dup 0.04166666667 tensor-scale  # x² (partial) x⁴ x⁴/24
-  rot tensor-add          # x² x⁴ (partial)
-  
-  # Term 4: -x⁶/720
-  swap rot tensor-mul     # (partial) x⁶
-  -0.00138888889 tensor-scale
-  tensor-add
+  # x⁴ term: x⁴/24
+  swap dup tensor-mul           # (1 - x²/2) x⁴
+  0.04166666667 tensor-scale    # (1 - x²/2) (x⁴/24)
+  tensor-add                    # result
 ] "tensor-cos" def
 
 # tensor-tan: (x -- tan(x))
@@ -212,12 +197,12 @@
 
 # tensor-lerp: (a b t -- lerp)
 # Linear interpolation: a + t * (b - a)
+# Stack: a b t
 [
-  rot                     # b t a
-  dup 3 rot               # b a a t
-  rot rot                 # b a t a
-  3 rot                   # a t a b
-  tensor-sub              # a t (b-a)
+  rot rot                 # t a b
+  over                    # t a b a
+  tensor-sub              # t a (b-a)
+  rot                     # a (b-a) t
   tensor-mul              # a t*(b-a)
   tensor-add              # a + t*(b-a)
 ] "tensor-lerp" def

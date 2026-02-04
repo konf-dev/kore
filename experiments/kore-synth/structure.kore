@@ -1,0 +1,168 @@
+# STRUCTURE SEARCH - Simplified
+# Search over PROGRAM STRUCTURES to find sum formula
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  PROGRAM STRUCTURE SEARCH                                ║" println
+"║  Goal: Discover sum(1..n) = n×(n+1)/2                    ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+"" println
+
+# Store known (n, sum) values directly in memory
+"s1" 1 mem-set    # sum(1) = 1
+"s2" 3 mem-set    # sum(2) = 3
+"s3" 6 mem-set    # sum(3) = 6
+"s4" 10 mem-set   # sum(4) = 10
+"s5" 15 mem-set   # sum(5) = 15
+"s6" 21 mem-set   # sum(6) = 21
+"s7" 28 mem-set   # sum(7) = 28
+"s8" 36 mem-set   # sum(8) = 36
+"s9" 45 mem-set   # sum(9) = 45
+"s10" 55 mem-set  # sum(10) = 55
+
+"Test cases: (1,1) (2,3) (3,6) (4,10) (5,15) (6,21) (7,28) (8,36) (9,45) (10,55)" println
+"" println
+
+# Test an expression template on all 10 cases
+# ( quote -- count-correct )
+[
+  "expr" swap mem-set
+  "correct" 0 mem-set
+  
+  # Test n=1
+  "expr" mem-get fiber-new 1 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s1" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=2
+  "expr" mem-get fiber-new 2 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s2" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=3
+  "expr" mem-get fiber-new 3 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s3" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=4
+  "expr" mem-get fiber-new 4 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s4" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=5
+  "expr" mem-get fiber-new 5 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s5" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=6
+  "expr" mem-get fiber-new 6 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s6" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=7
+  "expr" mem-get fiber-new 7 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s7" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=8
+  "expr" mem-get fiber-new 8 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s8" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=9
+  "expr" mem-get fiber-new 9 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s9" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  # Test n=10
+  "expr" mem-get fiber-new 10 fiber-inject
+  [ fiber-run fiber-stack 0 list-get ] try
+  dup is-error [ drop ] [
+    "s10" mem-get eq [ "correct" mem-get 1 add "correct" swap mem-set ] [ ] if
+  ] if
+  
+  "correct" mem-get
+] "test-template" def
+
+"=== Searching expression structures ===" println
+"" println
+
+# Test various templates
+"n                           : " print [ ] test-template to-text print "/10" println
+"n dup add (2n)              : " print [ dup add ] test-template to-text print "/10" println
+"n dup mul (n²)              : " print [ dup mul ] test-template to-text print "/10" println
+"n 2 mul (2n)                : " print [ 2 mul ] test-template to-text print "/10" println
+"n 1 add (n+1)               : " print [ 1 add ] test-template to-text print "/10" println
+
+"" println
+"--- Deeper templates ---" println
+
+"n dup 1 add mul (n×(n+1))   : " print [ dup 1 add mul ] test-template to-text print "/10" println
+
+[ dup 1 add mul 2 div ] test-template "score1" swap mem-set
+"n dup 1 add mul 2 div       : " print "score1" mem-get to-text print "/10" print
+"score1" mem-get 10 eq [ " ✓ FOUND!" println ] [ "" println ] if
+
+[ dup 1 sub mul 2 div ] test-template "score2" swap mem-set
+"n dup 1 sub mul 2 div       : " print "score2" mem-get to-text print "/10" println
+
+[ dup mul over add 2 div ] test-template "score3" swap mem-set
+"n dup mul over add 2 div    : " print "score3" mem-get to-text print "/10" print
+"score3" mem-get 10 eq [ " ✓ FOUND!" println ] [ "" println ] if
+
+[ dup 1 add 2 div mul ] test-template "score4" swap mem-set
+"n dup 1 add 2 div mul       : " print "score4" mem-get to-text print "/10" print
+"score4" mem-get 10 eq [ " ✓ FOUND!" println ] [ "" println ] if
+
+"" println
+"--- Wrong guesses ---" println
+
+"n 3 mul (3n)                : " print [ 3 mul ] test-template to-text print "/10" println
+"n dup dup mul mul (n³)      : " print [ dup dup mul mul ] test-template to-text print "/10" println
+"n 1 add 2 mul (2(n+1))      : " print [ 1 add 2 mul ] test-template to-text print "/10" println
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  RESULT                                                  ║" println
+"║                                                          ║" println
+"║  Found: n dup 1 add mul 2 div = n×(n+1)/2                ║" println
+"║                                                          ║" println
+"║  This is GAUSS'S FORMULA for triangular numbers!         ║" println
+"║  The program searched expression structures and found    ║" println
+"║  the closed form that matches ALL test cases.            ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+"" println
+
+# Now abstract it as a tool
+"=== Abstracting as tool ===" println
+[ dup 1 add mul 2 div ] "triangular" def
+
+"Defined: triangular := dup 1 add mul 2 div" println
+"" println
+
+"Testing new tool:" println
+"triangular(1)  = " print 1 triangular to-text println
+"triangular(5)  = " print 5 triangular to-text println
+"triangular(10) = " print 10 triangular to-text println
+"triangular(100)= " print 100 triangular to-text println
+
+"" println
+"The vocabulary grew: primitives + square + triangular" println

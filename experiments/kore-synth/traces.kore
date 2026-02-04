@@ -1,0 +1,224 @@
+# TRACE-BASED DISCOVERY
+# Use execution traces to discover loop structure
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  TRACE-BASED PROGRAM DISCOVERY                           ║" println
+"║  Using execution traces to find loop patterns            ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+"" println
+
+# The key insight:
+# We can STEP through a fiber and observe the stack at each step.
+# This gives us a TRACE - a sequence of states.
+#
+# For factorial(4):
+#   Stack trace: [4] → [1,4] → [4,1,4] → [4,4] → [4,3] → ...
+#
+# The trace reveals the STRUCTURE of the computation:
+#   - What gets duplicated
+#   - What gets multiplied
+#   - How the counter changes
+#
+# If we have traces for multiple inputs, we can find COMMON PATTERNS.
+
+"=== Collecting Execution Traces ===" println
+"" println
+
+# Manual factorial for reference
+[ 1 swap [ dup 0 eq not ] [ dup rot mul swap 1 sub ] while drop ] "fact" def
+
+# Step through and collect stack states
+# ( quote n max-steps -- trace-list )
+[
+  "max" swap mem-set
+  "n" swap mem-set
+  "code" swap mem-set
+  
+  # Create fiber and inject n
+  "code" mem-get fiber-new "n" mem-get fiber-inject
+  "fiber" swap mem-set
+  
+  # Collect trace
+  "trace" 0 list mem-set
+  "steps" 0 mem-set
+  
+  [
+    "fiber" mem-get fiber-status "done" eq not
+    "steps" mem-get "max" mem-get lt
+    and
+  ] [
+    # Record current stack
+    "trace" mem-get
+    "fiber" mem-get fiber-stack
+    list-push
+    "trace" swap mem-set
+    
+    # Step
+    "fiber" mem-get fiber-step "fiber" swap mem-set
+    "steps" mem-get 1 add "steps" swap mem-set
+  ] while
+  
+  # Record final stack
+  "trace" mem-get
+  "fiber" mem-get fiber-stack
+  list-push
+  "trace" swap mem-set
+  
+  "trace" mem-get
+] "collect-trace" def
+
+# Show a trace
+"Trace of factorial(3):" println
+[ 1 swap [ dup 0 eq not ] [ dup rot mul swap 1 sub ] while drop ] 3 50 collect-trace
+"trace3" swap mem-set
+
+"trace3" mem-get 
+[ "  " print to-text println ] each
+
+"" println
+"Trace of factorial(4):" println
+[ 1 swap [ dup 0 eq not ] [ dup rot mul swap 1 sub ] while drop ] 4 50 collect-trace
+"trace4" swap mem-set
+
+"trace4" mem-get 
+[ "  " print to-text println ] each
+
+"" println
+"=== Analyzing Traces ===" println
+"" println
+
+# What patterns can we see?
+# 
+# For factorial, the trace shows:
+# [n] → [1, n] → ... → [result]
+#
+# The "loop body" appears as a REPEATING SUBSEQUENCE in the trace.
+# 
+# Key observation: 
+# Between iterations, the stack has form [acc, counter]
+# Each iteration: counter decrements, acc *= counter
+
+"Looking at stack transitions..." println
+"" println
+
+# Extract just the 2-element stacks (the loop state)
+"Loop states from factorial(4):" println
+"trace4" mem-get
+[
+  dup list-len 2 eq [
+    "  " print to-text println
+  ] [ drop ] if
+] each
+
+"" println
+"=== The Discovery Insight ===" println
+"" println
+
+"From the trace, we can see:" println
+"" println
+"  [1, 4] → ... → [4, 3] → ... → [12, 2] → ... → [24, 1] → ... → [24, 0]" println
+"" println
+"Pattern:" println
+"  - Second element decreases by 1 each iteration" println
+"  - First element = previous first × previous second" println
+"" println
+"This IS the loop body: acc' = acc × counter, counter' = counter - 1" println
+"" println
+
+"=== Trace Diffing ===" println
+"" println
+
+# Compare traces for n=3 and n=4
+# The DIFFERENCE tells us what the loop does
+
+"Comparing final stacks:" println
+"  fact(3) ends with: " print "trace3" mem-get dup list-len 1 sub list-get to-text println
+"  fact(4) ends with: " print "trace4" mem-get dup list-len 1 sub list-get to-text println
+"" println
+
+"Comparing trace lengths:" println
+"  fact(3) trace: " print "trace3" mem-get list-len to-text print " steps" println
+"  fact(4) trace: " print "trace4" mem-get list-len to-text print " steps" println
+"" println
+
+"Observation: fact(4) has more steps than fact(3)" println
+"The DIFFERENCE in step count reveals the loop iteration count!" println
+
+"" println
+"=== Towards Automatic Discovery ===" println
+"" println
+
+"Strategy:" println
+"1. Run unknown function on multiple inputs" println
+"2. Collect execution traces" println
+"3. Find REPEATING patterns in each trace (loop body candidates)" println
+"4. Find COMMON patterns across traces (the actual loop body)" println
+"5. Synthesize: init + while(cond, body)" println
+"" println
+
+# Let's try to find the repeating pattern automatically
+"=== Finding Repeating Stack Patterns ===" println
+"" println
+
+# For factorial, the pattern is:
+# Stack goes [a, n] → [a', n-1] where a' = a*n
+# 
+# We look for "similar shaped" stacks that differ predictably
+
+"Looking for [acc, counter] patterns where counter decrements..." println
+"" println
+
+# Check trace4 for 2-element stacks
+"prev-acc" 0 mem-set
+"prev-cnt" 0 mem-set
+"found-pattern" 0 mem-set
+
+"trace4" mem-get
+[
+  dup list-len 2 eq [
+    # This is a 2-element stack [acc, cnt]
+    dup 0 list-get "curr-acc" swap mem-set
+    dup 1 list-get "curr-cnt" swap mem-set
+    
+    # Check if counter decremented from previous
+    "prev-cnt" mem-get 0 eq not [
+      "curr-cnt" mem-get "prev-cnt" mem-get 1 sub eq [
+        # Counter decremented!
+        # Check if acc *= prev-counter
+        "curr-acc" mem-get "prev-acc" mem-get "prev-cnt" mem-get mul eq [
+          "  Transition: [" print 
+          "prev-acc" mem-get to-text print ", " print
+          "prev-cnt" mem-get to-text print "] → [" print
+          "curr-acc" mem-get to-text print ", " print
+          "curr-cnt" mem-get to-text print "]" println
+          "    Pattern: acc × cnt, cnt - 1" println
+          "found-pattern" mem-get 1 add "found-pattern" swap mem-set
+        ] [ ] if
+      ] [ ] if
+    ] [ ] if
+    
+    # Update previous
+    "curr-acc" mem-get "prev-acc" swap mem-set
+    "curr-cnt" mem-get "prev-cnt" swap mem-set
+    
+    drop
+  ] [ drop ] if
+] each
+
+"" println
+"Found " print "found-pattern" mem-get to-text print " instances of the pattern!" println
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  INSIGHT                                                 ║" println
+"║                                                          ║" println
+"║  By analyzing TRACES, we discovered:                     ║" println
+"║    • Loop state: [accumulator, counter]                  ║" println
+"║    • Transition: acc' = acc × cnt, cnt' = cnt - 1        ║" println
+"║    • Termination: when cnt = 0                           ║" println
+"║                                                          ║" println
+"║  This IS factorial's loop body - found from traces!      ║" println
+"║                                                          ║" println
+"║  The trace reveals structure that outputs alone hide.    ║" println
+"╚══════════════════════════════════════════════════════════╝" println

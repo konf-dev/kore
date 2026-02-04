@@ -260,6 +260,17 @@ A function is just a quote that you name:
 [ dup square swap cube ] "test" def  ; works if cube is defined
 ```
 
+### Verified Definitions
+
+For safety-critical code, use `def-verified` to ensure the effect matches:
+
+```kore
+[ dup mul ] "square" "(n -- n)" def-verified  ; OK - effect is (1 -- 1)
+[ dup ] "bad" "(a -- a)" def-verified          ; FAILS - actual effect is (1 -- 2)
+```
+
+This catches bugs at definition time, not runtime.
+
 ### The Traditional Syntax
 
 Kore supports a cleaner syntax for definitions:
@@ -886,12 +897,17 @@ requires-grad backward grad-get zero-grad detach
 ### Analysis
 ```
 effect-infer effect-compose effect-parse effect-net effect-valid? effect-new
-io-effects pure? optimize simplify
+io-effects pure? optimize simplify axioms selftest
 ```
 
 ### Definition
 ```
-def words meta meta! defined?
+def def-verified words meta meta! defined?
+```
+
+### Error Handling
+```
+try fail is-error error-info
 ```
 
 ---

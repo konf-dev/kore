@@ -1,0 +1,413 @@
+# GENETIC SEARCH FOR MATRIX MULTIPLICATION ALGORITHMS
+# Attempts to rediscover Strassen's algorithm through evolutionary search
+#
+# Representation: An algorithm is encoded as a list of "multiplication terms"
+# Each term is: [coeffs_A, coeffs_B] where coeffs are 4 values in {-1, 0, 1}
+# representing a linear combination of matrix elements
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  GENETIC SEARCH FOR MATRIX ALGORITHMS                           ║" println
+"║  Attempting to discover 7-multiplication 2×2 algorithms         ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# RANDOM NUMBER GENERATION (Simple LCG)
+# ====================================================================
+
+12345 "rng-seed" mem-set
+
+[ # ( -- n ) Generate pseudo-random number
+  "rng-seed" mem-get 1103515245 mul 12345 add
+  2147483647 mod  # Keep in 32-bit range
+  dup "rng-seed" mem-set
+] "rand" def
+
+[ # ( max -- n ) Random number in [0, max)
+  rand swap mod
+  dup 0 lt [ neg ] [ ] if  # Ensure positive
+] "rand-max" def
+
+[ # ( -- c ) Random coefficient in {-1, 0, 1}
+  3 rand-max 1 sub  # Returns -1, 0, or 1
+] "rand-coeff" def
+
+# ====================================================================
+# ALGORITHM REPRESENTATION
+# ====================================================================
+# A multiplication term: ((a,b,c,d), (e,f,g,h))
+# Computes: (a·A00 + b·A01 + c·A10 + d·A11) × (e·B00 + f·B01 + g·B10 + h·B11)
+#
+# An algorithm with k multiplications is k such terms
+# Plus output coefficients: how to combine M1..Mk into C00, C01, C10, C11
+
+[ # ( -- term ) Generate random multiplication term
+  rand-coeff rand-coeff rand-coeff rand-coeff 4 list  # Coeffs for A
+  rand-coeff rand-coeff rand-coeff rand-coeff 4 list  # Coeffs for B
+  2 list
+] "rand-term" def
+
+[ # ( k -- algorithm ) Generate random algorithm with k multiplications
+  "num-muls" mem-set
+  0 list "terms" mem-set
+  
+  # Generate k multiplication terms
+  "num-muls" mem-get [
+    drop
+    "terms" mem-get rand-term list-push "terms" mem-set
+  ] times
+  
+  # Generate output combination coefficients
+  # 4 outputs, each is a linear combination of k products
+  0 list "outputs" mem-set
+  4 [
+    drop
+    0 list "out-coeffs" mem-set
+    "num-muls" mem-get [
+      drop
+      "out-coeffs" mem-get rand-coeff list-push "out-coeffs" mem-set
+    ] times
+    "outputs" mem-get "out-coeffs" mem-get list-push "outputs" mem-set
+  ] times
+  
+  "terms" mem-get "outputs" mem-get 2 list
+] "rand-algorithm" def
+
+# ====================================================================
+# ALGORITHM EXECUTION
+# ====================================================================
+
+[ # ( A B term -- product ) Execute one multiplication term
+  "term" mem-set "B" mem-set "A" mem-set
+  
+  # Compute linear combination for A
+  "term" mem-get 0 list-get "coeffs-a" mem-set
+  0 "sum-a" mem-set
+  4 [
+    "i" mem-set
+    "sum-a" mem-get
+    "coeffs-a" mem-get "i" mem-get list-get
+    "A" mem-get "i" mem-get list-get
+    mul add "sum-a" mem-set
+  ] times
+  
+  # Compute linear combination for B
+  "term" mem-get 1 list-get "coeffs-b" mem-set
+  0 "sum-b" mem-set
+  4 [
+    "i" mem-set
+    "sum-b" mem-get
+    "coeffs-b" mem-get "i" mem-get list-get
+    "B" mem-get "i" mem-get list-get
+    mul add "sum-b" mem-set
+  ] times
+  
+  # Return the product
+  "sum-a" mem-get "sum-b" mem-get mul
+] "exec-term" def
+
+[ # ( A B algorithm -- C ) Execute complete algorithm
+  "algo" mem-set "B" mem-set "A" mem-set
+  
+  "algo" mem-get 0 list-get "terms" mem-set
+  "algo" mem-get 1 list-get "outputs" mem-set
+  
+  # Compute all multiplication products
+  0 list "products" mem-set
+  "terms" mem-get [
+    "t" mem-set
+    "products" mem-get
+    "A" mem-get "B" mem-get "t" mem-get exec-term
+    list-push "products" mem-set
+  ] each
+  
+  # Compute each output element
+  0 list "result" mem-set
+  "outputs" mem-get [
+    "out-coeffs" mem-set
+    0 "sum" mem-set
+    "products" mem-get list-len [
+      "i" mem-set
+      "sum" mem-get
+      "out-coeffs" mem-get "i" mem-get list-get
+      "products" mem-get "i" mem-get list-get
+      mul add "sum" mem-set
+    ] times
+    "result" mem-get "sum" mem-get list-push "result" mem-set
+  ] each
+  
+  "result" mem-get
+] "exec-algo" def
+
+# ====================================================================
+# FITNESS EVALUATION
+# ====================================================================
+
+# Test matrices
+1 2 3 4 4 list "testA1" mem-set
+5 6 7 8 4 list "testB1" mem-set
+19 22 43 50 4 list "expected1" mem-set
+
+1 0 0 1 4 list "testI" mem-set
+
+-1 2 3 -4 4 list "testA2" mem-set
+2 -3 -1 4 4 list "testB2" mem-set
+-4 11 10 -25 4 list "expected2" mem-set
+
+2 0 0 2 4 list "testA3" mem-set
+3 0 0 3 4 list "testB3" mem-set
+6 0 0 6 4 list "expected3" mem-set
+
+[ # ( algorithm -- fitness ) Evaluate algorithm fitness (higher = better)
+  "test-algo" mem-set
+  0 "score" mem-set
+  
+  # Test 1: Regular multiplication
+  [ "testA1" mem-get "testB1" mem-get "test-algo" mem-get exec-algo "r" mem-set
+    4 [
+      "i" mem-set
+      "r" mem-get "i" mem-get list-get
+      "expected1" mem-get "i" mem-get list-get
+      eq [ "score" mem-get 25 add "score" mem-set ] [ ] if
+    ] times
+  ] try dup is-error [ drop ] [ drop ] if
+  
+  # Test 2: Negatives
+  [ "testA2" mem-get "testB2" mem-get "test-algo" mem-get exec-algo "r" mem-set
+    4 [
+      "i" mem-set
+      "r" mem-get "i" mem-get list-get
+      "expected2" mem-get "i" mem-get list-get
+      eq [ "score" mem-get 25 add "score" mem-set ] [ ] if
+    ] times
+  ] try dup is-error [ drop ] [ drop ] if
+  
+  # Test 3: Diagonal
+  [ "testA3" mem-get "testB3" mem-get "test-algo" mem-get exec-algo "r" mem-set
+    4 [
+      "i" mem-set
+      "r" mem-get "i" mem-get list-get
+      "expected3" mem-get "i" mem-get list-get
+      eq [ "score" mem-get 25 add "score" mem-set ] [ ] if
+    ] times
+  ] try dup is-error [ drop ] [ drop ] if
+  
+  "score" mem-get  # Max score = 300 (12 correct elements × 25)
+] "fitness" def
+
+# ====================================================================
+# MUTATION
+# ====================================================================
+
+[ # ( algorithm -- mutated ) Mutate an algorithm slightly
+  "mut-algo" mem-set
+  "mut-algo" mem-get 0 list-get "mut-terms" mem-set
+  "mut-algo" mem-get 1 list-get "mut-outputs" mem-set
+  
+  # With 50% chance, mutate a term coefficient
+  2 rand-max 0 eq [
+    "mut-terms" mem-get list-len "term-idx" mem-set
+    "term-idx" mem-get 0 gt [
+      "term-idx" mem-get rand-max "ti" mem-set
+      2 rand-max "ab" mem-set  # 0=A coeffs, 1=B coeffs
+      4 rand-max "ci" mem-set  # Which coefficient
+      
+      # Get the term, modify coefficient, put back
+      "mut-terms" mem-get "ti" mem-get list-get "the-term" mem-set
+      "the-term" mem-get "ab" mem-get list-get "the-coeffs" mem-set
+      
+      # Create new coeffs with one changed
+      0 list "new-coeffs" mem-set
+      4 [
+        "j" mem-set
+        "new-coeffs" mem-get
+        "j" mem-get "ci" mem-get eq [
+          rand-coeff
+        ] [
+          "the-coeffs" mem-get "j" mem-get list-get
+        ] if
+        list-push "new-coeffs" mem-set
+      ] times
+      
+      # Rebuild term
+      "ab" mem-get 0 eq [
+        "new-coeffs" mem-get "the-term" mem-get 1 list-get 2 list
+      ] [
+        "the-term" mem-get 0 list-get "new-coeffs" mem-get 2 list
+      ] if "new-term" mem-set
+      
+      # Rebuild terms list
+      0 list "rebuilt-terms" mem-set
+      "mut-terms" mem-get list-len [
+        "k" mem-set
+        "rebuilt-terms" mem-get
+        "k" mem-get "ti" mem-get eq [
+          "new-term" mem-get
+        ] [
+          "mut-terms" mem-get "k" mem-get list-get
+        ] if
+        list-push "rebuilt-terms" mem-set
+      ] times
+      "rebuilt-terms" mem-get "mut-terms" mem-set
+    ] [ ] if
+  ] [ ] if
+  
+  # With 50% chance, mutate an output coefficient
+  2 rand-max 0 eq [
+    4 rand-max "oi" mem-set  # Which output
+    "mut-outputs" mem-get "oi" mem-get list-get "the-out" mem-set
+    "the-out" mem-get list-len "out-len" mem-set
+    "out-len" mem-get 0 gt [
+      "out-len" mem-get rand-max "pi" mem-set  # Which product coefficient
+      
+      # Rebuild output coeffs
+      0 list "new-out" mem-set
+      "out-len" mem-get [
+        "j" mem-set
+        "new-out" mem-get
+        "j" mem-get "pi" mem-get eq [
+          rand-coeff
+        ] [
+          "the-out" mem-get "j" mem-get list-get
+        ] if
+        list-push "new-out" mem-set
+      ] times
+      
+      # Rebuild outputs
+      0 list "rebuilt-outputs" mem-set
+      4 [
+        "k" mem-set
+        "rebuilt-outputs" mem-get
+        "k" mem-get "oi" mem-get eq [
+          "new-out" mem-get
+        ] [
+          "mut-outputs" mem-get "k" mem-get list-get
+        ] if
+        list-push "rebuilt-outputs" mem-set
+      ] times
+      "rebuilt-outputs" mem-get "mut-outputs" mem-set
+    ] [ ] if
+  ] [ ] if
+  
+  "mut-terms" mem-get "mut-outputs" mem-get 2 list
+] "mutate" def
+
+# ====================================================================
+# GENETIC ALGORITHM
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"Running genetic search for 7-multiplication algorithm..." println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+20 "pop-size" mem-set      # Population size
+50 "generations" mem-set   # Number of generations
+7 "num-muls" mem-set       # Target: 7 multiplications (Strassen)
+
+# Initialize population
+0 list "population" mem-set
+"pop-size" mem-get [
+  drop
+  "population" mem-get
+  "num-muls" mem-get rand-algorithm
+  list-push "population" mem-set
+] times
+
+"Initial population: " print "pop-size" mem-get to-text print " algorithms" println
+"" println
+
+0 "best-ever-fitness" mem-set
+null "best-ever-algo" mem-set
+
+# Evolution loop
+"generations" mem-get [
+  "gen" mem-set
+  
+  # Evaluate fitness of all individuals
+  0 list "fitnesses" mem-set
+  0 "best-fitness" mem-set
+  null "best-algo" mem-set
+  
+  "population" mem-get [
+    "ind" mem-set
+    "ind" mem-get fitness "f" mem-set
+    "fitnesses" mem-get "f" mem-get list-push "fitnesses" mem-set
+    
+    "f" mem-get "best-fitness" mem-get gt [
+      "f" mem-get "best-fitness" mem-set
+      "ind" mem-get "best-algo" mem-set
+    ] [ ] if
+  ] each
+  
+  # Update best ever
+  "best-fitness" mem-get "best-ever-fitness" mem-get gt [
+    "best-fitness" mem-get "best-ever-fitness" mem-set
+    "best-algo" mem-get "best-ever-algo" mem-set
+  ] [ ] if
+  
+  # Report progress every 10 generations
+  "gen" mem-get 10 mod 0 eq [
+    "Gen " print "gen" mem-get to-text print
+    ": best=" print "best-fitness" mem-get to-text print
+    "/300, best-ever=" print "best-ever-fitness" mem-get to-text println
+  ] [ ] if
+  
+  # Selection and reproduction
+  # Keep best individual (elitism)
+  "best-algo" mem-get 1 list "new-pop" mem-set
+  
+  # Fill rest with mutated copies of good individuals
+  "pop-size" mem-get 1 sub [
+    drop
+    # Tournament selection: pick 2 random, keep better
+    "pop-size" mem-get rand-max "i1" mem-set
+    "pop-size" mem-get rand-max "i2" mem-set
+    "fitnesses" mem-get "i1" mem-get list-get "f1" mem-set
+    "fitnesses" mem-get "i2" mem-get list-get "f2" mem-set
+    
+    "f1" mem-get "f2" mem-get gt [
+      "population" mem-get "i1" mem-get list-get
+    ] [
+      "population" mem-get "i2" mem-get list-get
+    ] if "parent" mem-set
+    
+    # Mutate and add to new population
+    "new-pop" mem-get "parent" mem-get mutate list-push "new-pop" mem-set
+  ] times
+  
+  "new-pop" mem-get "population" mem-set
+] times
+
+"" println
+"═══════════════════════════════════════════════════════════════════" println
+"SEARCH COMPLETE" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Best fitness achieved: " print "best-ever-fitness" mem-get to-text print "/300" println
+"" println
+
+"best-ever-fitness" mem-get 300 eq [
+  "★ FOUND CORRECT ALGORITHM! ★" println
+  "" println
+  
+  # Verify it works
+  "testA1" mem-get "testB1" mem-get "best-ever-algo" mem-get exec-algo
+  "Result: " print quote-to-text println
+  "Expected: [19 22 43 50]" println
+] [
+  "Did not find perfect algorithm in this run." println
+  "Try running again or increasing generations/population." println
+  "" println
+  "Best partial result passes " print 
+  "best-ever-fitness" mem-get 25 div to-text print "/12 test cases" println
+] if
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  Note: Finding Strassen requires ~10^6 evaluations              ║" println
+"║  This demo uses 1000 (20 pop × 50 gen)                          ║" println
+"║  Scale up population and generations for real discovery!        ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println

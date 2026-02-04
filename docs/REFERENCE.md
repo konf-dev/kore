@@ -216,6 +216,7 @@ dup 10 gt ["large"] [
 | Tool        | Stack Effect              | Description                    |
 |-------------|--------------------------|--------------------------------|
 | `def`       | `(quote name -- )`       | Define a new tool              |
+| `def-verified` | `(quote name sig -- )`| Define with effect verification |
 | `words`     | `(-- list)`              | List all tool names            |
 | `describe`  | `(name -- signature)`    | Get tool's signature           |
 | `meta`      | `(name -- map)`          | Get tool's metadata            |
@@ -229,6 +230,13 @@ dup 10 gt ["large"] [
 # Define a simple tool
 [dup mul] "square" def
 5 square                      # → 25
+
+# Define with effect verification (recommended)
+[dup mul] "square" "(n -- n)" def-verified
+5 square                      # → 25
+
+# This FAILS at definition time - effect mismatch:
+[dup] "bad" "(a -- a)" def-verified  # Error: expected (1--1), got (1--2)
 
 # Define with multiple operations
 [dup 1 le [drop 1] [dup 1 sub fact mul] if] "fact" def
@@ -549,21 +557,23 @@ Volatile key-value storage (lost when program ends).
 
 | Tool       | Stack Effect            | Description                |
 |------------|------------------------|----------------------------|
-| `mem-set`  | `(key value -- )`      | Store value                |
+| `mem-set`  | `(value key -- )`      | Store value under key      |
 | `mem-get`  | `(key -- value)`       | Retrieve value             |
 | `mem-has`  | `(key -- bool)`        | Key exists?                |
 | `mem-del`  | `(key -- )`            | Remove key                 |
 | `mem-keys` | `(-- list)`            | List all keys              |
 
+**Design:** `mem-set` uses `(value key --)` to match `def`'s `(body name --)` pattern.
+
 ### Examples
 
 ```kore
 # Store and retrieve
-"count" 0 mem-set
+0 "count" mem-set
 "count" mem-get              # → 0
 
 # Increment pattern
-"count" "count" mem-get 1 add mem-set
+"count" mem-get 1 add "count" mem-set
 "count" mem-get              # → 1
 
 # Check existence
@@ -586,7 +596,7 @@ Persistent key-value storage (survives restarts, if storage is configured).
 
 | Tool       | Stack Effect            | Description                |
 |------------|------------------------|----------------------------|
-| `rom-set`  | `(key value -- )`      | Store persistently         |
+| `rom-set`  | `(value key -- )`      | Store persistently         |
 | `rom-get`  | `(key -- value)`       | Retrieve                   |
 | `rom-has`  | `(key -- bool)`        | Key exists?                |
 | `rom-del`  | `(key -- )`            | Remove key                 |
@@ -597,7 +607,7 @@ Persistent key-value storage (survives restarts, if storage is configured).
 
 ```kore
 # Store persistent data
-"settings" map-new "theme" "dark" map-set rom-set
+map-new "theme" "dark" map-set "settings" rom-set
 persist  # ensure written
 
 # Later...
@@ -746,6 +756,7 @@ trace-fingerprint            # → unique hash of execution
 | `unwrap` | `(val -- val)`           | Unwrap or fail if error        |
 | `assert` | `(cond msg -- )`         | Fail if condition false        |
 | `panic`  | `(msg -- )`              | Immediately fail               |
+| `error-info` | `(error -- map)`     | Get structured error details   |
 
 ### Examples
 
@@ -812,12 +823,12 @@ health                        # → {uptime: 3600, memory: ...}
 ### Variables with mem-set/mem-get
 
 ```kore
-# Initialize
-"x" 0 mem-set
-"y" 10 mem-set
+# Initialize (value then key)
+0 "x" mem-set
+10 "y" mem-set
 
 # Update
-"x" "x" mem-get 1 add mem-set
+"x" mem-get 1 add "x" mem-set
 
 # Use
 "x" mem-get "y" mem-get add  # x + y
@@ -827,10 +838,10 @@ health                        # → {uptime: 3600, memory: ...}
 
 ```kore
 # Count to 10
-"i" 0 mem-set
+0 "i" mem-set
 ["i" mem-get 10 lt] [
   "i" mem-get println
-  "i" "i" mem-get 1 add mem-set
+  "i" mem-get 1 add "i" mem-set
 ] while
 ```
 

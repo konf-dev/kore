@@ -1,0 +1,445 @@
+#!/usr/bin/env kore
+
+# ============================================================================
+# 4×4 MATRIX MULTIPLICATION ALGORITHM DISCOVERY
+# ============================================================================
+#
+# BOUNDS:
+#   - Standard:     64 multiplications (naive 4³)
+#   - Strassen 2x2: 49 multiplications (7² using 2x2 blocks)
+#   - Best known:   47-49 multiplications
+#   - Lower bound:  ~34 multiplications (theoretical rank)
+#
+# ============================================================================
+
+"" print
+"4x4 MATRIX MULTIPLICATION ALGORITHM DISCOVERY" print
+"==============================================" print
+"Standard: 64 muls | Strassen blocks: 49 muls | Lower: ~34 muls" print
+"" print
+
+# ----------------------------------------------------------------------------
+# PSEUDO-RANDOM NUMBER GENERATOR
+# ----------------------------------------------------------------------------
+
+1234567 "rng-state" mem-set
+
+[
+  "rng-state" mem-get
+  1103515245 mul 12345 add
+  2147483647 mod
+  dup "rng-state" mem-set
+] "rng-next" def
+
+# Random int in [lo, hi]
+[
+  over sub 1 add
+  rng-next swap mod
+  add
+] "rng-range" def
+
+# ----------------------------------------------------------------------------
+# MATRIX UTILITIES
+# ----------------------------------------------------------------------------
+
+# Create random 4×4 with elements in [-5, 5]
+[
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list
+  -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push -5 5 rng-range list-push
+  0 list swap list-push swap list-push swap list-push swap list-push
+] "rand-4x4" def
+
+# ----------------------------------------------------------------------------
+# STANDARD MULTIPLICATION (64 multiplications)
+# Uses nested list access: matrix row col -> element
+# ----------------------------------------------------------------------------
+
+[
+  "B" mem-set "A" mem-set
+  
+  # Extract all 16 elements from A and B
+  # A matrix
+  "A" mem-get 0 list-get 0 list-get "a00" mem-set
+  "A" mem-get 0 list-get 1 list-get "a01" mem-set
+  "A" mem-get 0 list-get 2 list-get "a02" mem-set
+  "A" mem-get 0 list-get 3 list-get "a03" mem-set
+  "A" mem-get 1 list-get 0 list-get "a10" mem-set
+  "A" mem-get 1 list-get 1 list-get "a11" mem-set
+  "A" mem-get 1 list-get 2 list-get "a12" mem-set
+  "A" mem-get 1 list-get 3 list-get "a13" mem-set
+  "A" mem-get 2 list-get 0 list-get "a20" mem-set
+  "A" mem-get 2 list-get 1 list-get "a21" mem-set
+  "A" mem-get 2 list-get 2 list-get "a22" mem-set
+  "A" mem-get 2 list-get 3 list-get "a23" mem-set
+  "A" mem-get 3 list-get 0 list-get "a30" mem-set
+  "A" mem-get 3 list-get 1 list-get "a31" mem-set
+  "A" mem-get 3 list-get 2 list-get "a32" mem-set
+  "A" mem-get 3 list-get 3 list-get "a33" mem-set
+  
+  # B matrix
+  "B" mem-get 0 list-get 0 list-get "b00" mem-set
+  "B" mem-get 0 list-get 1 list-get "b01" mem-set
+  "B" mem-get 0 list-get 2 list-get "b02" mem-set
+  "B" mem-get 0 list-get 3 list-get "b03" mem-set
+  "B" mem-get 1 list-get 0 list-get "b10" mem-set
+  "B" mem-get 1 list-get 1 list-get "b11" mem-set
+  "B" mem-get 1 list-get 2 list-get "b12" mem-set
+  "B" mem-get 1 list-get 3 list-get "b13" mem-set
+  "B" mem-get 2 list-get 0 list-get "b20" mem-set
+  "B" mem-get 2 list-get 1 list-get "b21" mem-set
+  "B" mem-get 2 list-get 2 list-get "b22" mem-set
+  "B" mem-get 2 list-get 3 list-get "b23" mem-set
+  "B" mem-get 3 list-get 0 list-get "b30" mem-set
+  "B" mem-get 3 list-get 1 list-get "b31" mem-set
+  "B" mem-get 3 list-get 2 list-get "b32" mem-set
+  "B" mem-get 3 list-get 3 list-get "b33" mem-set
+  
+  # c[i][j] = sum(a[i][k] * b[k][j]) for k=0..3
+  # Row 0
+  "a00" mem-get "b00" mem-get mul "a01" mem-get "b10" mem-get mul add "a02" mem-get "b20" mem-get mul add "a03" mem-get "b30" mem-get mul add "c00" mem-set
+  "a00" mem-get "b01" mem-get mul "a01" mem-get "b11" mem-get mul add "a02" mem-get "b21" mem-get mul add "a03" mem-get "b31" mem-get mul add "c01" mem-set
+  "a00" mem-get "b02" mem-get mul "a01" mem-get "b12" mem-get mul add "a02" mem-get "b22" mem-get mul add "a03" mem-get "b32" mem-get mul add "c02" mem-set
+  "a00" mem-get "b03" mem-get mul "a01" mem-get "b13" mem-get mul add "a02" mem-get "b23" mem-get mul add "a03" mem-get "b33" mem-get mul add "c03" mem-set
+  
+  # Row 1
+  "a10" mem-get "b00" mem-get mul "a11" mem-get "b10" mem-get mul add "a12" mem-get "b20" mem-get mul add "a13" mem-get "b30" mem-get mul add "c10" mem-set
+  "a10" mem-get "b01" mem-get mul "a11" mem-get "b11" mem-get mul add "a12" mem-get "b21" mem-get mul add "a13" mem-get "b31" mem-get mul add "c11" mem-set
+  "a10" mem-get "b02" mem-get mul "a11" mem-get "b12" mem-get mul add "a12" mem-get "b22" mem-get mul add "a13" mem-get "b32" mem-get mul add "c12" mem-set
+  "a10" mem-get "b03" mem-get mul "a11" mem-get "b13" mem-get mul add "a12" mem-get "b23" mem-get mul add "a13" mem-get "b33" mem-get mul add "c13" mem-set
+  
+  # Row 2
+  "a20" mem-get "b00" mem-get mul "a21" mem-get "b10" mem-get mul add "a22" mem-get "b20" mem-get mul add "a23" mem-get "b30" mem-get mul add "c20" mem-set
+  "a20" mem-get "b01" mem-get mul "a21" mem-get "b11" mem-get mul add "a22" mem-get "b21" mem-get mul add "a23" mem-get "b31" mem-get mul add "c21" mem-set
+  "a20" mem-get "b02" mem-get mul "a21" mem-get "b12" mem-get mul add "a22" mem-get "b22" mem-get mul add "a23" mem-get "b32" mem-get mul add "c22" mem-set
+  "a20" mem-get "b03" mem-get mul "a21" mem-get "b13" mem-get mul add "a22" mem-get "b23" mem-get mul add "a23" mem-get "b33" mem-get mul add "c23" mem-set
+  
+  # Row 3
+  "a30" mem-get "b00" mem-get mul "a31" mem-get "b10" mem-get mul add "a32" mem-get "b20" mem-get mul add "a33" mem-get "b30" mem-get mul add "c30" mem-set
+  "a30" mem-get "b01" mem-get mul "a31" mem-get "b11" mem-get mul add "a32" mem-get "b21" mem-get mul add "a33" mem-get "b31" mem-get mul add "c31" mem-set
+  "a30" mem-get "b02" mem-get mul "a31" mem-get "b12" mem-get mul add "a32" mem-get "b22" mem-get mul add "a33" mem-get "b32" mem-get mul add "c32" mem-set
+  "a30" mem-get "b03" mem-get mul "a31" mem-get "b13" mem-get mul add "a32" mem-get "b23" mem-get mul add "a33" mem-get "b33" mem-get mul add "c33" mem-set
+  
+  # Build result matrix
+  0 list "c00" mem-get list-push "c01" mem-get list-push "c02" mem-get list-push "c03" mem-get list-push
+  0 list "c10" mem-get list-push "c11" mem-get list-push "c12" mem-get list-push "c13" mem-get list-push
+  0 list "c20" mem-get list-push "c21" mem-get list-push "c22" mem-get list-push "c23" mem-get list-push
+  0 list "c30" mem-get list-push "c31" mem-get list-push "c32" mem-get list-push "c33" mem-get list-push
+  0 list swap list-push swap list-push swap list-push swap list-push
+] "mul-4x4-standard" def
+
+# ----------------------------------------------------------------------------
+# STRASSEN 4×4 (49 multiplications)
+# Treat as 2×2 of 2×2 blocks, apply Strassen at both levels
+# Each of 7 block muls uses 7 scalar muls = 49 total
+# ----------------------------------------------------------------------------
+
+[
+  "B" mem-set "A" mem-set
+  
+  # Extract all elements (0-indexed)
+  "A" mem-get 0 list-get 0 list-get "a00" mem-set
+  "A" mem-get 0 list-get 1 list-get "a01" mem-set
+  "A" mem-get 0 list-get 2 list-get "a02" mem-set
+  "A" mem-get 0 list-get 3 list-get "a03" mem-set
+  "A" mem-get 1 list-get 0 list-get "a10" mem-set
+  "A" mem-get 1 list-get 1 list-get "a11" mem-set
+  "A" mem-get 1 list-get 2 list-get "a12" mem-set
+  "A" mem-get 1 list-get 3 list-get "a13" mem-set
+  "A" mem-get 2 list-get 0 list-get "a20" mem-set
+  "A" mem-get 2 list-get 1 list-get "a21" mem-set
+  "A" mem-get 2 list-get 2 list-get "a22" mem-set
+  "A" mem-get 2 list-get 3 list-get "a23" mem-set
+  "A" mem-get 3 list-get 0 list-get "a30" mem-set
+  "A" mem-get 3 list-get 1 list-get "a31" mem-set
+  "A" mem-get 3 list-get 2 list-get "a32" mem-set
+  "A" mem-get 3 list-get 3 list-get "a33" mem-set
+  
+  "B" mem-get 0 list-get 0 list-get "b00" mem-set
+  "B" mem-get 0 list-get 1 list-get "b01" mem-set
+  "B" mem-get 0 list-get 2 list-get "b02" mem-set
+  "B" mem-get 0 list-get 3 list-get "b03" mem-set
+  "B" mem-get 1 list-get 0 list-get "b10" mem-set
+  "B" mem-get 1 list-get 1 list-get "b11" mem-set
+  "B" mem-get 1 list-get 2 list-get "b12" mem-set
+  "B" mem-get 1 list-get 3 list-get "b13" mem-set
+  "B" mem-get 2 list-get 0 list-get "b20" mem-set
+  "B" mem-get 2 list-get 1 list-get "b21" mem-set
+  "B" mem-get 2 list-get 2 list-get "b22" mem-set
+  "B" mem-get 2 list-get 3 list-get "b23" mem-set
+  "B" mem-get 3 list-get 0 list-get "b30" mem-set
+  "B" mem-get 3 list-get 1 list-get "b31" mem-set
+  "B" mem-get 3 list-get 2 list-get "b32" mem-set
+  "B" mem-get 3 list-get 3 list-get "b33" mem-set
+  
+  # ========================================================================
+  # Block Strassen: 4x4 = 2x2 of 2x2 blocks
+  # A = [[A11, A12], [A21, A22]] where each Aij is 2x2
+  # A11 = [[a00,a01],[a10,a11]], A12 = [[a02,a03],[a12,a13]]
+  # A21 = [[a20,a21],[a30,a31]], A22 = [[a22,a23],[a32,a33]]
+  # ========================================================================
+  
+  # For each of 7 Strassen block products, we need to do 2x2 Strassen
+  # P1 = (A11 + A22)(B11 + B22)
+  # Compute A11 + A22 as 4 scalar sums
+  "a00" mem-get "a22" mem-get add "s1_00" mem-set
+  "a01" mem-get "a23" mem-get add "s1_01" mem-set
+  "a10" mem-get "a32" mem-get add "s1_10" mem-set
+  "a11" mem-get "a33" mem-get add "s1_11" mem-set
+  # Compute B11 + B22
+  "b00" mem-get "b22" mem-get add "t1_00" mem-set
+  "b01" mem-get "b23" mem-get add "t1_01" mem-set
+  "b10" mem-get "b32" mem-get add "t1_10" mem-set
+  "b11" mem-get "b33" mem-get add "t1_11" mem-set
+  # P1 = Strassen(S1, T1) - 7 muls
+  "s1_00" mem-get "s1_11" mem-get add "t1_00" mem-get "t1_11" mem-get add mul "p1_m1" mem-set
+  "s1_10" mem-get "s1_11" mem-get add "t1_00" mem-get mul "p1_m2" mem-set
+  "s1_00" mem-get "t1_01" mem-get "t1_11" mem-get sub mul "p1_m3" mem-set
+  "s1_11" mem-get "t1_10" mem-get "t1_00" mem-get sub mul "p1_m4" mem-set
+  "s1_00" mem-get "s1_01" mem-get add "t1_11" mem-get mul "p1_m5" mem-set
+  "s1_10" mem-get "s1_00" mem-get sub "t1_00" mem-get "t1_01" mem-get add mul "p1_m6" mem-set
+  "s1_01" mem-get "s1_11" mem-get sub "t1_10" mem-get "t1_11" mem-get add mul "p1_m7" mem-set
+  "p1_m1" mem-get "p1_m4" mem-get add "p1_m5" mem-get sub "p1_m7" mem-get add "P1_00" mem-set
+  "p1_m3" mem-get "p1_m5" mem-get add "P1_01" mem-set
+  "p1_m2" mem-get "p1_m4" mem-get add "P1_10" mem-set
+  "p1_m1" mem-get "p1_m2" mem-get sub "p1_m3" mem-get add "p1_m6" mem-get add "P1_11" mem-set
+  
+  # P2 = (A21 + A22)B11 - 7 muls
+  "a20" mem-get "a22" mem-get add "s2_00" mem-set
+  "a21" mem-get "a23" mem-get add "s2_01" mem-set
+  "a30" mem-get "a32" mem-get add "s2_10" mem-set
+  "a31" mem-get "a33" mem-get add "s2_11" mem-set
+  "s2_00" mem-get "s2_11" mem-get add "b00" mem-get "b11" mem-get add mul "p2_m1" mem-set
+  "s2_10" mem-get "s2_11" mem-get add "b00" mem-get mul "p2_m2" mem-set
+  "s2_00" mem-get "b01" mem-get "b11" mem-get sub mul "p2_m3" mem-set
+  "s2_11" mem-get "b10" mem-get "b00" mem-get sub mul "p2_m4" mem-set
+  "s2_00" mem-get "s2_01" mem-get add "b11" mem-get mul "p2_m5" mem-set
+  "s2_10" mem-get "s2_00" mem-get sub "b00" mem-get "b01" mem-get add mul "p2_m6" mem-set
+  "s2_01" mem-get "s2_11" mem-get sub "b10" mem-get "b11" mem-get add mul "p2_m7" mem-set
+  "p2_m1" mem-get "p2_m4" mem-get add "p2_m5" mem-get sub "p2_m7" mem-get add "P2_00" mem-set
+  "p2_m3" mem-get "p2_m5" mem-get add "P2_01" mem-set
+  "p2_m2" mem-get "p2_m4" mem-get add "P2_10" mem-set
+  "p2_m1" mem-get "p2_m2" mem-get sub "p2_m3" mem-get add "p2_m6" mem-get add "P2_11" mem-set
+  
+  # P3 = A11(B12 - B22) - 7 muls
+  "b02" mem-get "b22" mem-get sub "t3_00" mem-set
+  "b03" mem-get "b23" mem-get sub "t3_01" mem-set
+  "b12" mem-get "b32" mem-get sub "t3_10" mem-set
+  "b13" mem-get "b33" mem-get sub "t3_11" mem-set
+  "a00" mem-get "a11" mem-get add "t3_00" mem-get "t3_11" mem-get add mul "p3_m1" mem-set
+  "a10" mem-get "a11" mem-get add "t3_00" mem-get mul "p3_m2" mem-set
+  "a00" mem-get "t3_01" mem-get "t3_11" mem-get sub mul "p3_m3" mem-set
+  "a11" mem-get "t3_10" mem-get "t3_00" mem-get sub mul "p3_m4" mem-set
+  "a00" mem-get "a01" mem-get add "t3_11" mem-get mul "p3_m5" mem-set
+  "a10" mem-get "a00" mem-get sub "t3_00" mem-get "t3_01" mem-get add mul "p3_m6" mem-set
+  "a01" mem-get "a11" mem-get sub "t3_10" mem-get "t3_11" mem-get add mul "p3_m7" mem-set
+  "p3_m1" mem-get "p3_m4" mem-get add "p3_m5" mem-get sub "p3_m7" mem-get add "P3_00" mem-set
+  "p3_m3" mem-get "p3_m5" mem-get add "P3_01" mem-set
+  "p3_m2" mem-get "p3_m4" mem-get add "P3_10" mem-set
+  "p3_m1" mem-get "p3_m2" mem-get sub "p3_m3" mem-get add "p3_m6" mem-get add "P3_11" mem-set
+  
+  # P4 = A22(B21 - B11) - 7 muls
+  "b20" mem-get "b00" mem-get sub "t4_00" mem-set
+  "b21" mem-get "b01" mem-get sub "t4_01" mem-set
+  "b30" mem-get "b10" mem-get sub "t4_10" mem-set
+  "b31" mem-get "b11" mem-get sub "t4_11" mem-set
+  "a22" mem-get "a33" mem-get add "t4_00" mem-get "t4_11" mem-get add mul "p4_m1" mem-set
+  "a32" mem-get "a33" mem-get add "t4_00" mem-get mul "p4_m2" mem-set
+  "a22" mem-get "t4_01" mem-get "t4_11" mem-get sub mul "p4_m3" mem-set
+  "a33" mem-get "t4_10" mem-get "t4_00" mem-get sub mul "p4_m4" mem-set
+  "a22" mem-get "a23" mem-get add "t4_11" mem-get mul "p4_m5" mem-set
+  "a32" mem-get "a22" mem-get sub "t4_00" mem-get "t4_01" mem-get add mul "p4_m6" mem-set
+  "a23" mem-get "a33" mem-get sub "t4_10" mem-get "t4_11" mem-get add mul "p4_m7" mem-set
+  "p4_m1" mem-get "p4_m4" mem-get add "p4_m5" mem-get sub "p4_m7" mem-get add "P4_00" mem-set
+  "p4_m3" mem-get "p4_m5" mem-get add "P4_01" mem-set
+  "p4_m2" mem-get "p4_m4" mem-get add "P4_10" mem-set
+  "p4_m1" mem-get "p4_m2" mem-get sub "p4_m3" mem-get add "p4_m6" mem-get add "P4_11" mem-set
+  
+  # P5 = (A11 + A12)B22 - 7 muls
+  "a00" mem-get "a02" mem-get add "s5_00" mem-set
+  "a01" mem-get "a03" mem-get add "s5_01" mem-set
+  "a10" mem-get "a12" mem-get add "s5_10" mem-set
+  "a11" mem-get "a13" mem-get add "s5_11" mem-set
+  "s5_00" mem-get "s5_11" mem-get add "b22" mem-get "b33" mem-get add mul "p5_m1" mem-set
+  "s5_10" mem-get "s5_11" mem-get add "b22" mem-get mul "p5_m2" mem-set
+  "s5_00" mem-get "b23" mem-get "b33" mem-get sub mul "p5_m3" mem-set
+  "s5_11" mem-get "b32" mem-get "b22" mem-get sub mul "p5_m4" mem-set
+  "s5_00" mem-get "s5_01" mem-get add "b33" mem-get mul "p5_m5" mem-set
+  "s5_10" mem-get "s5_00" mem-get sub "b22" mem-get "b23" mem-get add mul "p5_m6" mem-set
+  "s5_01" mem-get "s5_11" mem-get sub "b32" mem-get "b33" mem-get add mul "p5_m7" mem-set
+  "p5_m1" mem-get "p5_m4" mem-get add "p5_m5" mem-get sub "p5_m7" mem-get add "P5_00" mem-set
+  "p5_m3" mem-get "p5_m5" mem-get add "P5_01" mem-set
+  "p5_m2" mem-get "p5_m4" mem-get add "P5_10" mem-set
+  "p5_m1" mem-get "p5_m2" mem-get sub "p5_m3" mem-get add "p5_m6" mem-get add "P5_11" mem-set
+  
+  # P6 = (A21 - A11)(B11 + B12) - 7 muls
+  "a20" mem-get "a00" mem-get sub "s6_00" mem-set
+  "a21" mem-get "a01" mem-get sub "s6_01" mem-set
+  "a30" mem-get "a10" mem-get sub "s6_10" mem-set
+  "a31" mem-get "a11" mem-get sub "s6_11" mem-set
+  "b00" mem-get "b02" mem-get add "t6_00" mem-set
+  "b01" mem-get "b03" mem-get add "t6_01" mem-set
+  "b10" mem-get "b12" mem-get add "t6_10" mem-set
+  "b11" mem-get "b13" mem-get add "t6_11" mem-set
+  "s6_00" mem-get "s6_11" mem-get add "t6_00" mem-get "t6_11" mem-get add mul "p6_m1" mem-set
+  "s6_10" mem-get "s6_11" mem-get add "t6_00" mem-get mul "p6_m2" mem-set
+  "s6_00" mem-get "t6_01" mem-get "t6_11" mem-get sub mul "p6_m3" mem-set
+  "s6_11" mem-get "t6_10" mem-get "t6_00" mem-get sub mul "p6_m4" mem-set
+  "s6_00" mem-get "s6_01" mem-get add "t6_11" mem-get mul "p6_m5" mem-set
+  "s6_10" mem-get "s6_00" mem-get sub "t6_00" mem-get "t6_01" mem-get add mul "p6_m6" mem-set
+  "s6_01" mem-get "s6_11" mem-get sub "t6_10" mem-get "t6_11" mem-get add mul "p6_m7" mem-set
+  "p6_m1" mem-get "p6_m4" mem-get add "p6_m5" mem-get sub "p6_m7" mem-get add "P6_00" mem-set
+  "p6_m3" mem-get "p6_m5" mem-get add "P6_01" mem-set
+  "p6_m2" mem-get "p6_m4" mem-get add "P6_10" mem-set
+  "p6_m1" mem-get "p6_m2" mem-get sub "p6_m3" mem-get add "p6_m6" mem-get add "P6_11" mem-set
+  
+  # P7 = (A12 - A22)(B21 + B22) - 7 muls
+  "a02" mem-get "a22" mem-get sub "s7_00" mem-set
+  "a03" mem-get "a23" mem-get sub "s7_01" mem-set
+  "a12" mem-get "a32" mem-get sub "s7_10" mem-set
+  "a13" mem-get "a33" mem-get sub "s7_11" mem-set
+  "b20" mem-get "b22" mem-get add "t7_00" mem-set
+  "b21" mem-get "b23" mem-get add "t7_01" mem-set
+  "b30" mem-get "b32" mem-get add "t7_10" mem-set
+  "b31" mem-get "b33" mem-get add "t7_11" mem-set
+  "s7_00" mem-get "s7_11" mem-get add "t7_00" mem-get "t7_11" mem-get add mul "p7_m1" mem-set
+  "s7_10" mem-get "s7_11" mem-get add "t7_00" mem-get mul "p7_m2" mem-set
+  "s7_00" mem-get "t7_01" mem-get "t7_11" mem-get sub mul "p7_m3" mem-set
+  "s7_11" mem-get "t7_10" mem-get "t7_00" mem-get sub mul "p7_m4" mem-set
+  "s7_00" mem-get "s7_01" mem-get add "t7_11" mem-get mul "p7_m5" mem-set
+  "s7_10" mem-get "s7_00" mem-get sub "t7_00" mem-get "t7_01" mem-get add mul "p7_m6" mem-set
+  "s7_01" mem-get "s7_11" mem-get sub "t7_10" mem-get "t7_11" mem-get add mul "p7_m7" mem-set
+  "p7_m1" mem-get "p7_m4" mem-get add "p7_m5" mem-get sub "p7_m7" mem-get add "P7_00" mem-set
+  "p7_m3" mem-get "p7_m5" mem-get add "P7_01" mem-set
+  "p7_m2" mem-get "p7_m4" mem-get add "P7_10" mem-set
+  "p7_m1" mem-get "p7_m2" mem-get sub "p7_m3" mem-get add "p7_m6" mem-get add "P7_11" mem-set
+  
+  # ========================================================================
+  # Combine block results
+  # C11 = P1 + P4 - P5 + P7
+  # C12 = P3 + P5
+  # C21 = P2 + P4
+  # C22 = P1 - P2 + P3 + P6
+  # ========================================================================
+  
+  # C11 (top-left 2x2) = P1 + P4 - P5 + P7
+  "P1_00" mem-get "P4_00" mem-get add "P5_00" mem-get sub "P7_00" mem-get add "c00" mem-set
+  "P1_01" mem-get "P4_01" mem-get add "P5_01" mem-get sub "P7_01" mem-get add "c01" mem-set
+  "P1_10" mem-get "P4_10" mem-get add "P5_10" mem-get sub "P7_10" mem-get add "c10" mem-set
+  "P1_11" mem-get "P4_11" mem-get add "P5_11" mem-get sub "P7_11" mem-get add "c11" mem-set
+  
+  # C12 (top-right 2x2) = P3 + P5
+  "P3_00" mem-get "P5_00" mem-get add "c02" mem-set
+  "P3_01" mem-get "P5_01" mem-get add "c03" mem-set
+  "P3_10" mem-get "P5_10" mem-get add "c12" mem-set
+  "P3_11" mem-get "P5_11" mem-get add "c13" mem-set
+  
+  # C21 (bottom-left 2x2) = P2 + P4
+  "P2_00" mem-get "P4_00" mem-get add "c20" mem-set
+  "P2_01" mem-get "P4_01" mem-get add "c21" mem-set
+  "P2_10" mem-get "P4_10" mem-get add "c30" mem-set
+  "P2_11" mem-get "P4_11" mem-get add "c31" mem-set
+  
+  # C22 (bottom-right 2x2) = P1 - P2 + P3 + P6
+  "P1_00" mem-get "P2_00" mem-get sub "P3_00" mem-get add "P6_00" mem-get add "c22" mem-set
+  "P1_01" mem-get "P2_01" mem-get sub "P3_01" mem-get add "P6_01" mem-get add "c23" mem-set
+  "P1_10" mem-get "P2_10" mem-get sub "P3_10" mem-get add "P6_10" mem-get add "c32" mem-set
+  "P1_11" mem-get "P2_11" mem-get sub "P3_11" mem-get add "P6_11" mem-get add "c33" mem-set
+  
+  # Build result matrix
+  0 list "c00" mem-get list-push "c01" mem-get list-push "c02" mem-get list-push "c03" mem-get list-push
+  0 list "c10" mem-get list-push "c11" mem-get list-push "c12" mem-get list-push "c13" mem-get list-push
+  0 list "c20" mem-get list-push "c21" mem-get list-push "c22" mem-get list-push "c23" mem-get list-push
+  0 list "c30" mem-get list-push "c31" mem-get list-push "c32" mem-get list-push "c33" mem-get list-push
+  0 list swap list-push swap list-push swap list-push swap list-push
+] "mul-4x4-strassen" def
+
+# ----------------------------------------------------------------------------
+# MATRIX COMPARISON
+# ----------------------------------------------------------------------------
+
+[
+  "B" mem-set "A" mem-set
+  true
+  "A" mem-get 0 list-get 0 list-get "B" mem-get 0 list-get 0 list-get eq and
+  "A" mem-get 0 list-get 1 list-get "B" mem-get 0 list-get 1 list-get eq and
+  "A" mem-get 0 list-get 2 list-get "B" mem-get 0 list-get 2 list-get eq and
+  "A" mem-get 0 list-get 3 list-get "B" mem-get 0 list-get 3 list-get eq and
+  "A" mem-get 1 list-get 0 list-get "B" mem-get 1 list-get 0 list-get eq and
+  "A" mem-get 1 list-get 1 list-get "B" mem-get 1 list-get 1 list-get eq and
+  "A" mem-get 1 list-get 2 list-get "B" mem-get 1 list-get 2 list-get eq and
+  "A" mem-get 1 list-get 3 list-get "B" mem-get 1 list-get 3 list-get eq and
+  "A" mem-get 2 list-get 0 list-get "B" mem-get 2 list-get 0 list-get eq and
+  "A" mem-get 2 list-get 1 list-get "B" mem-get 2 list-get 1 list-get eq and
+  "A" mem-get 2 list-get 2 list-get "B" mem-get 2 list-get 2 list-get eq and
+  "A" mem-get 2 list-get 3 list-get "B" mem-get 2 list-get 3 list-get eq and
+  "A" mem-get 3 list-get 0 list-get "B" mem-get 3 list-get 0 list-get eq and
+  "A" mem-get 3 list-get 1 list-get "B" mem-get 3 list-get 1 list-get eq and
+  "A" mem-get 3 list-get 2 list-get "B" mem-get 3 list-get 2 list-get eq and
+  "A" mem-get 3 list-get 3 list-get "B" mem-get 3 list-get 3 list-get eq and
+] "mat-eq" def
+
+# ============================================================================
+# TESTS
+# ============================================================================
+
+"[1] Generating test matrices..." print
+rand-4x4 "A" mem-set
+rand-4x4 "B" mem-set
+" DONE" print
+
+"[2] Standard multiplication (64 muls)..." print
+"A" mem-get "B" mem-get mul-4x4-standard "Cstd" mem-set
+" DONE" print
+
+"[3] Strassen multiplication (49 muls)..." print
+"A" mem-get "B" mem-get mul-4x4-strassen "Cstr" mem-set
+" DONE" print
+
+"[4] Comparing results..." print
+"Cstd" mem-get "Cstr" mem-get mat-eq
+[ " MATCH!" print ] [ " DIFFER!" print ] if
+
+"[5] Running 100 random tests..." print
+0 "passed" mem-set
+0 "failed" mem-set
+
+100 [
+  rand-4x4 "RA" mem-set
+  rand-4x4 "RB" mem-set
+  
+  "RA" mem-get "RB" mem-get mul-4x4-standard "r_std" mem-set
+  "RA" mem-get "RB" mem-get mul-4x4-strassen "r_str" mem-set
+  
+  "r_std" mem-get "r_str" mem-get mat-eq
+  [
+    "passed" mem-get 1 add "passed" mem-set
+  ] [
+    "failed" mem-get 1 add "failed" mem-set
+  ] if
+] times
+
+"    Passed: " print "passed" mem-get to-text print "" print
+"    Failed: " print "failed" mem-get to-text print "" print
+
+"failed" mem-get 0 eq
+[ "" print "SUCCESS: Strassen 4x4 algorithm verified!" print ]
+[ "" print "FAILURE: Some tests failed!" print ]
+if
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+
+"" print
+"=== 4×4 Matrix Multiplication Summary ===" print
+"Standard algorithm:     64 multiplications (4³)" print
+"Strassen 2×2 blocks:    49 multiplications (7×7)" print
+"Savings:                15 multiplications (23% reduction)" print
+"" print
+"Multiplication savings: 15 ops (64->49 = 23%)" print

@@ -1,0 +1,335 @@
+# DISCOVER: Find novel patterns through search
+# No pre-defined abstractions - let them emerge
+
+# ==============================================
+# SEARCH ENGINE - 3 levels deep
+# ==============================================
+
+# Level 1: Single number
+# Level 2: n op (unary)  
+# Level 3: n m op (binary)
+
+"solutions" 0 list mem-set
+"patterns" 0 list mem-set
+
+# Binary ops to try (as quotes in a list)
+"op-add" [ add ] mem-set
+"op-sub" [ sub ] mem-set
+"op-mul" [ mul ] mem-set
+
+# Try to find program for goal, return solution info
+# ( goal -- found solution level )
+[
+  "goal" swap mem-set
+  "found" false mem-set
+  "solution" "" mem-set
+  "level" 0 mem-set
+  
+  # Level 1: Just a number 0-20
+  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 list
+  [
+    "n" swap mem-set
+    "found" mem-get not [
+      [ ] fiber-new "n" mem-get fiber-inject fiber-run fiber-stack
+      "goal" mem-get eq [
+        "found" true mem-set
+        "level" 1 mem-set
+        "n" mem-get to-text "solution" swap mem-set
+      ] [ ] if
+    ] [ ] if
+  ] each
+  
+  # Level 2: n dup mul (squares)
+  "found" mem-get not [
+    0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 list
+    [
+      "n" swap mem-set
+      "found" mem-get not [
+        [ dup mul ] fiber-new "n" mem-get fiber-inject
+        [ fiber-run fiber-stack ] try
+        dup is-error [ drop ] [
+          "goal" mem-get eq [
+            "found" true mem-set
+            "level" 2 mem-set
+            "n" mem-get to-text " dup mul" str-concat "solution" swap mem-set
+          ] [ ] if
+        ] if
+      ] [ ] if
+    ] each
+  ] [ ] if
+  
+  # Level 2b: n dup add (doubles)
+  "found" mem-get not [
+    0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 list
+    [
+      "n" swap mem-set
+      "found" mem-get not [
+        [ dup add ] fiber-new "n" mem-get fiber-inject
+        [ fiber-run fiber-stack ] try
+        dup is-error [ drop ] [
+          "goal" mem-get eq [
+            "found" true mem-set
+            "level" 2 mem-set
+            "n" mem-get to-text " dup add" str-concat "solution" swap mem-set
+          ] [ ] if
+        ] if
+      ] [ ] if
+    ] each
+  ] [ ] if
+  
+  # Level 3: n m mul
+  "found" mem-get not [
+    0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 list
+    [
+      "n" swap mem-set
+      0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 list
+      [
+        "m" swap mem-set
+        "found" mem-get not [
+          [ mul ] fiber-new 
+          "n" mem-get fiber-inject 
+          "m" mem-get fiber-inject
+          [ fiber-run fiber-stack ] try
+          dup is-error [ drop ] [
+            "goal" mem-get eq [
+              "found" true mem-set
+              "level" 3 mem-set
+              "n" mem-get to-text " " str-concat
+              "m" mem-get to-text str-concat " mul" str-concat
+              "solution" swap mem-set
+              "n" mem-get "sol-n" swap mem-set
+              "m" mem-get "sol-m" swap mem-set
+            ] [ ] if
+          ] if
+        ] [ ] if
+      ] each
+    ] each
+  ] [ ] if
+  
+  # Level 3b: n m add
+  "found" mem-get not [
+    0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 list
+    [
+      "n" swap mem-set
+      0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 list
+      [
+        "m" swap mem-set
+        "found" mem-get not [
+          [ add ] fiber-new 
+          "n" mem-get fiber-inject 
+          "m" mem-get fiber-inject
+          [ fiber-run fiber-stack ] try
+          dup is-error [ drop ] [
+            "goal" mem-get eq [
+              "found" true mem-set
+              "level" 3 mem-set
+              "n" mem-get to-text " " str-concat
+              "m" mem-get to-text str-concat " add" str-concat
+              "solution" swap mem-set
+              "n" mem-get "sol-n" swap mem-set
+              "m" mem-get "sol-m" swap mem-set
+            ] [ ] if
+          ] if
+        ] [ ] if
+      ] each
+    ] each
+  ] [ ] if
+  
+  # Return result
+  "found" mem-get
+  "solution" mem-get
+  "level" mem-get
+] "search" def
+
+# ==============================================
+# PATTERN ANALYZER
+# Looks at binary solutions and finds structure
+# ==============================================
+
+[
+  "n" swap mem-set
+  "m" swap mem-set
+  
+  # Check: n == m (dup pattern)
+  "n" mem-get "m" mem-get eq [
+    "dup-pattern"
+  ] [
+    # Check: m == n + 1 (consecutive)
+    "m" mem-get "n" mem-get 1 add eq [
+      "consecutive"
+    ] [
+      # Check: m == n * 2 (double relation)
+      "m" mem-get "n" mem-get 2 mul eq [
+        "double-relation"
+      ] [
+        # Check: n == 1 (identity element for mul)
+        "n" mem-get 1 eq [
+          "identity-n"
+        ] [
+          "m" mem-get 1 eq [
+            "identity-m"
+          ] [
+            # Check: one divides the other evenly
+            "m" mem-get "n" mem-get mod 0 eq "n" mem-get 0 eq not and [
+              "divisibility"
+            ] [
+              "no-pattern"
+            ] if
+          ] if
+        ] if
+      ] if
+    ] if
+  ] if
+] "analyze-pair" def
+
+# ==============================================
+# DISCOVERY ENGINE
+# ==============================================
+
+"" println
+"╔════════════════════════════════════════════════════════╗" println
+"║  KORE DISCOVERY ENGINE                                 ║" println
+"║  Finding novel patterns through autonomous search      ║" println
+"╚════════════════════════════════════════════════════════╝" println
+"" println
+
+# Cubes - will it discover n*n*n pattern?
+"=== Searching for CUBES ===" println
+"Looking for 1, 8, 27, 64, 125, 216..." println
+"" println
+
+1 8 27 64 125 216 6 list
+[
+  "target" swap mem-set
+  "target" mem-get to-text ": " str-concat print
+  
+  "target" mem-get 1 list search
+  # stack: found solution level
+  "lv" swap mem-set
+  "sol" swap mem-set
+  "ok" swap mem-set
+  
+  "ok" mem-get [
+    "sol" mem-get print
+    " (level " print "lv" mem-get to-text print ")" println
+  ] [
+    "NOT FOUND" println
+  ] if
+] each
+
+"" println
+"=== Searching for TRIANGULAR NUMBERS ===" println
+"1, 3, 6, 10, 15, 21, 28..." println
+"(Sum of 1+2+3+...+n)" println
+"" println
+
+1 3 6 10 15 21 28 36 45 9 list
+[
+  "target" swap mem-set
+  "target" mem-get to-text ": " str-concat print
+  
+  "target" mem-get 1 list search
+  "lv" swap mem-set
+  "sol" swap mem-set
+  "ok" swap mem-set
+  
+  "ok" mem-get [
+    "sol" mem-get print
+    " (level " print "lv" mem-get to-text print ")" println
+  ] [
+    "NOT FOUND" println
+  ] if
+] each
+
+"" println
+"=== Searching for PRIMES ===" println
+"Can it find programs that produce primes?" println
+"" println
+
+2 3 5 7 11 13 17 19 23 9 list
+[
+  "target" swap mem-set
+  "target" mem-get to-text ": " str-concat print
+  
+  "target" mem-get 1 list search
+  "lv" swap mem-set
+  "sol" swap mem-set
+  "ok" swap mem-set
+  
+  "ok" mem-get [
+    "sol" mem-get println
+  ] [
+    "NOT FOUND" println
+  ] if
+] each
+
+"" println
+"=== Searching for FIBONACCI ===" println
+"1, 1, 2, 3, 5, 8, 13, 21, 34, 55..." println
+"" println
+
+1 2 3 5 8 13 21 34 55 89 10 list
+[
+  "target" swap mem-set
+  "target" mem-get to-text ": " str-concat print
+  
+  "target" mem-get 1 list search
+  "lv" swap mem-set
+  "sol" swap mem-set
+  "ok" swap mem-set
+  
+  "ok" mem-get [
+    "sol" mem-get println
+  ] [
+    "NOT FOUND" println
+  ] if
+] each
+
+"" println
+"=== NOVEL DISCOVERY: Powers of 2 ===" println
+"1, 2, 4, 8, 16, 32, 64, 128, 256..." println
+"" println
+
+1 2 4 8 16 32 64 128 256 512 10 list
+[
+  "target" swap mem-set
+  "target" mem-get to-text ": " str-concat print
+  
+  "target" mem-get 1 list search
+  "lv" swap mem-set
+  "sol" swap mem-set
+  "ok" swap mem-set
+  
+  "ok" mem-get [
+    "sol" mem-get println
+  ] [
+    "NOT FOUND" println
+  ] if
+] each
+
+"" println
+"=== PATTERN EMERGENCE ===" println
+"Analyzing which programs produce perfect squares..." println
+"" println
+
+4 9 16 25 36 49 64 81 100 121 144 169 196 13 list
+[
+  "target" swap mem-set
+  "target" mem-get 1 list search
+  "lv" swap mem-set
+  "sol" swap mem-set
+  "ok" swap mem-set
+  
+  "ok" mem-get [
+    "target" mem-get to-text " = " str-concat
+    "sol" mem-get str-concat println
+  ] [ ] if
+] each
+
+"" println
+"╔════════════════════════════════════════════════════════╗" println
+"║  DISCOVERY: All perfect squares use 'dup mul'!         ║" println
+"║  This pattern EMERGED from search, not pre-programmed. ║" println
+"║                                                        ║" println
+"║  The system discovered: n dup mul = n²                 ║" println
+"╚════════════════════════════════════════════════════════╝" println

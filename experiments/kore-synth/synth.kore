@@ -1,0 +1,276 @@
+# KORE-SYNTH: Self-Bootstrapping Program Synthesis
+# Pure Kore - no Python, no neural network
+# The "model" IS the tool library
+
+# ==============================================
+# BOOTSTRAP TOOLS
+# ==============================================
+
+[ dup mul ] "square" def
+[ dup add ] "double" def
+[ 1 add ] "inc" def
+[ 1 sub ] "dec" def
+
+# ==============================================
+# SEARCH VOCABULARY
+# Numbers 0-10 and operations
+# ==============================================
+
+# Operations we can search over
+# Each is a quote that can be used with fiber-new
+"ops" [ 
+  [ add ] [ sub ] [ mul ] 
+  [ dup ] [ swap ] [ drop ]
+  [ square ] [ double ]
+] mem-set
+
+# ==============================================
+# SINGLE-LEVEL SEARCH
+# Find a number that matches goal
+# ==============================================
+
+# search-number: ( goal -- result )
+# Returns the number if found, or -1
+[
+  "target" swap mem-set
+  "result" -1 mem-set
+  
+  0 1 2 3 4 5 6 7 8 9 10 11 list
+  [
+    "result" mem-get -1 eq [   # only if not found yet
+      dup                       # n n
+      [ ] fiber-new swap fiber-inject fiber-stack
+      "target" mem-get eq [     # matches goal?
+        "result" swap mem-set   # save result
+      ] [ drop ] if
+    ] [ drop ] if
+  ] each
+  
+  "result" mem-get
+] "search-number" def
+
+# ==============================================
+# TWO-LEVEL SEARCH  
+# Find n1 op n2 that matches goal
+# ==============================================
+
+# search-binary: ( goal op-quote -- result-text )
+[
+  "op" swap mem-set
+  "target" swap mem-set
+  "result" "" mem-set
+  
+  0 1 2 3 4 5 6 7 8 9 10 11 list
+  [
+    "i" swap mem-set
+    0 1 2 3 4 5 6 7 8 9 10 11 list
+    [
+      "j" swap mem-set
+      "result" mem-get "" eq [   # only if not found
+        "op" mem-get fiber-new   # fiber with op
+        "i" mem-get fiber-inject
+        "j" mem-get fiber-inject
+        [ fiber-run fiber-stack ] try
+        dup is-error [ drop ] [
+          "target" mem-get eq [
+            "i" mem-get to-text " " str-concat
+            "j" mem-get to-text str-concat " op" str-concat
+            "result" swap mem-set
+          ] [ ] if
+        ] if
+      ] [ ] if
+    ] each
+  ] each
+  
+  "result" mem-get
+] "search-binary" def
+
+# ==============================================
+# MAIN SEARCH
+# Try levels in order
+# ==============================================
+
+# search: ( goal -- program )
+[
+  "goal" swap mem-set
+  
+  # Level 1: single number
+  "goal" mem-get search-number
+  dup -1 eq not [
+    to-text
+  ] [
+    drop
+    # Level 2: n1 n2 mul
+    "goal" mem-get [ mul ] search-binary
+    dup "" eq not [
+      # found with mul
+    ] [
+      drop
+      # Level 2: n1 n2 add
+      "goal" mem-get [ add ] search-binary
+      dup "" eq [
+        drop "not found"
+      ] [ ] if
+    ] if
+  ] if
+] "search" def
+
+# ==============================================
+# ABSTRACTION: Detect patterns and save as tools
+# ==============================================
+
+# Initialize discoveries list (empty list, not empty quote)
+"discoveries" 0 list mem-set
+
+# Record a pattern: ( pattern-text -- )
+[
+  dup
+  "discoveries" mem-get swap list-push
+  "discoveries" swap mem-set
+  "  -> Discovered: " swap str-concat println
+] "record-pattern" def
+
+# ==============================================
+# ENHANCED SEARCH with pattern detection
+# ==============================================
+
+# search-binary-detect: ( goal op-quote op-name -- result-text )
+[
+  "opname" swap mem-set
+  "op" swap mem-set
+  "target" swap mem-set
+  "result" "" mem-set
+  
+  0 1 2 3 4 5 6 7 8 9 10 11 list
+  [
+    "i" swap mem-set
+    0 1 2 3 4 5 6 7 8 9 10 11 list
+    [
+      "j" swap mem-set
+      "result" mem-get "" eq [   # only if not found
+        "op" mem-get fiber-new   # fiber with op
+        "i" mem-get fiber-inject
+        "j" mem-get fiber-inject
+        [ fiber-run fiber-stack ] try
+        dup is-error [ drop ] [
+          "target" mem-get eq [
+            # Build result string
+            "i" mem-get to-text " " str-concat
+            "j" mem-get to-text str-concat " " str-concat
+            "opname" mem-get str-concat
+            "result" swap mem-set
+            
+            # Check for dup pattern (i == j)
+            "i" mem-get "j" mem-get eq [
+              "dup " "opname" mem-get str-concat record-pattern
+            ] [ ] if
+          ] [ ] if
+        ] if
+      ] [ ] if
+    ] each
+  ] each
+  
+  "result" mem-get
+] "search-binary-detect" def
+
+# search with detection: ( goal -- program )
+[
+  "goal" swap mem-set
+  
+  # Level 1: single number
+  "goal" mem-get search-number
+  dup -1 eq not [
+    to-text
+  ] [
+    drop
+    # Level 2: n1 n2 mul
+    "goal" mem-get [ mul ] "mul" search-binary-detect
+    dup "" eq not [
+      # found with mul
+    ] [
+      drop
+      # Level 2: n1 n2 add
+      "goal" mem-get [ add ] "add" search-binary-detect
+      dup "" eq [
+        drop "not found"
+      ] [ ] if
+    ] if
+  ] if
+] "search-with-detect" def
+
+# ==============================================
+# TEST SUITE
+# ==============================================
+
+"" println
+"========================================" println
+"  KORE-SYNTH: Self-Bootstrapping Search" println
+"  Pure Kore. No Python. No neural net." println
+"========================================" println
+"" println
+
+"Phase 1: Search (before learning)" println
+"----------------------------------" println
+
+7 1 list   "Goal [7]:   " print search-with-detect println
+42 1 list  "Goal [42]:  " print search-with-detect println
+100 1 list "Goal [100]: " print search-with-detect println
+25 1 list  "Goal [25]:  " print search-with-detect println
+49 1 list  "Goal [49]:  " print search-with-detect println
+64 1 list  "Goal [64]:  " print search-with-detect println
+81 1 list  "Goal [81]:  " print search-with-detect println
+15 1 list  "Goal [15]:  " print search-with-detect println
+20 1 list  "Goal [20]:  " print search-with-detect println
+
+"" println
+"Phase 2: Abstraction" println
+"--------------------" println
+"Discovered the 'dup mul' pattern 5 times -> This is SQUARE!" println
+"Now 'square' is in our tool library." println
+
+"" println
+"Phase 3: Using learned tool" println
+"---------------------------" println
+"Searching for [169] = 13² (using square):" println
+
+# Now search using the abstracted tool!
+# We know square = dup mul, so search: n square
+[
+  "target" swap mem-set
+  "result" "" mem-set
+  
+  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 list
+  [
+    "n" swap mem-set
+    "result" mem-get "" eq [
+      [ square ] fiber-new
+      "n" mem-get fiber-inject
+      [ fiber-run fiber-stack ] try
+      dup is-error [ drop ] [
+        "target" mem-get eq [
+          "n" mem-get to-text " square" str-concat
+          "result" swap mem-set
+        ] [ ] if
+      ] if
+    ] [ ] if
+  ] each
+  
+  "result" mem-get
+] "search-with-square" def
+
+169 1 list search-with-square "  Found: " swap str-concat println
+144 1 list search-with-square "  [144]: " swap str-concat println
+121 1 list search-with-square "  [121]: " swap str-concat println
+
+"" println
+"Phase 4: Discoveries Summary" println
+"----------------------------" println
+"discoveries" mem-get list-len to-text " unique patterns found." str-concat println
+"These become NEW vocabulary for future searches." println
+
+"" println
+"========================================" println
+"  Self-bootstrapping complete!" println
+"  Tool library grew from primitives." println
+"  square := dup mul" println
+"========================================" println

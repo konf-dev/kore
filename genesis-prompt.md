@@ -21,7 +21,7 @@ Operations: Push(value), Call(name) — all programs are sequences of these
 1 2 add                      # stack: left to right
 [1 2 add]                    # quote (deferred code)
 list-empty                   # empty list (NOT [])
-"key" value mem-set          # key then value
+value "key" mem-set          # value first, then key (like def)
 cond [true-branch] [false-branch] if   # ALWAYS two quotes
 5 [body] times               # n then quote
 "name" [body] register       # name then quote
@@ -62,7 +62,7 @@ System: version now sleep uuid env-get exec print println
 1 2 add                           # 3
 [1 2 3] 0 list-get                # 1
 list-empty 1 list-push 2 list-push # [1 2]
-"x" 42 mem-set "x" mem-get        # 42
+42 "x" mem-set "x" mem-get        # 42
 [1 2 3] [dup mul] map             # [1 4 9]
 [1 2 3 4] 0 [add] fold            # 10
 5 3 gt ["yes"] ["no"] if          # "yes"
@@ -77,8 +77,8 @@ list-empty 1 list-push 2 list-push # [1 2]
 ## COMMON ERRORS
 
 ```kore
-[1 2 3] "x" mem-set      # WRONG: key then value
-"x" [1 2 3] mem-set      # correct
+"x" [1 2 3] mem-set      # WRONG: key then value (old syntax)
+[1 2 3] "x" mem-set      # correct: value then key (matches def)
 
 [] 1 list-push           # WRONG: [] is empty quote
 list-empty 1 list-push   # correct

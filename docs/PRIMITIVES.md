@@ -1,10 +1,10 @@
 # Kore Primitives Reference
 
-**Total: 186 primitives**
+**Total: ~200 primitives**
 
 All primitives do exactly one thing. No magic.
 
-## Execution (7)
+## Execution (8)
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `call` | `(q:Quote -- ...)` | Run a quote |
@@ -12,13 +12,15 @@ All primitives do exactly one thing. No magic.
 | `if` | `(cond:Bool then:Quote else:Quote -- ...)` | Conditional execution |
 | `loop` | `(body:Quote -- ...)` | Repeat until false on stack |
 | `def` | `(name:Text body:Quote -- )` | Define a new tool from a quote |
+| `def-verified` | `(body:Quote name:Text sig:Text -- )` | Define with effect verification |
 | `words` | `( -- names:List)` | List all tool names |
 | `describe` | `(name:Text -- sig:Text)` | Get tool signature |
 
-## Error Inspection (4)
+## Error Inspection (5)
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `is-error` | `(v:Any -- result:Bool)` | Check if value is an Error |
+| `error-info` | `(err:Error -- info:Map)` | Get structured error details |
 | `unwrap` | `(v:Any -- result:Any)` | Extract value, or stop if Error |
 | `assert` | `(cond:Bool msg:Text -- )` | Fail with message if condition is false |
 | `panic` | `(msg:Text -- )` | Intentionally fail with message |
@@ -43,15 +45,17 @@ All primitives do exactly one thing. No magic.
 | `mod` | `(a:Int b:Int -- c:Int)` | Integer modulo |
 | `neg` | `(a:Num -- b:Num)` | Negate a number |
 
-## Comparison (6)
+## Comparison (2 primitives + patterns)
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `eq` | `(a:Any b:Any -- result:Bool)` | Equal |
-| `neq` | `(a:Any b:Any -- result:Bool)` | Not equal |
 | `lt` | `(a:Num b:Num -- result:Bool)` | Less than |
-| `gt` | `(a:Num b:Num -- result:Bool)` | Greater than |
-| `le` | `(a:Num b:Num -- result:Bool)` | Less or equal |
-| `ge` | `(a:Num b:Num -- result:Bool)` | Greater or equal |
+
+**NOTE**: `gt`, `neq`, `le`, `ge` are NOT primitives. Use these patterns:
+- Greater than: `swap lt`
+- Not equal: `eq not`
+- Less or equal: `swap lt not`  
+- Greater or equal: `lt not`
 
 ## Logic (3)
 | Name | Signature | Description |
@@ -123,6 +127,18 @@ All primitives do exactly one thing. No magic.
 | `to-text` | `(v:Any -- s:Text)` | Convert to text |
 | `to-bool` | `(v:Any -- b:Bool)` | Convert to boolean |
 | `to-list` | `(v:Any -- l:List)` | Wrap in list |
+
+## Quote Serialization (2)
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `quote-to-text` | `(q:Quote -- s:Text)` | Serialize quote to Kore source |
+| `text-to-quote` | `(s:Text -- q:Quote)` | Parse Kore source to quote |
+
+**Use case:** Enables metaprogramming, persistence of learned tools, and code generation.
+```kore
+[dup mul] quote-to-text    # → "[ dup mul ]"
+"[ 1 2 add ]" text-to-quote call  # → 3
+```
 
 ## Combinators (6)
 | Name | Signature | Description |
@@ -237,22 +253,27 @@ Volatile key-value storage (cleared on restart). Uses `mem` resource quota.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mem-set` | `(key:Text value:Any -- )` | Store value |
+| `mem-set` | `(value:Any key:Text -- )` | Store value under key |
 | `mem-get` | `(key:Text -- value:Any)` | Get value (Null if not found) |
 | `mem-del` | `(key:Text -- )` | Remove key |
 | `mem-has` | `(key:Text -- exists:Bool)` | Check if key exists |
 | `mem-keys` | `( -- keys:List)` | List all keys |
+
+**Note:** `mem-set` uses `(value key --)` to match `def`'s `(body name --)` pattern.
+Example: `42 "x" mem-set` mirrors `[dup mul] "square" def`
 
 ## Persistent Storage (5)
 ROM storage that survives restarts. Uses `rom` resource quota.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `rom-set` | `(key:Text value:Any -- )` | Store value |
+| `rom-set` | `(value:Any key:Text -- )` | Store value under key |
 | `rom-get` | `(key:Text -- value:Any)` | Get value (Null if not found) |
 | `rom-del` | `(key:Text -- )` | Remove key |
 | `rom-has` | `(key:Text -- exists:Bool)` | Check if key exists |
 | `rom-keys` | `( -- keys:List)` | List all keys |
+
+**Note:** `rom-set` uses `(value key --)` to match `def` and `mem-set` patterns.
 
 ---
 
@@ -388,3 +409,40 @@ Affine (use at most once) and linear (use exactly once) types for resource manag
 | `is-linear` | `(v:Any -- result:Bool)` | Check if linear |
 | `is-affine` | `(v:Any -- result:Bool)` | Check if affine |
 | `linearity` | `(v:Any -- type:Text)` | Get linearity type |
+
+---
+
+## Effect Analysis (12)
+
+Static analysis and formal verification tools.
+
+| Name | Signature | Description |
+|------|-----------|-------------|
+| `effect-infer` | `(q:Quote -- analysis:Map)` | Full static analysis |
+| `effect-compose` | `(e1:Map e2:Map -- e3:Map)` | Compose two effects |
+| `effect-parse` | `(sig:Text -- effect:Map)` | Parse signature string |
+| `effect-net` | `(e:Map -- n:Int)` | Get net stack change |
+| `effect-valid?` | `(e:Map depth:Int -- result:Bool)` | Check if valid at depth |
+| `effect-new` | `(consumes:Int produces:Int -- e:Map)` | Create effect |
+| `io-effects` | `(q:Quote -- effects:List)` | Get IO effects |
+| `pure?` | `(q:Quote -- result:Bool)` | Check if pure |
+| `optimize` | `(q:Quote -- q:Quote)` | Algebraic optimization |
+| `simplify` | `(q:Quote -- q:Quote)` | Apply identities only |
+| `axioms` | `( -- axioms:List)` | Export algebraic identities |
+| `selftest` | `( -- result:Map)` | Verify runtime invariants |
+
+### Usage
+```kore
+# Infer effect of a quote
+[dup mul] effect-infer           # => {effect: {consumes: 1, produces: 1}, pure: true, ...}
+
+# Check if pure
+[println] pure?                   # => false
+[dup mul] pure?                   # => true
+
+# List algebraic axioms
+axioms 0 list-get                 # => {pattern: "swap swap", reduces_to: "", law: "involution"}
+
+# Verify runtime integrity
+selftest "passed" map-get         # => true
+```

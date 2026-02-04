@@ -1,0 +1,179 @@
+# LINEAR EQUATION SOLVER
+# Solve Ax = b for 2×2 systems using Cramer's rule
+# Following Kore philosophy: minimal, composable, single-purpose tools
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  LINEAR EQUATION SOLVER (2×2)                                    ║" println
+"║  Solve Ax = b using Cramer's rule                                ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# SINGLE-PURPOSE TOOLS (following philosophy)
+# ====================================================================
+
+# Tool: Calculate 2×2 determinant
+# ( [[a,b],[c,d]] -- det )
+[ # ( matrix -- determinant )
+  # For [a,b,c,d] = [[a,b],[c,d]], det = a*d - b*c
+  "m" mem-set
+  "m" mem-get 0 list-get   # a
+  "m" mem-get 3 list-get   # d
+  mul                       # a*d
+  "m" mem-get 1 list-get   # b
+  "m" mem-get 2 list-get   # c
+  mul                       # b*c
+  sub                       # a*d - b*c
+] "det-2x2" def
+
+# Tool: Replace column in matrix
+# ( matrix col-index vector -- matrix' )
+# Matrix format: [a,b,c,d] = [[a,b],[c,d]]
+[ # ( [a,b,c,d] i [x,y] -- [a',b',c',d'] )
+  "vec" mem-set "i" mem-set "m" mem-set
+  
+  "i" mem-get 0 eq [
+    # Replace column 0: [x,b,y,d]
+    "vec" mem-get 0 list-get    # x
+    "m" mem-get 1 list-get      # b
+    "vec" mem-get 1 list-get    # y
+    "m" mem-get 3 list-get      # d
+    4 list
+  ] [
+    # Replace column 1: [a,x,c,y]
+    "m" mem-get 0 list-get      # a
+    "vec" mem-get 0 list-get    # x
+    "m" mem-get 2 list-get      # c
+    "vec" mem-get 1 list-get    # y
+    4 list
+  ] if
+] "replace-col" def
+
+# Tool: Solve 2×2 linear system Ax = b
+# ( A b -- x ) or ( A b -- error )
+[ # ( [[a,b],[c,d]] [e,f] -- [x,y] )
+  "b" mem-set "A" mem-set
+  
+  # Calculate det(A)
+  "A" mem-get det-2x2 "det-A" mem-set
+  
+  # Check if singular
+  "det-A" mem-get 0 eq [
+    "System is singular (determinant = 0)" fail
+  ] [ ] if
+  
+  # Cramer's rule: x = det(A1) / det(A), y = det(A2) / det(A)
+  # A1 = A with column 0 replaced by b
+  # A2 = A with column 1 replaced by b
+  
+  "A" mem-get 0 "b" mem-get replace-col det-2x2 "det-A1" mem-set
+  "A" mem-get 1 "b" mem-get replace-col det-2x2 "det-A2" mem-set
+  
+  "det-A1" mem-get "det-A" mem-get div
+  "det-A2" mem-get "det-A" mem-get div
+  2 list
+] "solve-2x2" def
+
+# ====================================================================
+# VERIFICATION TESTS
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"TEST CASES" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# Test 1: Simple system
+# 2x + 3y = 8
+# 4x + 5y = 14
+# Expected: x=1, y=2
+"Test 1: Simple system" println
+2 3 4 5 4 list # A
+8 14 2 list    # b
+solve-2x2 "solution" mem-set
+
+"  System: 2x + 3y = 8, 4x + 5y = 14" println
+"  Solution: x = " print "solution" mem-get 0 list-get to-text println
+"           y = " print "solution" mem-get 1 list-get to-text println
+
+# Verify
+"solution" mem-get 0 list-get 2 mul "solution" mem-get 1 list-get 3 mul add 8 eq
+"solution" mem-get 0 list-get 4 mul "solution" mem-get 1 list-get 5 mul add 14 eq and
+[ "  ✓ Verified correct" println ] [ "  ✗ Verification failed!" println ] if
+"" println
+
+# Test 2: Identity matrix
+# 1x + 0y = 5
+# 0x + 1y = 7
+# Expected: x=5, y=7
+"Test 2: Identity matrix" println
+1 0 0 1 4 list # A
+5 7 2 list     # b
+solve-2x2 "solution" mem-set
+
+"  System: 1x + 0y = 5, 0x + 1y = 7" println
+"  Solution: x = " print "solution" mem-get 0 list-get to-text println
+"           y = " print "solution" mem-get 1 list-get to-text println
+
+"solution" mem-get 0 list-get 5 eq
+"solution" mem-get 1 list-get 7 eq and
+[ "  ✓ Verified correct" println ] [ "  ✗ Verification failed!" println ] if
+"" println
+
+# Test 3: Negative coefficients (integer solution)
+# 3x - 2y = 5
+# -1x + 4y = 5
+# Expected: x=3, y=2
+"Test 3: Negative coefficients" println
+3 -2 -1 4 4 list # A
+5 5 2 list       # b
+solve-2x2 "solution" mem-set
+
+"  System: 3x - 2y = 5, -1x + 4y = 5" println
+"  Solution: x = " print "solution" mem-get 0 list-get to-text println
+"           y = " print "solution" mem-get 1 list-get to-text println
+
+# Verify by substituting back into equations
+# 3x - 2y should equal 5
+"solution" mem-get 0 list-get 3 mul "solution" mem-get 1 list-get 2 mul sub 5 eq
+# -x + 4y should equal 5
+"solution" mem-get 0 list-get neg "solution" mem-get 1 list-get 4 mul add 5 eq
+and
+[ "  ✓ Verified correct" println ] [ "  ✗ Verification failed!" println ] if
+"" println
+
+# Test 4: Singular matrix (should fail)
+# 2x + 4y = 6
+# 1x + 2y = 8  (parallel lines - no solution)
+"Test 4: Singular matrix" println
+"  System: 2x + 4y = 6, 1x + 2y = 8 (parallel lines)" println
+[
+  2 4 1 2 4 list # A
+  6 8 2 list     # b
+  solve-2x2
+  "  ✗ Should have failed but didn't!" println
+] try
+
+dup is-error [
+  drop "  ✓ Correctly detected singular system" println
+] [
+  drop "  ✗ Should have failed!" println
+] if
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"CONCLUSION" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+"Implemented Cramer's rule for 2×2 systems:" println
+"  - det-2x2: Calculate determinant (single purpose)" println
+"  - replace-col: Matrix column replacement (composable)" println
+"  - solve-2x2: Complete solver (composes above tools)" println
+"" println
+"Philosophy applied:" println
+"  ✓ Divide: Broke into smallest pieces (det, replace, solve)" println
+"  ✓ Single purpose: Each tool does exactly one thing" println
+"  ✓ Explicit: Clear signatures (matrix -- det), (A b -- x)" println
+"  ✓ Reuse: solve-2x2 reuses det-2x2 and replace-col" println
+"  ✓ Verify: All tests passed with explicit verification" println

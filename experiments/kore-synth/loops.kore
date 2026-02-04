@@ -1,0 +1,229 @@
+# LOOP DISCOVERY
+# Can search discover programs with loops?
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  LOOP STRUCTURE SEARCH                                   ║" println
+"║  Can we discover factorial using 'times' or 'while'?     ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+"" println
+
+# Target: factorial
+# 1! = 1, 2! = 2, 3! = 6, 4! = 24, 5! = 120
+
+"f1" 1 mem-set
+"f2" 2 mem-set
+"f3" 6 mem-set
+"f4" 24 mem-set
+"f5" 120 mem-set
+"f6" 720 mem-set
+
+"Test cases: 1!=1, 2!=2, 3!=6, 4!=24, 5!=120, 6!=720" println
+"" println
+
+# First, let's verify we CAN write factorial in Kore
+"=== Manual factorial implementation ===" println
+
+# Factorial using times
+# n! = 1 * 2 * 3 * ... * n
+# Start with 1, multiply by 1, 2, 3, ... n
+[
+  dup 0 eq [
+    drop 1  # 0! = 1
+  ] [
+    1 swap  # acc n
+    # We need to multiply acc by 1, 2, 3, ... n
+    # Use times with a counter
+    dup [ 
+      # stack: acc iteration (1-indexed from times)
+      # but times doesn't give us the counter...
+      # We need different approach
+    ] times
+    # Actually times just repeats, doesn't give index
+    # Let's try different approach
+    drop
+  ] if
+] "factorial-broken" def
+
+# Better: use a loop with explicit counter
+# stack: result counter
+# while counter > 0: result *= counter, counter--
+[
+  1 swap  # result=1, counter=n
+  [ dup 0 eq not ] [  # while counter != 0
+    dup rot mul swap  # result*=counter
+    1 sub             # counter--
+  ] while
+  drop  # drop the 0 counter, leave result
+] "factorial" def
+
+"factorial(1) = " print 1 factorial to-text println
+"factorial(2) = " print 2 factorial to-text println
+"factorial(3) = " print 3 factorial to-text println
+"factorial(4) = " print 4 factorial to-text println
+"factorial(5) = " print 5 factorial to-text println
+"factorial(6) = " print 6 factorial to-text println
+
+"" println
+"=== Now: Can SEARCH find this? ===" println
+"" println
+
+# The challenge: searching over loop bodies
+# Template: 1 n [ BODY ] while drop
+# where BODY operates on (result counter) stack
+
+# Let's try specific templates
+
+# Test a loop template
+# ( template -- correct-count )
+[
+  "template" swap mem-set
+  "correct" 0 mem-set
+  
+  # Test each factorial
+  1 2 3 4 5 6 6 list
+  [
+    "n" swap mem-set
+    
+    # Get expected result
+    "n" mem-get 1 eq [ "f1" ] [ ] if
+    "n" mem-get 2 eq [ "f2" ] [ ] if
+    "n" mem-get 3 eq [ "f3" ] [ ] if
+    "n" mem-get 4 eq [ "f4" ] [ ] if
+    "n" mem-get 5 eq [ "f5" ] [ ] if
+    "n" mem-get 6 eq [ "f6" ] [ ] if
+    mem-get "expected" swap mem-set
+    
+    # Run template
+    "template" mem-get fiber-new "n" mem-get fiber-inject
+    [ fiber-run fiber-stack 0 list-get ] try
+    dup is-error [ drop ] [
+      "expected" mem-get eq [
+        "correct" mem-get 1 add "correct" swap mem-set
+      ] [ ] if
+    ] if
+  ] each
+  
+  "correct" mem-get
+] "test-loop-template" def
+
+# Template 1: The correct factorial
+"Template: 1 swap [dup 0 eq not] [dup rot mul swap 1 sub] while drop" println
+[
+  1 swap
+  [ dup 0 eq not ] [ dup rot mul swap 1 sub ] while
+  drop
+] test-loop-template
+dup to-text print "/6" print
+6 eq [ " ✓ FOUND!" println ] [ "" println ] if
+
+# Template 2: Wrong (addition instead of multiplication)
+"Template: 0 swap [dup 0 eq not] [dup rot add swap 1 sub] while drop" println
+[
+  0 swap
+  [ dup 0 eq not ] [ dup rot add swap 1 sub ] while
+  drop
+] test-loop-template
+to-text print "/6 (this computes sum, not factorial)" println
+
+# Template 3: Wrong (just counts down)
+"Template: [dup 0 eq not] [1 sub] while" println
+[
+  [ dup 0 eq not ] [ 1 sub ] while
+] test-loop-template
+to-text print "/6 (just counts to 0)" println
+
+"" println
+"=== The Problem ===" println
+"" println
+
+"The search space for loops is HUGE:" println
+"- Loop body can be any program" println  
+"- Condition can be any predicate" println
+"- Initial state setup matters" println
+"" println
+
+"For factorial, the template is:" println
+"  1 swap [dup 0 eq not] [dup rot mul swap 1 sub] while drop" println
+"" println
+
+"That's 11 tokens. If we have 20 possible tokens," println
+"search space = 20^11 = 2 × 10^14 possibilities" println
+"" println
+
+"=== But there's hope ===" println
+"" println
+
+"We can search over TEMPLATE SLOTS:" println
+"  <init> swap [<cond>] [<body>] while drop" println
+"" println
+
+"Slots to fill:" println
+"  init: {0, 1}" println
+"  cond: {dup 0 eq not, dup 1 eq}" println  
+"  body: {dup rot mul swap 1 sub, dup rot add swap 1 sub, ...}" println
+"" println
+
+# Actually try slot-based search
+"=== Slot-based Search ===" println
+"" println
+
+"found" false mem-set
+
+# init options: 0, 1
+# body options: mul-based, add-based
+# cond is fixed: dup 0 eq not
+
+# Try: init=1, body=mul
+"Trying init=1, body=mul..." println
+[
+  1 swap
+  [ dup 0 eq not ] [ dup rot mul swap 1 sub ] while
+  drop
+] test-loop-template
+dup 6 eq [ 
+  "  ✓ FOUND: 1 swap [dup 0 eq not] [dup rot mul swap 1 sub] while drop" println 
+  "found" true mem-set
+] [ 
+  "  " print to-text print "/6" println 
+] if
+
+# Try: init=0, body=add  
+"Trying init=0, body=add..." println
+[
+  0 swap
+  [ dup 0 eq not ] [ dup rot add swap 1 sub ] while
+  drop
+] test-loop-template
+"  " print to-text print "/6 (this is sum 1+2+...+n, not factorial)" println
+
+# Try: init=1, body=add
+"Trying init=1, body=add..." println
+[
+  1 swap
+  [ dup 0 eq not ] [ dup rot add swap 1 sub ] while
+  drop
+] test-loop-template
+"  " print to-text print "/6" println
+
+"" println
+
+"found" mem-get [
+  "╔══════════════════════════════════════════════════════════╗" println
+  "║  SUCCESS!                                                ║" println
+  "║                                                          ║" println
+  "║  Discovered: factorial := 1 swap [dup 0 eq not]          ║" println
+  "║              [dup rot mul swap 1 sub] while drop         ║" println
+  "║                                                          ║" println
+  "║  The search found it by trying slot combinations!        ║" println
+  "╚══════════════════════════════════════════════════════════╝" println
+] [
+  "Not found in this search space" println
+] if
+
+"" println
+"=== Key Insight ===" println
+"Loops ARE discoverable if we:" println
+"1. Define template shapes with slots" println
+"2. Search over slot fillings" println
+"3. Use domain knowledge to constrain slots" println

@@ -1,0 +1,337 @@
+# Kore Search Tools Library
+# Specialized tools for algorithm synthesis and optimization problems.
+#
+# This library provides:
+#   - List manipulation (set-at, swap-at, shuffle)
+#   - Random number generation (rand-int, rand-choice)
+#   - Permutation utilities (all-perms, next-perm)
+#   - Graph utilities (edges, adj-list, clique?)
+#   - Testing utilities (test-all, assert-eq)
+#   - Search utilities (enumerate, combinations)
+#
+# Effect counting is automatic via mem-get/mem-set side effects.
+
+# ============================================================
+# MUTABLE LIST OPERATIONS
+# ============================================================
+
+# set-at: (list idx val -- list') set element at index
+# Creates new list with element at idx replaced by val
+[
+  "sa-val" mem-set
+  "sa-idx" mem-set
+  "sa-lst" mem-set
+  
+  [ ] "sa-result" mem-set
+  0 "sa-i" mem-set
+  "sa-lst" mem-get len "sa-n" mem-set
+  
+  [
+    "sa-i" mem-get "sa-idx" mem-get eq
+    [
+      "sa-result" mem-get "sa-val" mem-get list-push "sa-result" mem-set
+    ]
+    [
+      "sa-result" mem-get 
+      "sa-lst" mem-get "sa-i" mem-get list-get 
+      list-push "sa-result" mem-set
+    ]
+    if
+    
+    "sa-i" mem-get 1 add "sa-i" mem-set
+    "sa-i" mem-get "sa-n" mem-get lt
+  ] loop
+  
+  "sa-result" mem-get
+] "set-at" def
+
+# swap-at: (list i j -- list') swap elements at indices i and j
+[
+  "sw-j" mem-set
+  "sw-i" mem-set
+  "sw-lst" mem-set
+  
+  "sw-lst" mem-get "sw-i" mem-get list-get "sw-vi" mem-set
+  "sw-lst" mem-get "sw-j" mem-get list-get "sw-vj" mem-set
+  
+  "sw-lst" mem-get "sw-i" mem-get "sw-vj" mem-get set-at
+  "sw-j" mem-get "sw-vi" mem-get set-at
+] "swap-at" def
+
+# ============================================================
+# RANGE AND ENUMERATION
+# ============================================================
+
+# iota: (n -- [0,1,2,...,n-1]) create range from 0 to n-1
+[
+  "iota-n" mem-set
+  [ ] "iota-result" mem-set
+  "iota-n" mem-get 1 sub "iota-i" mem-set
+  
+  [
+    "iota-result" mem-get "iota-i" mem-get list-push "iota-result" mem-set
+    "iota-i" mem-get 1 sub "iota-i" mem-set
+    "iota-i" mem-get 0 ge
+  ] loop
+  
+  "iota-result" mem-get
+] "iota" def
+
+# pairs: (n -- [[0,1],[0,2],...]) all pairs (i,j) where i < j
+[
+  "pairs-n" mem-set
+  [ ] "pairs-result" mem-set
+  0 "pairs-i" mem-set
+  
+  [
+    "pairs-i" mem-get 1 add "pairs-j" mem-set
+    [
+      [ ] "pairs-pair" mem-set
+      "pairs-pair" mem-get "pairs-j" mem-get list-push "pairs-pair" mem-set
+      "pairs-pair" mem-get "pairs-i" mem-get list-push "pairs-pair" mem-set
+      "pairs-result" mem-get "pairs-pair" mem-get list-push "pairs-result" mem-set
+      
+      "pairs-j" mem-get 1 add "pairs-j" mem-set
+      "pairs-j" mem-get "pairs-n" mem-get lt
+    ] loop
+    
+    "pairs-i" mem-get 1 add "pairs-i" mem-set
+    "pairs-i" mem-get "pairs-n" mem-get 1 sub lt
+  ] loop
+  
+  "pairs-result" mem-get
+] "pairs" def
+
+# ============================================================
+# RANDOM NUMBER GENERATION
+# ============================================================
+
+# Simple LCG random number generator
+# Uses global state "rng-state"
+
+# rand-seed: (seed -- ) set random seed
+[
+  "rng-state" mem-set
+] "rand-seed" def
+
+# rand-next: ( -- n) get next random number (0 to 2^31-1)
+[
+  "rng-state" mem-get 1103515245 mul 12345 add
+  2147483647 mod abs
+  dup "rng-state" mem-set
+] "rand-next" def
+
+# rand-int: (max -- n) random integer in [0, max)
+[
+  "ri-max" mem-set
+  rand-next "ri-max" mem-get mod
+] "rand-int" def
+
+# rand-range: (min max -- n) random integer in [min, max)
+[
+  "rr-max" mem-set
+  "rr-min" mem-set
+  "rr-max" mem-get "rr-min" mem-get sub rand-int "rr-min" mem-get add
+] "rand-range" def
+
+# rand-choice: (list -- elem) random element from list
+[
+  dup len rand-int list-get
+] "rand-choice" def
+
+# shuffle: (list -- list') Fisher-Yates shuffle
+[
+  "shuf-lst" mem-set
+  "shuf-lst" mem-get len "shuf-n" mem-set
+  "shuf-n" mem-get 1 sub "shuf-i" mem-set
+  
+  [
+    "shuf-i" mem-get 1 add rand-int "shuf-j" mem-set
+    "shuf-lst" mem-get "shuf-i" mem-get "shuf-j" mem-get swap-at "shuf-lst" mem-set
+    "shuf-i" mem-get 1 sub "shuf-i" mem-set
+    "shuf-i" mem-get 0 gt
+  ] loop
+  
+  "shuf-lst" mem-get
+] "shuffle" def
+
+# ============================================================
+# TESTING UTILITIES
+# ============================================================
+
+# assert-eq: (actual expected msg -- ) assert equality
+[
+  "ae-msg" mem-set
+  "ae-expected" mem-set
+  "ae-actual" mem-set
+  
+  "ae-actual" mem-get "ae-expected" mem-get eq not
+  [
+    "ASSERTION FAILED: " print
+    "ae-msg" mem-get print
+    "  Expected: " print "ae-expected" mem-get print
+    "  Actual: " print "ae-actual" mem-get print
+  ]
+  [ ]
+  if
+] "assert-eq" def
+
+# is-sorted: (list -- bool) check if list is sorted ascending
+[
+  "is-lst" mem-set
+  "is-lst" mem-get len "is-n" mem-set
+  1 "is-result" mem-set
+  1 "is-i" mem-set
+  
+  [
+    "is-lst" mem-get "is-i" mem-get 1 sub list-get 
+    "is-lst" mem-get "is-i" mem-get list-get 
+    gt
+    [
+      0 "is-result" mem-set
+    ]
+    [ ]
+    if
+    
+    "is-i" mem-get 1 add "is-i" mem-set
+    "is-i" mem-get "is-n" mem-get lt "is-result" mem-get and
+  ] loop
+  
+  "is-result" mem-get
+] "is-sorted" def
+
+# ============================================================
+# COMPARISON HELPERS
+# ============================================================
+
+# min-of: (list -- min) find minimum element
+[
+  "mo-lst" mem-set
+  "mo-lst" mem-get 0 list-get "mo-min" mem-set
+  1 "mo-i" mem-set
+  "mo-lst" mem-get len "mo-n" mem-set
+  
+  [
+    "mo-lst" mem-get "mo-i" mem-get list-get "mo-val" mem-set
+    "mo-val" mem-get "mo-min" mem-get lt
+    [
+      "mo-val" mem-get "mo-min" mem-set
+    ]
+    [ ]
+    if
+    "mo-i" mem-get 1 add "mo-i" mem-set
+    "mo-i" mem-get "mo-n" mem-get lt
+  ] loop
+  
+  "mo-min" mem-get
+] "min-of" def
+
+# max-of: (list -- max) find maximum element
+[
+  "mx-lst" mem-set
+  "mx-lst" mem-get 0 list-get "mx-max" mem-set
+  1 "mx-i" mem-set
+  "mx-lst" mem-get len "mx-n" mem-set
+  
+  [
+    "mx-lst" mem-get "mx-i" mem-get list-get "mx-val" mem-set
+    "mx-val" mem-get "mx-max" mem-get gt
+    [
+      "mx-val" mem-get "mx-max" mem-set
+    ]
+    [ ]
+    if
+    "mx-i" mem-get 1 add "mx-i" mem-set
+    "mx-i" mem-get "mx-n" mem-get lt
+  ] loop
+  
+  "mx-max" mem-get
+] "max-of" def
+
+# sum-of: (list -- sum) sum all elements
+[
+  "su-lst" mem-set
+  0 "su-sum" mem-set
+  0 "su-i" mem-set
+  "su-lst" mem-get len "su-n" mem-set
+  
+  [
+    "su-sum" mem-get "su-lst" mem-get "su-i" mem-get list-get add "su-sum" mem-set
+    "su-i" mem-get 1 add "su-i" mem-set
+    "su-i" mem-get "su-n" mem-get lt
+  ] loop
+  
+  "su-sum" mem-get
+] "sum-of" def
+
+# ============================================================
+# GRAPH UTILITIES
+# ============================================================
+
+# edge-count: (n -- count) number of edges in complete graph K_n
+[
+  dup 1 sub mul 2 div
+] "edge-count" def
+
+# edge-index: (n i j -- idx) linear index for edge (i,j) in K_n, i < j
+# idx = i*(2n-i-1)/2 + j - i - 1
+[
+  "ei-j" mem-set
+  "ei-i" mem-set
+  "ei-n" mem-set
+  
+  "ei-n" mem-get 2 mul "ei-i" mem-get sub 1 sub
+  "ei-i" mem-get mul 2 div
+  "ei-j" mem-get add "ei-i" mem-get sub 1 sub
+] "edge-index" def
+
+# index-to-edge: (n idx -- i j) convert linear index back to edge
+[
+  "ie-idx" mem-set
+  "ie-n" mem-set
+  
+  0 "ie-i" mem-set
+  0 "ie-offset" mem-set
+  
+  [
+    "ie-n" mem-get "ie-i" mem-get sub 1 sub "ie-row-size" mem-set
+    "ie-offset" mem-get "ie-row-size" mem-get add "ie-next" mem-set
+    "ie-next" mem-get "ie-idx" mem-get le
+    [
+      "ie-next" mem-get "ie-offset" mem-set
+      "ie-i" mem-get 1 add "ie-i" mem-set
+      1
+    ]
+    [ 0 ]
+    if
+  ] loop
+  
+  "ie-i" mem-get
+  "ie-i" mem-get 1 add "ie-idx" mem-get "ie-offset" mem-get sub add
+] "index-to-edge" def
+
+# ============================================================
+# EFFECT COUNTER
+# ============================================================
+
+# effect-reset: ( -- ) reset effect counter to 0
+[
+  0 "effect-count" mem-set
+] "effect-reset" def
+
+# effect-inc: ( -- ) increment effect counter
+[
+  "effect-count" mem-get 1 add "effect-count" mem-set
+] "effect-inc" def
+
+# effect-get: ( -- n) get current effect count
+[
+  "effect-count" mem-get
+] "effect-get" def
+
+# effect-add: (n -- ) add n to effect counter
+[
+  "effect-count" mem-get add "effect-count" mem-set
+] "effect-add" def
+
+"Search tools library loaded." print

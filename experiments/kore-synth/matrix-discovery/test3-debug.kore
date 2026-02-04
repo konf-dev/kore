@@ -1,0 +1,15 @@
+# Debug Test 3
+[ "m" mem-set
+  "m" mem-get 0 list-get "m" mem-get 3 list-get mul
+  "m" mem-get 1 list-get "m" mem-get 2 list-get mul sub
+] "det-2x2" def
+
+"Test 3 debug:" println
+3 -2 -1 4 4 list "A" mem-set
+"det(A) = " print "A" mem-get det-2x2 to-text println
+"Expected: 3*4 - (-2)*(-1) = 12 - 2 = 10" println
+
+"" println  
+"Solution should be x=2.6, y=1.4" println
+"Verify: 3(2.6) - 2(1.4) = 7.8 - 2.8 = 5 ✓" println
+"Verify: -1(2.6) + 4(1.4) = -2.6 + 5.6 = 3 ✓" println

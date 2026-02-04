@@ -1,0 +1,55 @@
+# Test 4×4 determinant
+
+[ "m" mem-set
+  "m" mem-get 0 list-get "m" mem-get 3 list-get mul
+  "m" mem-get 1 list-get "m" mem-get 2 list-get mul sub
+] "det-2x2" def
+
+[ "m" mem-set
+  "m" mem-get 0 list-get
+  "m" mem-get 4 list-get "m" mem-get 8 list-get mul
+  "m" mem-get 5 list-get "m" mem-get 7 list-get mul sub
+  mul
+  "m" mem-get 1 list-get
+  "m" mem-get 3 list-get "m" mem-get 8 list-get mul
+  "m" mem-get 5 list-get "m" mem-get 6 list-get mul sub
+  mul
+  sub
+  "m" mem-get 2 list-get
+  "m" mem-get 3 list-get "m" mem-get 7 list-get mul
+  "m" mem-get 4 list-get "m" mem-get 6 list-get mul sub
+  mul
+  add
+] "det-3x3" def
+
+[ "m4" mem-set
+  "m4" mem-get 0 list-get
+  "m4" mem-get 5 list-get "m4" mem-get 6 list-get "m4" mem-get 7 list-get
+  "m4" mem-get 9 list-get "m4" mem-get 10 list-get "m4" mem-get 11 list-get
+  "m4" mem-get 13 list-get "m4" mem-get 14 list-get "m4" mem-get 15 list-get
+  9 list det-3x3 mul
+  
+  "m4" mem-get 1 list-get
+  "m4" mem-get 4 list-get "m4" mem-get 6 list-get "m4" mem-get 7 list-get
+  "m4" mem-get 8 list-get "m4" mem-get 10 list-get "m4" mem-get 11 list-get
+  "m4" mem-get 12 list-get "m4" mem-get 14 list-get "m4" mem-get 15 list-get
+  9 list det-3x3 mul
+  sub
+  
+  "m4" mem-get 2 list-get
+  "m4" mem-get 4 list-get "m4" mem-get 5 list-get "m4" mem-get 7 list-get
+  "m4" mem-get 8 list-get "m4" mem-get 9 list-get "m4" mem-get 11 list-get
+  "m4" mem-get 12 list-get "m4" mem-get 13 list-get "m4" mem-get 15 list-get
+  9 list det-3x3 mul
+  add
+  
+  "m4" mem-get 3 list-get
+  "m4" mem-get 4 list-get "m4" mem-get 5 list-get "m4" mem-get 6 list-get
+  "m4" mem-get 8 list-get "m4" mem-get 9 list-get "m4" mem-get 10 list-get
+  "m4" mem-get 12 list-get "m4" mem-get 13 list-get "m4" mem-get 14 list-get
+  9 list det-3x3 mul
+  sub
+] "det-4x4" def
+
+1 0 0 0  0 1 0 0  0 0 1 0  0 0 0 1  16 list "I4" mem-set
+"I4" mem-get det-4x4 to-text println

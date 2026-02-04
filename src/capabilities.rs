@@ -51,6 +51,10 @@ pub struct Capabilities {
 
     /// Can write environment variables
     can_env_write: bool,
+
+    /// Can define tools without effect verification (discovery mode)
+    /// NOTE: This capability is NOT delegable - stripped on spawn
+    can_unverified: bool,
 }
 
 /// Network connection pattern
@@ -98,8 +102,10 @@ impl Capabilities {
 
     /// Create with all capabilities (for trusted contexts)
     pub fn all() -> Self {
+        let mut caps = HashSet::new();
+        caps.insert("all".to_string());
         Self {
-            caps: HashSet::new(),
+            caps,
             fs_read: vec![PathBuf::from("/")],
             fs_write: vec![PathBuf::from("/")],
             net_connect: vec![NetPattern {
@@ -111,6 +117,7 @@ impl Capabilities {
             can_spawn: true,
             can_env_read: true,
             can_env_write: true,
+            can_unverified: false, // NOTE: "all" does NOT include unverified - must be explicit
         }
     }
 
@@ -166,6 +173,9 @@ impl Capabilities {
             }
             ["env", "write"] => {
                 self.can_env_write = true;
+            }
+            ["unverified"] => {
+                self.can_unverified = true;
             }
             ["all"] => {
                 *self = Self::all();
@@ -260,6 +270,34 @@ impl Capabilities {
         self.caps.contains("all") || self.can_env_write
     }
 
+    /// Can define tools without effect verification? (discovery mode)
+    /// NOTE: This is intentionally NOT included in "all" - must be explicit
+    /// NOTE: This capability is stripped on spawn - cannot be delegated
+    pub fn can_unverified(&self) -> bool {
+        self.can_unverified
+    }
+
+    /// Create attenuated capabilities for spawn (subset of current)
+    /// CAP_UNVERIFIED is always stripped - cannot be delegated
+    pub fn attenuate(&self, subset: &Capabilities) -> Option<Capabilities> {
+        // Check that subset is actually a subset
+        for cap in subset.caps.iter() {
+            if cap == "unverified" {
+                continue; // Silently strip - never delegable
+            }
+            if !self.has(cap) {
+                return None; // Trying to escalate
+            }
+        }
+        
+        let mut result = subset.clone();
+        // Strip CAP_UNVERIFIED - NEVER delegable
+        result.can_unverified = false;
+        result.caps.remove("unverified");
+        
+        Some(result)
+    }
+
     // === Builders ===
 
     /// Add file read capability
@@ -309,6 +347,13 @@ impl Capabilities {
     /// Add env write capability
     pub fn with_env_write(mut self) -> Self {
         self.add("env:write");
+        self
+    }
+
+    /// Add unverified capability (discovery mode)
+    /// WARNING: This capability cannot be delegated to spawned agents
+    pub fn with_unverified(mut self) -> Self {
+        self.add("unverified");
         self
     }
 

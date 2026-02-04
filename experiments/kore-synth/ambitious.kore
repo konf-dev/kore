@@ -1,0 +1,255 @@
+# AMBITIOUS APPLICATIONS
+# What can trace-based synthesis actually enable?
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║                    AMBITIOUS APPLICATIONS                        ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# IDEA 1: ALGORITHM DISCOVERY
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 1: ALGORITHM DISCOVERY" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Problem: Given examples of sorted lists, discover SORTING." println
+"" println
+"  Input trace: [3,1,2] → [1,3,2] → [1,2,3]" println
+"  Input trace: [5,2,8,1] → ... → [1,2,5,8]" println
+"" println
+"  Search question: What transition puts smaller elements left?" println
+"" println
+"  Discovery: swap-if-greater → bubble sort!" println
+"" println
+
+# ====================================================================
+# IDEA 2: MATHEMATICAL THEOREM DISCOVERY  
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 2: MATHEMATICAL THEOREM DISCOVERY" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"We already discovered Gauss's formula: sum(1..n) = n(n+1)/2" println
+"" println
+"What ELSE can we discover?" println
+"" println
+"  • sum of squares: 1² + 2² + ... + n² = n(n+1)(2n+1)/6" println
+"  • sum of cubes: 1³ + 2³ + ... + n³ = [n(n+1)/2]²" println
+"  • geometric series: 1 + r + r² + ... = 1/(1-r)" println
+"  • binomial coefficients: C(n,k) patterns" println
+"" println
+"Method: Generate examples, search for closed-form expressions" println
+"" println
+
+# Let's actually try sum of squares
+"=== Attempting: Sum of Squares Formula ===" println
+"" println
+
+# Compute sum of squares manually
+[
+  "n" swap mem-set
+  "sum" 0 mem-set
+  1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 15 list
+  [
+    "i" swap mem-set
+    "i" mem-get "n" mem-get 1 add lt [
+      "sum" mem-get "i" mem-get dup mul add "sum" swap mem-set
+    ] [ ] if
+  ] each
+  "sum" mem-get
+] "sum-squares" def
+
+"Test data:" println
+"  n=1: 1² = " print 1 sum-squares to-text println
+"  n=2: 1²+2² = " print 2 sum-squares to-text println
+"  n=3: 1²+2²+3² = " print 3 sum-squares to-text println
+"  n=4: 1²+2²+3²+4² = " print 4 sum-squares to-text println
+"  n=5: 1²+...+5² = " print 5 sum-squares to-text println
+"" println
+
+"Testing formula n(n+1)(2n+1)/6:" println
+[
+  # n(n+1)(2n+1)/6
+  # stack: n
+  dup 1 add       # n (n+1)
+  over 2 mul 1 add  # n (n+1) (2n+1)
+  mul mul         # n(n+1)(2n+1)
+  6 div           # result
+] "sum-squares-formula" def
+
+"  formula(1) = " print 1 sum-squares-formula to-text print " (expected 1)" println
+"  formula(2) = " print 2 sum-squares-formula to-text print " (expected 5)" println
+"  formula(3) = " print 3 sum-squares-formula to-text print " (expected 14)" println
+"  formula(4) = " print 4 sum-squares-formula to-text print " (expected 30)" println
+"  formula(5) = " print 5 sum-squares-formula to-text print " (expected 55)" println
+"" println
+
+# ====================================================================
+# IDEA 3: INVERSE PROGRAMMING
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 3: INVERSE PROGRAMMING" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Given: A program P that transforms A → B" println
+"Find: Program P⁻¹ that transforms B → A" println
+"" println
+
+"Example:" println
+"  P = 'encrypt with key K'" println
+"  P⁻¹ = 'decrypt with key K'" println
+"" println
+"  By tracing P forward and searching for P⁻¹ that reverses each step." println
+"" println
+
+# ====================================================================
+# IDEA 4: SELF-OPTIMIZING CODE
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 4: SELF-OPTIMIZING CODE" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Given: A slow but correct program (oracle)" println
+"Find: A faster program with same behavior" println
+"" println
+
+"Method:" println
+"  1. Run slow program, collect trace" println
+"  2. Identify redundant/repeated computations" println
+"  3. Search for simpler transition function" println
+"  4. Synthesize optimized version" println
+"" println
+
+"Example:" println
+"  Slow: recursive fibonacci (exponential)" println
+"  Fast: iterative fibonacci (linear)" println
+"  Trace reveals: we recompute the same values → memoize or iterate" println
+"" println
+
+# ====================================================================
+# IDEA 5: SCIENTIFIC LAW DISCOVERY
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 5: SCIENTIFIC LAW DISCOVERY" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Given: Experimental observations (traces of nature)" println
+"Find: The underlying law (the transition function)" println
+"" println
+
+"Example - Planetary motion:" println
+"  Trace: (position, velocity) at each time step" println
+"  Discover: F = ma, gravity, Kepler's laws" println
+"" println
+
+"Example - Chemical reactions:" println
+"  Trace: (concentrations) over time" println
+"  Discover: Rate equations, equilibrium constants" println
+"" println
+
+"This is EXACTLY what we did with factorial!" println
+"Nature is the oracle. Physics is the transition function." println
+"" println
+
+# ====================================================================
+# IDEA 6: PROOF SYNTHESIS
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 6: PROOF SYNTHESIS (Curry-Howard)" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Key insight: Proofs ARE programs. Types ARE propositions." println
+"" println
+
+"Given: A theorem (type signature)" println
+"Find: A proof (program with that signature)" println
+"" println
+
+"Example:" println
+"  Theorem: 'For all n, there exists m such that m > n'" println
+"  Type: (n: Int) → { m: Int | m > n }" println
+"  Proof/Program: λn → n + 1" println
+"" println
+
+"Traces of successful proofs teach us PROOF STRATEGIES." println
+"" println
+
+# ====================================================================
+# THE BIG ONE: SELF-IMPROVING AI
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"IDEA 7: SELF-IMPROVING SYNTHESIS" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"The synthesizer can discover better SYNTHESIZERS." println
+"" println
+
+"Trace the synthesis process itself:" println
+"  1. We search for factorial" println
+"  2. We observe HOW we search (our own trace)" println
+"  3. We discover patterns in our search" println
+"  4. We synthesize a better search strategy" println
+"  5. Use the better strategy to search faster" println
+"  6. Repeat → exponential improvement" println
+"" println
+
+"This is the path to recursive self-improvement." println
+"" println
+
+# ====================================================================
+# WHAT'S ACTUALLY FEASIBLE NOW?
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"WHAT'S ACTUALLY FEASIBLE RIGHT NOW?" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Level 1 (TODAY):" println
+"  ✓ Arithmetic formulas (Gauss, sum of squares)" println
+"  ✓ Simple loops (factorial, fibonacci)" println
+"  ✓ Pattern discovery (commutativity, identity)" println
+"" println
+
+"Level 2 (NEXT WEEK):" println
+"  • List operations (reverse, filter, map)" println
+"  • Simple sorting (bubble sort from traces)" println
+"  • Recursive patterns (tree traversal)" println
+"" println
+
+"Level 3 (NEXT MONTH):" println
+"  • Algorithm optimization (slow → fast)" println
+"  • Inverse programs" println  
+"  • Multi-step formula discovery" println
+"" println
+
+"Level 4 (RESEARCH FRONTIER):" println
+"  • Self-improving synthesis" println
+"  • Scientific law discovery" println
+"  • Automated theorem proving" println
+"" println
+
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  PROPOSAL: Let's aim for SORTING                                 ║" println
+"║                                                                   ║" println
+"║  Can we trace a known sort, discover the comparison/swap         ║" println
+"║  transition, and synthesize a sorting algorithm?                 ║" println
+"║                                                                   ║" println
+"║  This would be a genuine algorithmic discovery.                  ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println

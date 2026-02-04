@@ -46,6 +46,6 @@
 "grep" [
     fs-read "\n" str-split  # pattern lines
     swap                    # lines pattern
-    [over swap str-find 0 ge] filter  # lines with pattern
+    [over swap str-find -1 swap lt] filter  # -1 < find-result means found
     swap drop
 ] def

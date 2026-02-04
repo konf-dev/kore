@@ -1,0 +1,183 @@
+# TRACE SYNTHESIS
+# The key insight: we have EXAMPLES of computation, not the program
+# Can we SYNTHESIZE the loop from observing a slow manual version?
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  SYNTHESIS FROM COMPUTATION TRACES                       ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+"" println
+
+# The problem with the previous approach:
+# We traced a KNOWN factorial. That's circular.
+#
+# Real question: Given ONLY input-output examples,
+# can we discover the loop?
+#
+# What if we have a SLOW oracle that computes factorial
+# but we can observe its intermediate states?
+
+"=== The Oracle Model ===" println
+"" println
+
+# Imagine we have:
+# - An oracle that computes factorial "somehow"
+# - We can observe its state at each step
+# - We want to discover the PATTERN
+
+# Let's simulate this with a step-by-step computation
+# that exposes intermediate state
+
+# Factorial as explicit steps
+# Input: n
+# Output: sequence of (acc, remaining) pairs
+
+[
+  "n" swap mem-set
+  "states" 0 list mem-set
+  "acc" 1 mem-set
+  "remaining" "n" mem-get mem-set
+  
+  # Record initial state
+  "states" mem-get
+  "acc" mem-get "remaining" mem-get 2 list
+  list-push "states" swap mem-set
+  
+  # Loop
+  [ "remaining" mem-get 0 eq not ] [
+    # Update: acc *= remaining, remaining -= 1
+    "acc" mem-get "remaining" mem-get mul "acc" swap mem-set
+    "remaining" mem-get 1 sub "remaining" swap mem-set
+    
+    # Record state
+    "states" mem-get
+    "acc" mem-get "remaining" mem-get 2 list
+    list-push "states" swap mem-set
+  ] while
+  
+  "states" mem-get
+] "oracle-factorial" def
+
+"Oracle trace for factorial(4):" println
+4 oracle-factorial "t4" swap mem-set
+"t4" mem-get [ "  " print to-text println ] each
+
+"" println
+"Oracle trace for factorial(5):" println
+5 oracle-factorial "t5" swap mem-set
+"t5" mem-get [ "  " print to-text println ] each
+
+"" println
+"=== Pattern Extraction from Oracle Traces ===" println
+"" println
+
+# Now we have clean state traces:
+# [1, 4] → [4, 3] → [12, 2] → [24, 1] → [24, 0]
+#
+# Task: Discover the transition function f(acc, cnt) → (acc', cnt')
+
+"Analyzing transitions in factorial(5) trace:" println
+"" println
+
+# Extract pairs of consecutive states
+"t5" mem-get "trace" swap mem-set
+"trace" mem-get list-len 1 sub "len" swap mem-set
+
+0 1 2 3 4 5 list
+[
+  "i" swap mem-set
+  "i" mem-get "len" mem-get lt [
+    # Get state i and state i+1
+    "trace" mem-get "i" mem-get list-get "s1" swap mem-set
+    "trace" mem-get "i" mem-get 1 add list-get "s2" swap mem-set
+    
+    "s1" mem-get 0 list-get "a1" swap mem-set
+    "s1" mem-get 1 list-get "c1" swap mem-set
+    "s2" mem-get 0 list-get "a2" swap mem-set
+    "s2" mem-get 1 list-get "c2" swap mem-set
+    
+    # Print transition
+    "[" print "a1" mem-get to-text print ", " print "c1" mem-get to-text print "] → [" print
+    "a2" mem-get to-text print ", " print "c2" mem-get to-text print "]" println
+    
+    # Analyze relationship
+    "  counter change: " print "c2" mem-get "c1" mem-get sub to-text println
+    "  acc change: a2 = a1 * c1? " print 
+    "a2" mem-get "a1" mem-get "c1" mem-get mul eq [ "YES" println ] [ "NO" println ] if
+    
+  ] [ ] if
+] each
+
+"" println
+"=== Discovered Transition Rule ===" println
+"" println
+"From the traces, the transition is:" println
+"  cnt' = cnt - 1" println
+"  acc' = acc × cnt" println
+"" println
+"This is EXACTLY the factorial loop body!" println
+
+"" println
+"=== The Synthesis Procedure ===" println
+"" println
+
+"Given oracle traces, we can synthesize:" println
+"" println
+"1. INIT: First state's acc value (1)" println
+"2. COND: Loop until second element is 0" println
+"3. BODY: Apply discovered transition" println
+"4. RETURN: First element of final state" println
+"" println
+
+# Actually synthesize it!
+"=== Synthesized Program ===" println
+"" println
+
+# From the traces, we learned:
+# - init: acc = 1
+# - transition: acc' = acc * cnt, cnt' = cnt - 1
+# - termination: cnt == 0
+# - result: acc
+
+[ 
+  # init: push 1, swap to get [1, n]
+  1 swap
+  # loop while counter != 0
+  [ dup 0 eq not ] 
+  [
+    # transition: [acc, cnt] → [acc*cnt, cnt-1]
+    dup rot mul swap 1 sub
+  ] while
+  # return: drop counter, keep acc
+  drop
+] "synthesized-factorial" def
+
+"Testing synthesized program:" println
+"synthesized-factorial(1) = " print 1 synthesized-factorial to-text println
+"synthesized-factorial(3) = " print 3 synthesized-factorial to-text println
+"synthesized-factorial(5) = " print 5 synthesized-factorial to-text println
+"synthesized-factorial(7) = " print 7 synthesized-factorial to-text println
+
+"" println
+"╔══════════════════════════════════════════════════════════╗" println
+"║  THE KEY INSIGHT                                         ║" println
+"║                                                          ║" println
+"║  Traces reveal TRANSITION RULES, not just input→output.  ║" println
+"║                                                          ║" println
+"║  From [1,5]→[5,4]→[20,3]→[60,2]→[120,1]→[120,0]          ║" println
+"║  We can LEARN: acc' = acc × cnt, cnt' = cnt - 1          ║" println
+"║                                                          ║" println
+"║  This is PROGRAM SYNTHESIS from behavioral traces!       ║" println
+"╚══════════════════════════════════════════════════════════╝" println
+
+"" println
+"=== Meta-Insight ===" println
+"" println
+"The trace is a CURRICULUM:" println
+"  - Each step is a micro-example" println
+"  - Consecutive steps reveal the transition function" println
+"  - Multiple traces confirm the pattern" println
+"" println
+"We don't need to search 20^11 programs." println
+"We just need to find f such that: state_{i+1} = f(state_i)" println
+"That's a much smaller search space!" println

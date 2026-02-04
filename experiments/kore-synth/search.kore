@@ -1,0 +1,98 @@
+# KORE-SYNTH: Pure Kore search test
+# Following the postulates exactly
+
+# ==============================================
+# TOOLS
+# ==============================================
+
+[ dup mul ] "square" def
+[ dup add ] "double" def
+
+# ==============================================
+# TEST
+# ==============================================
+
+"" println
+"=== KORE-SYNTH: Fiber-based Search ===" println
+"" println
+
+# Test 1: Basic fiber
+"Test 1: Basic fiber" println
+[ 3 4 add ] fiber-new
+dup fiber-status "  Status: " print println
+fiber-run 
+dup fiber-status "  After run: " print println
+fiber-stack to-text "  Stack: " print println
+"" println
+
+# Test 2: Step through a fiber  
+"Test 2: Stepping" println
+[ 5 6 mul ] fiber-new
+fiber-step fiber-step fiber-step
+fiber-stack to-text "  5 6 mul = " print println
+"" println
+
+# Test 3: Goal matching
+"Test 3: Goal matching" println
+"goal" 7 1 list mem-set    # key="goal", value=[7]
+[ 7 ] fiber-new fiber-run fiber-stack
+"goal" mem-get eq
+"  [7] = goal? " print to-text println
+"" println
+
+# Test 4: Search for [7] using each
+"Test 4: Search for goal [7]" println
+"goal" 7 1 list mem-set
+
+# Use 'each' on a list of candidates
+0 1 2 3 4 5 6 7 8 9 10 11 list
+[
+  # For each n: inject into fiber, check if matches goal
+  dup                              # n n
+  [ ] fiber-new swap fiber-inject  # n fiber
+  fiber-stack                      # n [n]
+  "goal" mem-get eq                # n bool
+  [ 
+    "  Found: " print to-text println 
+  ] [ 
+    drop  # must drop the n
+  ] if
+] each
+"" println
+
+# Test 5: Two-level search for [42]
+"Test 5: Search for goal [42] = 6*7" println
+"goal" 42 1 list mem-set
+"found" false mem-set
+
+# Try all pairs n1 n2 mul
+0 1 2 3 4 5 6 7 8 9 10 11 list   # outer list
+[
+  "i" swap mem-set                 # store i
+  0 1 2 3 4 5 6 7 8 9 10 11 list  # inner list
+  [
+    "j" swap mem-set               # store j
+    "found" mem-get not [
+      # Build fiber: inject i, inject j, run mul
+      [ mul ] fiber-new
+      "i" mem-get fiber-inject
+      "j" mem-get fiber-inject
+      fiber-run fiber-stack        # result stack
+      "goal" mem-get eq [
+        "  Found: " print 
+        "i" mem-get to-text print 
+        " * " print 
+        "j" mem-get to-text print 
+        " = 42" println
+        "found" true mem-set
+      ] [ ] if
+    ] [ ] if
+  ] each
+] each
+
+"found" mem-get not [
+  "  Not found" println
+] [ ] if
+"" println
+
+"=== Done ===" println

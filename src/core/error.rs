@@ -1,8 +1,9 @@
-//! Error primitives (3)
+//! Error primitives (4)
 //!
 //! - try: (quote -- ...| error) execute, catch errors as values
 //! - fail: (msg -- !) raise error, never returns
 //! - is-error: (a -- bool) check if value is an error
+//! - error-info: (error -- map) convert error to structured map
 
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
@@ -58,6 +59,35 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ));
+
+    // error-info: (error -- map)
+    // Convert error to structured map for machine parsing
+    dict.register(Tool::native(
+        "error-info",
+        "(err:Error -- info:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let val = stack.pop()?;
+                match val {
+                    Value::Error(e) => {
+                        // Convert ErrorValue to structured map
+                        use indexmap::IndexMap;
+                        let mut m = IndexMap::new();
+                        m.insert("code".into(), Value::Text(e.code.clone()));
+                        m.insert("message".into(), Value::Text(e.message.clone()));
+                        stack.push(Value::Map(m))?;
+                    }
+                    _ => {
+                        return Err(Error::TypeError {
+                            expected: "Error".to_string(),
+                            got: val.type_name().to_string(),
+                        });
+                    }
+                }
+                Ok((stack, ctx))
+            })
+        },
+    ).with_doc("Convert error to structured map for machine parsing"));
 }
 
 #[cfg(test)]

@@ -1,0 +1,215 @@
+# PERSISTENT CONTINUOUS LEARNING
+# A system that learns over time and SAVES what it learns
+
+[ swap lt ] "gt" def
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  PERSISTENT CONTINUOUS LEARNING                                  ║" println
+"║  Tools are saved to disk and persist across sessions             ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# Knowledge base file path
+"/tmp/kore-knowledge-base.kore" "kb-path" mem-set
+
+# ====================================================================
+# KNOWLEDGE BASE MANAGEMENT
+# ====================================================================
+
+# Initialize: Try to load existing knowledge base
+[
+  "kb-path" mem-get fs-read text-to-quote call
+  "✓ Loaded existing knowledge base" println
+  1  # Push success marker
+] try 
+dup is-error [
+  drop "○ Starting fresh (no existing knowledge base)" println
+] [ drop ] if
+
+# Clear any leftover stack items
+# (the try/load may leave things on stack)
+
+# Tool registry (in-memory for this session)
+0 list "kb-tools" mem-set
+
+# Add a tool to knowledge base
+[ # ( quote name -- )
+  dup "tool-name" mem-set
+  swap "tool-code" mem-set
+  drop  # Drop the extra name from dup
+  
+  # Register in current session
+  "tool-code" mem-get "tool-name" mem-get def
+  
+  # Add to in-memory registry: store as [name, code]
+  "kb-tools" mem-get 
+  "tool-name" mem-get "tool-code" mem-get 2 list 
+  list-push "kb-tools" mem-set
+  
+  "  → Learned: " print "tool-name" mem-get println
+] "kb-learn" def
+
+# Save knowledge base to disk
+[
+  "# Kore Knowledge Base - Auto-generated\n# Contains " 
+  "kb-tools" mem-get list-len to-text str-concat
+  " learned tools\n\n" str-concat
+  "content" mem-set
+  
+  "kb-tools" mem-get [
+    dup "entry" mem-set
+    # entry is [name, code]
+    0 list-get "name" mem-set
+    "entry" mem-get 1 list-get "code" mem-set
+    
+    "content" mem-get
+    "code" mem-get quote-to-text str-concat
+    " \"" str-concat
+    "name" mem-get str-concat
+    "\" def\n" str-concat
+    "content" mem-set
+  ] each
+  
+  "kb-path" mem-get "content" mem-get fs-write
+  "✓ Saved knowledge base to " print "kb-path" mem-get println
+] "kb-save" def
+
+# ====================================================================
+# PROBLEM SOLVER WITH LEARNING
+# ====================================================================
+
+# Generic synthesis: find a program that maps inputs to outputs
+[ # ( examples candidates -- quote|null )
+  "candidates" mem-set
+  "examples" mem-set
+  null "found" mem-set
+  
+  "candidates" mem-get [
+    "c" mem-set
+    "found" mem-get null eq [
+      0 "pass" mem-set
+      "examples" mem-get [
+        "ex" mem-set
+        "ex" mem-get 0 list-get "input" mem-set
+        "ex" mem-get 1 list-get "expected" mem-set
+        
+        "c" mem-get fiber-new "input" mem-get fiber-inject 
+        [ fiber-run fiber-stack 0 list-get ] try
+        dup is-error not [
+          "expected" mem-get eq [ "pass" mem-get 1 add "pass" mem-set ] [ ] if
+        ] [ drop ] if
+      ] each
+      
+      "pass" mem-get "examples" mem-get list-len eq [
+        "c" mem-get "found" mem-set
+      ] [ ] if
+    ] [ ] if
+  ] each
+  
+  "found" mem-get
+] "synthesize" def
+
+# ====================================================================
+# LEARNING SESSION
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"LEARNING SESSION" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+# Problem 1: Double
+"Problem 1: Find f where f(1)=2, f(2)=4, f(3)=6" println
+1 2 2 list  2 4 2 list  3 6 2 list  3 list "examples" mem-set
+[ 2 mul ] [ dup add ] [ 1 add dup add 1 sub ] 3 list "candidates" mem-set
+
+"examples" mem-get "candidates" mem-get synthesize "result" mem-set
+"result" mem-get null eq not [
+  "result" mem-get "double" kb-learn
+] [ "  ✗ Could not solve" println ] if
+"" println
+
+# Problem 2: Square
+"Problem 2: Find f where f(2)=4, f(3)=9, f(4)=16" println
+2 4 2 list  3 9 2 list  4 16 2 list  3 list "examples" mem-set
+[ dup mul ] [ 2 mul ] [ dup add ] 3 list "candidates" mem-set
+
+"examples" mem-get "candidates" mem-get synthesize "result" mem-set
+"result" mem-get null eq not [
+  "result" mem-get "square" kb-learn
+] [ "  ✗ Could not solve" println ] if
+"" println
+
+# Problem 3: Increment
+"Problem 3: Find f where f(0)=1, f(5)=6, f(10)=11" println
+0 1 2 list  5 6 2 list  10 11 2 list  3 list "examples" mem-set
+[ 1 add ] [ 2 add 1 sub ] 2 list "candidates" mem-set
+
+"examples" mem-get "candidates" mem-get synthesize "result" mem-set
+"result" mem-get null eq not [
+  "result" mem-get "inc" kb-learn
+] [ "  ✗ Could not solve" println ] if
+"" println
+
+# Problem 4: Decrement
+"Problem 4: Find f where f(5)=4, f(10)=9, f(1)=0" println
+5 4 2 list  10 9 2 list  1 0 2 list  3 list "examples" mem-set
+[ 1 sub ] [ 2 sub 1 add ] 2 list "candidates" mem-set
+
+"examples" mem-get "candidates" mem-get synthesize "result" mem-set
+"result" mem-get null eq not [
+  "result" mem-get "dec" kb-learn
+] [ "  ✗ Could not solve" println ] if
+"" println
+
+# Problem 5: Negate
+"Problem 5: Find f where f(5)=-5, f(-3)=3, f(0)=0" println
+5 -5 2 list  -3 3 2 list  0 0 2 list  3 list "examples" mem-set
+[ neg ] [ 0 swap sub ] 2 list "candidates" mem-set
+
+"examples" mem-get "candidates" mem-get synthesize "result" mem-set
+"result" mem-get null eq not [
+  "result" mem-get "negate" kb-learn
+] [ "  ✗ Could not solve" println ] if
+"" println
+
+# ====================================================================
+# SAVE AND REPORT
+# ====================================================================
+
+kb-save
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"KNOWLEDGE BASE SUMMARY" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Total tools learned: " print "kb-tools" mem-get list-len to-text println
+"" println
+"Tools:" println
+"kb-tools" mem-get [
+  dup "entry" mem-set
+  # entry is [name, code]
+  "  " print 0 list-get dup print drop " = " print 
+  "entry" mem-get 1 list-get quote-to-text println
+] each
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"VERIFYING LEARNED TOOLS WORK" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+5 double "double(5) = " print to-text println
+4 square "square(4) = " print to-text println
+10 inc "inc(10) = " print to-text println
+7 dec "dec(7) = " print to-text println
+42 negate "negate(42) = " print to-text println
+"" println
+
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  SUCCESS: Knowledge persisted to disk!                          ║" println
+"║  Run this again and it will load the saved tools.               ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println

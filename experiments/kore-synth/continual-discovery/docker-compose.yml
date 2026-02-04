@@ -1,0 +1,33 @@
+services:
+  kore-discovery:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-synth/continual-discovery/Dockerfile
+    volumes:
+      # Persist knowledge across runs
+      - ./mnt:/mnt
+    container_name: kore-discovery
+    
+  # Continuous discovery - runs forever
+  kore-continuous:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-synth/continual-discovery/Dockerfile
+    volumes:
+      - ./mnt:/mnt
+    container_name: kore-continuous
+    command: ["kore", "continuous.kore"]
+    
+  # Interactive mode - for experimenting
+  kore-shell:
+    build:
+      context: ../../..
+      dockerfile: experiments/kore-synth/continual-discovery/Dockerfile
+    volumes:
+      - ./mnt:/mnt
+    container_name: kore-shell
+    stdin_open: true
+    tty: true
+    entrypoint: ["kore"]
+    profiles:
+      - shell

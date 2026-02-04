@@ -1,6 +1,6 @@
 # Kore Language Specification for LLMs
 
-> **Version**: 2.0 | **Date**: 2026-02-03 | **Status**: Production Ready
+> **Version**: 2.1 | **Date**: 2026-02-04 | **Status**: Production Ready
 > 
 > This document is the authoritative machine-readable specification for generating Kore code.
 
@@ -60,6 +60,68 @@ Every Kore program is a sequence of Push and Call operations.
 | Unrestricted | ✅ | ✅ | Normal values |
 | Affine | ❌ | ✅ | At-most-once (Handles) |
 | Linear | ❌ | ❌ | Exactly-once |
+
+---
+
+## ⚠️ CRITICAL PITFALLS (Read First!)
+
+> **This section documents common LLM mistakes when generating Kore code.**
+
+### Pitfall 1: `[ 1 2 3 ]` Creates a QUOTE, Not a List!
+
+```kore
+; WRONG - this is a Quote, not a List:
+[ 1 2 3 ]              ; type-of => "quote"
+
+; CORRECT - create a List:
+3 1 2 3 list           ; Creates List [1, 2, 3] - N items followed by N values
+0 list 1 list-push 2 list-push 3 list-push  ; Also creates [1, 2, 3]
+```
+
+**Key insight**: `[ ... ]` is for code quotation (delayed execution), not data.
+
+### Pitfall 2: Comparison Operators Don't Exist
+
+These tools are **NOT defined**: `gt`, `neq`, `le`, `ge`, `lte`, `gte`
+
+```kore
+; WRONG - will fail with "Unknown tool: gt"
+5 3 gt
+
+; CORRECT - compose inline:
+5 3 swap lt            ; 5 > 3 → true (swap then lt)
+5 3 eq not             ; 5 ≠ 3 → true
+3 5 swap lt not        ; 3 ≤ 5 → true
+```
+
+### Pitfall 3: `abs`, `when`, `unless` Don't Exist
+
+```kore
+; WRONG:
+-5 abs                 ; Unknown tool: abs
+x [ do-something ] when  ; Unknown tool: when
+
+; CORRECT - compose inline:
+-5 dup 0 lt [ neg ] [ ] if     ; abs pattern
+x [ do-something ] [ ] if      ; when pattern  
+x [ ] [ do-something ] if      ; unless pattern
+```
+
+### Pitfall 4: `list-push` Appends, Doesn't Prepend
+
+```kore
+0 list 1 list-push 2 list-push 3 list-push
+; Result: [1, 2, 3] - values appear in push order
+```
+
+### Pitfall 5: Can't Print Lists Directly
+
+```kore
+; Lists don't have a direct text representation for println
+; Either extract elements or use for debugging:
+my-list list-len to-text println  ; Print the length
+my-list 0 list-get to-text println  ; Print first element
+```
 
 ---
 
@@ -143,23 +205,27 @@ condition [ then-branch ] [ else-branch ] if
 | `mod` | `(a b -- rem)` | Modulo (a % b) |
 | `neg` | `(a -- -a)` | Negation |
 
-**Note**: `abs` can be composed: `dup 0 lt [ neg ] when`
+**WARNING**: `abs` is NOT a built-in tool. Compose it as: `dup 0 lt [ neg ] [ ] if`
 
-### 4.3 Comparison (2 primitives + 4 composed)
+### 4.3 Comparison (2 primitives ONLY)
 
-**Primitives:**
+**CRITICAL**: Only `eq` and `lt` exist as built-in tools. All other comparisons must be composed inline.
+
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `eq` | `(a b -- bool)` | Equal |
 | `lt` | `(a b -- bool)` | Less than |
 
-**Composed** (from primitives):
-| Tool | Definition | Description |
-|------|------------|-------------|
-| `neq` | `eq not` | Not equal |
-| `gt` | `swap lt` | Greater than |
-| `lte` | `gt not` | Less or equal |
-| `gte` | `lt not` | Greater or equal |
+**Composition Patterns** (NOT defined tools - use these patterns inline):
+
+| Pattern | How to Write | Example |
+|---------|--------------|---------|
+| Greater than | `swap lt` | `5 3 swap lt` → true (5 > 3) |
+| Not equal | `eq not` | `5 3 eq not` → true |
+| Less or equal | `swap lt not` | `3 5 swap lt not` → true (3 ≤ 5) |
+| Greater or equal | `lt not` | `5 3 lt not` → true (5 ≥ 3) |
+
+**WARNING**: `gt`, `neq`, `lte`, `gte`, `le`, `ge` are NOT defined tools. You MUST write the composition inline.
 
 ### 4.4 Logic (3 tools)
 
@@ -253,15 +319,28 @@ condition [ then-branch ] [ else-branch ] if
 | `fail` | `(msg -- )` | Raise error |
 | `spawn` | `(q caps -- handle)` | Create sandboxed context |
 
-**Composed**: `when` = `[ ] if`, `unless` = `swap [ ] if`, `unwrap` = `dup is-error [ fail ] when`
+**Composed**: `unwrap` = `dup is-error [ fail ] [ ] if`
 
-### 4.10 Definition Tools (3 primitives)
+**Composition Patterns** (NOT defined tools - write inline):
+- `when` pattern: `condition [ body ] [ ] if`
+- `unless` pattern: `condition [ ] [ body ] if`
+
+**WARNING**: `when` and `unless` are NOT defined tools. Use the patterns above.
+
+### 4.10 Definition Tools (4 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `def` | `(val name -- )` | Define word |
+| `def-verified` | `(quote name sig -- )` | Define with effect verification |
 | `words` | `( -- list)` | List all defined words |
 | `meta` | `(name -- map)` | Get tool metadata |
+
+**NEW in 2.1**: `def-verified` verifies the effect matches before defining:
+```kore
+[ dup mul ] "square" "(n -- n)" def-verified  ; OK - effect matches
+[ dup ] "bad" "(a -- a)" def-verified          ; FAILS - effect is (1 -- 2)
+```
 
 ### 4.11 Combinators (4 tools)
 
@@ -312,7 +391,7 @@ condition [ then-branch ] [ else-branch ] if
 | `is-affine` | `(val -- bool)` | Check if affine |
 | `linearity` | `(val -- sym)` | Get linearity as symbol |
 
-### 4.14 Effect Analysis Tools (7 tools)
+### 4.14 Effect Analysis Tools (12 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -326,6 +405,18 @@ condition [ then-branch ] [ else-branch ] if
 | `pure?` | `(quote -- bool)` | Check if pure |
 | `optimize` | `(quote -- quote')` | Algebraic optimization |
 | `simplify` | `(quote -- quote')` | Identities only |
+| `axioms` | `( -- list)` | Export algebraic identities |
+| `selftest` | `( -- map)` | Verify runtime invariants |
+
+**NEW in 2.1**: `axioms` and `selftest` for formal verification:
+```kore
+; List all algebraic identities
+axioms list-len println  ; "21" - number of axioms
+axioms 0 list-get        ; {pattern: "swap swap", reduces_to: "", law: "involution"}
+
+; Verify runtime integrity
+selftest "passed" map-get  ; true if all invariants hold
+```
 
 ### 4.15 Time Tools (2 tools)
 
@@ -392,17 +483,24 @@ condition [ then-branch ] [ else-branch ] if
 | Tool | Stack Effect | IO Effect | Description |
 |------|--------------|-----------|-------------|
 | `mem-get` | `(key -- val)` | mem | Get from memory |
-| `mem-set` | `(key val -- )` | mem | Set in memory |
+| `mem-set` | `(val key -- )` | mem | Set in memory (value first, like def) |
 | `mem-del` | `(key -- )` | mem | Delete from memory |
 | `mem-has` | `(key -- bool)` | mem | Check key exists |
 | `mem-keys` | `( -- list)` | mem | List memory keys |
 | `rom-get` | `(key -- val)` | mem | Get from read-only |
-| `rom-set` | `(key val -- )` | mem | Set in ROM (init only) |
+| `rom-set` | `(val key -- )` | mem | Set in ROM (value first, like def) |
 | `rom-del` | `(key -- )` | mem | Delete from ROM |
 | `rom-has` | `(key -- bool)` | mem | Check ROM key exists |
 | `rom-keys` | `( -- list)` | mem | List ROM keys |
 
-### 4.19 Trace Tools (3 tools)
+### 4.19 Quote Serialization (2 tools)
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `quote-to-text` | `(q -- s)` | Serialize quote to Kore source |
+| `text-to-quote` | `(s -- q)` | Parse Kore source to quote |
+
+### 4.20 Trace Tools (3 tools)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
@@ -525,7 +623,7 @@ swap nip = drop
 ```kore
 : factorial ( n -- n! )
   1 swap                          ; acc n
-  [ dup 0 gt ] [                  ; while n > 0
+  [ dup 0 swap lt ] [             ; while 0 < n (n > 0)
     dup rot mul swap              ; acc*n n
     1 sub                         ; acc' n-1
   ] while
@@ -538,7 +636,7 @@ swap nip = drop
 ```kore
 : fib ( n -- fib(n) )
   0 1 rot                         ; a b n
-  [ dup 0 gt ] [
+  [ dup 0 swap lt ] [             ; while 0 < n (n > 0)
     1 sub                         ; a b n-1
     rot rot                       ; n-1 a b
     over add                      ; n-1 a a+b
@@ -579,7 +677,7 @@ try
 dup is-error [
   ; handle error
   drop "default"
-] when
+] [ ] if
 ```
 
 ### 8.2 Unwrap with Default
@@ -588,6 +686,24 @@ dup is-error [
 : unwrap-or ( result default -- value )
   swap dup is-error [ drop ] [ nip ] if
 ;
+```
+
+### 8.3 Structured Error Info (NEW in 2.1)
+
+```kore
+; Get machine-parseable error details
+[ unknown-tool ] try
+dup is-error [
+  error-info              ; Convert to map
+  dup "code" map-get println     ; "E_TOOL_NOT_FOUND"
+  "message" map-get println      ; "Tool not found: unknown-tool"
+] [ ] if
+```
+
+The `error-info` tool returns a map with structured fields:
+- `code`: Error code (e.g., `E_STACK_UNDERFLOW`, `E_TYPE`)
+- `message`: Human-readable message
+- Additional fields vary by error type
 ```
 
 ---
@@ -636,8 +752,8 @@ words  ; => ["factorial" "fib" "square" ...]
 "map" meta
 ; => { effect: "(2 -- 1)", doc: "Apply quote to each element", io: [] }
 
-; Check if a word exists
-words "http-get" list-find -1 neq  ; => true if http-get available
+; Check if a word exists (use defined? instead)
+"http-get" defined?  ; => true if http-get available
 ```
 
 ### 11.2 Verifying Code Before Execution
@@ -754,7 +870,7 @@ cap-join  ; combined caps
 - Basic types and literals
 
 ### Phase 2: Control Flow & Definitions
-- Conditionals: `if`, `when`, `unless`
+- Conditionals: `if` (compose `when`/`unless` patterns from `if`)
 - Loops: `times`, `while`
 - Definitions: `def`, named functions
 

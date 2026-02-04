@@ -15,19 +15,16 @@
 # tuck: (a b -- b a b) - copy top under second
 "tuck" [swap over] def
 
-# 2dup: (a b -- a b a b) - duplicate top two
-"2dup" [over over] def
-
 # 2drop: (a b -- ) - drop top two
 "2drop" [drop drop] def
 
 # -- List creation --
 
 # list1: (a -- [a]) - single item list
-"list1" [list-empty swap list-push] def
+"list1" [1 swap list] def
 
 # list2: (a b -- [a b]) - two item list  
-"list2" [list-empty rot list-push swap list-push] def
+"list2" [2 rot rot list] def
 
 # -- Arithmetic --
 
@@ -41,13 +38,14 @@
 "square" [dup mul] def
 
 # abs: (n -- |n|) - absolute value
-"abs" [dup 0 lt [neg] [] if] def
+"abs" [dup 0 lt [ neg ] [ ] if] def
 
 # max: (a b -- max) - larger of two
-"max" [2dup gt [drop] [nip] if] def
+# Note: a > b is (a b swap lt)
+"max" [over over swap lt [ drop ] [ nip ] if] def
 
-# min: (a b -- min) - smaller of two
-"min" [2dup lt [drop] [nip] if] def
+# min: (a b -- min) - smaller of two  
+"min" [over over lt [ drop ] [ nip ] if] def
 
 # -- String --
 
@@ -92,21 +90,20 @@
 
 # -- Assertions --
 
-# assert-eq: (a b msg -- ) - assert two values are equal
-"assert-eq" [rot rot eq swap assert] def
+# assert-eq: (a b msg -- ) - assert equal, fail with msg if not
+"assert-eq" [rot rot eq [ drop ] [ fail ] if] def
 
-# assert-neq: (a b msg -- ) - assert two values are not equal
-"assert-neq" [rot rot neq swap assert] def
+# assert-neq: (a b msg -- ) - assert not equal, fail with msg if equal
+"assert-neq" [rot rot eq [ fail ] [ drop ] if] def
 
 # assert-not-null: (v msg -- ) - assert value is not null
-"assert-not-null" [swap is-null not swap assert] def
+"assert-not-null" [swap is-null [ fail ] [ drop ] if] def
 
 # -- System info --
 
 # sys-info: ( -- map) - get system information
 "sys-info" [
-    map-empty
-    "version" version map-set
+    map-new
     "pid" pid map-set
     "cwd" cwd map-set
     "tool-count" words list-len map-set

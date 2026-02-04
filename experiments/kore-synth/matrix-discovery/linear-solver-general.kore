@@ -1,0 +1,284 @@
+# LINEAR EQUATION SOLVER (2×2, 3×3, 4×4)
+# Solve Ax = b using Cramer's rule for multiple sizes
+# Philosophy: Single-purpose, composable, minimal tools
+
+"" println
+"╔══════════════════════════════════════════════════════════════════╗" println
+"║  LINEAR EQUATION SOLVER (2×2, 3×3, 4×4)                          ║" println
+"║  Using Cramer's rule and cofactor expansion                      ║" println
+"╚══════════════════════════════════════════════════════════════════╝" println
+"" println
+
+# ====================================================================
+# 2×2 DETERMINANT (already working)
+# ====================================================================
+
+[ # ( [a,b,c,d] -- det )
+  "m" mem-set
+  "m" mem-get 0 list-get "m" mem-get 3 list-get mul
+  "m" mem-get 1 list-get "m" mem-get 2 list-get mul sub
+] "det-2x2" def
+
+# ====================================================================
+# 3×3 DETERMINANT (cofactor expansion along first row)
+# ====================================================================
+
+[ # ( [a,b,c,d,e,f,g,h,i] -- det )
+  # Matrix: [[a,b,c],[d,e,f],[g,h,i]]
+  # det = a(ei-fh) - b(di-fg) + c(dh-eg)
+  "m" mem-set
+  
+  # a * (ei - fh)
+  "m" mem-get 0 list-get
+  "m" mem-get 4 list-get "m" mem-get 8 list-get mul
+  "m" mem-get 5 list-get "m" mem-get 7 list-get mul sub
+  mul
+  
+  # b * (di - fg)
+  "m" mem-get 1 list-get
+  "m" mem-get 3 list-get "m" mem-get 8 list-get mul
+  "m" mem-get 5 list-get "m" mem-get 6 list-get mul sub
+  mul
+  sub
+  
+  # c * (dh - eg)
+  "m" mem-get 2 list-get
+  "m" mem-get 3 list-get "m" mem-get 7 list-get mul
+  "m" mem-get 4 list-get "m" mem-get 6 list-get mul sub
+  mul
+  add
+] "det-3x3" def
+
+# ====================================================================
+# 4×4 DETERMINANT (cofactor expansion along first row)
+# ====================================================================
+
+[ # ( [a00,a01,a02,a03, a10,a11,a12,a13, a20,a21,a22,a23, a30,a31,a32,a33] -- det )
+  # Each element multiplied by its 3×3 minor's determinant
+  "m4" mem-set
+  
+  # a00 * det of 3×3 minor (remove row 0, col 0)
+  "m4" mem-get 0 list-get
+  "m4" mem-get 5 list-get "m4" mem-get 6 list-get "m4" mem-get 7 list-get
+  "m4" mem-get 9 list-get "m4" mem-get 10 list-get "m4" mem-get 11 list-get
+  "m4" mem-get 13 list-get "m4" mem-get 14 list-get "m4" mem-get 15 list-get
+  9 list det-3x3 mul
+  
+  # a01 * det of 3×3 minor (remove row 0, col 1) - SUBTRACT
+  "m4" mem-get 1 list-get
+  "m4" mem-get 4 list-get "m4" mem-get 6 list-get "m4" mem-get 7 list-get
+  "m4" mem-get 8 list-get "m4" mem-get 10 list-get "m4" mem-get 11 list-get
+  "m4" mem-get 12 list-get "m4" mem-get 14 list-get "m4" mem-get 15 list-get
+  9 list det-3x3 mul
+  sub
+  
+  # a02 * det of 3×3 minor (remove row 0, col 2) - ADD
+  "m4" mem-get 2 list-get
+  "m4" mem-get 4 list-get "m4" mem-get 5 list-get "m4" mem-get 7 list-get
+  "m4" mem-get 8 list-get "m4" mem-get 9 list-get "m4" mem-get 11 list-get
+  "m4" mem-get 12 list-get "m4" mem-get 13 list-get "m4" mem-get 15 list-get
+  9 list det-3x3 mul
+  add
+  
+  # a03 * det of 3×3 minor (remove row 0, col 3) - SUBTRACT
+  "m4" mem-get 3 list-get
+  "m4" mem-get 4 list-get "m4" mem-get 5 list-get "m4" mem-get 6 list-get
+  "m4" mem-get 8 list-get "m4" mem-get 9 list-get "m4" mem-get 10 list-get
+  "m4" mem-get 12 list-get "m4" mem-get 13 list-get "m4" mem-get 14 list-get
+  9 list det-3x3 mul
+  sub
+] "det-4x4" def
+
+# ====================================================================
+# COLUMN REPLACEMENT (specific for each size)
+# ====================================================================
+
+[ # 2×2: ( [a,b,c,d] col-index [x,y] -- [a',b',c',d'] )
+  "vec" mem-set "i" mem-set "m" mem-set
+  "i" mem-get 0 eq [
+    # Replace column 0: [x,b,y,d]
+    "vec" mem-get 0 list-get "m" mem-get 1 list-get
+    "vec" mem-get 1 list-get "m" mem-get 3 list-get 4 list
+  ] [
+    # Replace column 1: [a,x,c,y]
+    "m" mem-get 0 list-get "vec" mem-get 0 list-get
+    "m" mem-get 2 list-get "vec" mem-get 1 list-get 4 list
+  ] if
+] "replace-col-2x2" def
+
+[ # 3×3: ( [a,b,c,d,e,f,g,h,i] col-index [x,y,z] -- matrix' )
+  "vec" mem-set "i" mem-set "m" mem-set
+  "i" mem-get 0 eq [
+    # Replace column 0
+    "vec" mem-get 0 list-get "m" mem-get 1 list-get "m" mem-get 2 list-get
+    "vec" mem-get 1 list-get "m" mem-get 4 list-get "m" mem-get 5 list-get
+    "vec" mem-get 2 list-get "m" mem-get 7 list-get "m" mem-get 8 list-get
+    9 list
+  ] [
+    "i" mem-get 1 eq [
+      # Replace column 1
+      "m" mem-get 0 list-get "vec" mem-get 0 list-get "m" mem-get 2 list-get
+      "m" mem-get 3 list-get "vec" mem-get 1 list-get "m" mem-get 5 list-get
+      "m" mem-get 6 list-get "vec" mem-get 2 list-get "m" mem-get 8 list-get
+      9 list
+    ] [
+      # Replace column 2
+      "m" mem-get 0 list-get "m" mem-get 1 list-get "vec" mem-get 0 list-get
+      "m" mem-get 3 list-get "m" mem-get 4 list-get "vec" mem-get 1 list-get
+      "m" mem-get 6 list-get "m" mem-get 7 list-get "vec" mem-get 2 list-get
+      9 list
+    ] if
+  ] if
+] "replace-col-3x3" def
+
+[ # 4×4: ( [16 elements] col-index [w,x,y,z] -- matrix' )
+  "vec" mem-set "i" mem-set "m" mem-set
+  "i" mem-get 0 eq [
+    # Replace column 0
+    "vec" mem-get 0 list-get "m" mem-get 1 list-get "m" mem-get 2 list-get "m" mem-get 3 list-get
+    "vec" mem-get 1 list-get "m" mem-get 5 list-get "m" mem-get 6 list-get "m" mem-get 7 list-get
+    "vec" mem-get 2 list-get "m" mem-get 9 list-get "m" mem-get 10 list-get "m" mem-get 11 list-get
+    "vec" mem-get 3 list-get "m" mem-get 13 list-get "m" mem-get 14 list-get "m" mem-get 15 list-get
+    16 list
+  ] [
+    "i" mem-get 1 eq [
+      # Replace column 1
+      "m" mem-get 0 list-get "vec" mem-get 0 list-get "m" mem-get 2 list-get "m" mem-get 3 list-get
+      "m" mem-get 4 list-get "vec" mem-get 1 list-get "m" mem-get 6 list-get "m" mem-get 7 list-get
+      "m" mem-get 8 list-get "vec" mem-get 2 list-get "m" mem-get 10 list-get "m" mem-get 11 list-get
+      "m" mem-get 12 list-get "vec" mem-get 3 list-get "m" mem-get 14 list-get "m" mem-get 15 list-get
+      16 list
+    ] [
+      "i" mem-get 2 eq [
+        # Replace column 2
+        "m" mem-get 0 list-get "m" mem-get 1 list-get "vec" mem-get 0 list-get "m" mem-get 3 list-get
+        "m" mem-get 4 list-get "m" mem-get 5 list-get "vec" mem-get 1 list-get "m" mem-get 7 list-get
+        "m" mem-get 8 list-get "m" mem-get 9 list-get "vec" mem-get 2 list-get "m" mem-get 11 list-get
+        "m" mem-get 12 list-get "m" mem-get 13 list-get "vec" mem-get 3 list-get "m" mem-get 15 list-get
+        16 list
+      ] [
+        # Replace column 3
+        "m" mem-get 0 list-get "m" mem-get 1 list-get "m" mem-get 2 list-get "vec" mem-get 0 list-get
+        "m" mem-get 4 list-get "m" mem-get 5 list-get "m" mem-get 6 list-get "vec" mem-get 1 list-get
+        "m" mem-get 8 list-get "m" mem-get 9 list-get "m" mem-get 10 list-get "vec" mem-get 2 list-get
+        "m" mem-get 12 list-get "m" mem-get 13 list-get "m" mem-get 14 list-get "vec" mem-get 3 list-get
+        16 list
+      ] if
+    ] if
+  ] if
+] "replace-col-4x4" def
+
+# ====================================================================
+# SOLVERS (one for each size, simple and direct)
+# ====================================================================
+
+[ # 2×2 solver
+  "b" mem-set "A" mem-set
+  
+  "A" mem-get det-2x2 "det-A" mem-set
+  "det-A" mem-get 0 eq [ "Singular system" fail ] [ ] if
+  
+  # Column 0 replaced
+  "A" mem-get 0 "b" mem-get replace-col-2x2 det-2x2 "det-A" mem-get div
+  # Column 1 replaced
+  "A" mem-get 1 "b" mem-get replace-col-2x2 det-2x2 "det-A" mem-get div
+  2 list
+] "solve-2x2" def
+
+[ # 3×3 solver
+  "b" mem-set "A" mem-set
+  
+  "A" mem-get det-3x3 "det-A" mem-set
+  "det-A" mem-get 0 eq [ "Singular system" fail ] [ ] if
+  
+  # Column 0 replaced
+  "A" mem-get 0 "b" mem-get replace-col-3x3 det-3x3 "det-A" mem-get div
+  # Column 1 replaced
+  "A" mem-get 1 "b" mem-get replace-col-3x3 det-3x3 "det-A" mem-get div
+  # Column 2 replaced
+  "A" mem-get 2 "b" mem-get replace-col-3x3 det-3x3 "det-A" mem-get div
+  3 list
+] "solve-3x3" def
+
+[ # 4×4 solver
+  "b" mem-set "A" mem-set
+  
+  "A" mem-get det-4x4 "det-A" mem-set
+  "det-A" mem-get 0 eq [ "Singular system" fail ] [ ] if
+  
+  # Column 0 replaced
+  "A" mem-get 0 "b" mem-get replace-col-4x4 det-4x4 "det-A" mem-get div
+  # Column 1 replaced
+  "A" mem-get 1 "b" mem-get replace-col-4x4 det-4x4 "det-A" mem-get div
+  # Column 2 replaced
+  "A" mem-get 2 "b" mem-get replace-col-4x4 det-4x4 "det-A" mem-get div
+  # Column 3 replaced
+  "A" mem-get 3 "b" mem-get replace-col-4x4 det-4x4 "det-A" mem-get div
+  4 list
+] "solve-4x4" def
+
+# ====================================================================
+# TESTS
+# ====================================================================
+
+"═══════════════════════════════════════════════════════════════════" println
+"2×2 SYSTEM TESTS" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Test: 2x + 3y = 8, 4x + 5y = 14" println
+2 3 4 5 4 list
+8 14 2 list
+solve-2x2 "sol" mem-set
+"Solution: x=" print "sol" mem-get 0 list-get to-text print
+", y=" print "sol" mem-get 1 list-get to-text println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"3×3 SYSTEM TESTS" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Test from Math is Fun:" println
+"  x + y + z = 6" println
+"  0x + 2y + 5z = -4" println
+"  2x + 5y - z = 27" println
+1 1 1  0 2 5  2 5 -1  9 list
+6 -4 27 3 list
+solve-3x3 "sol" mem-set
+"Solution: x=" print "sol" mem-get 0 list-get to-text print
+", y=" print "sol" mem-get 1 list-get to-text print
+", z=" print "sol" mem-get 2 list-get to-text println
+"Expected: x=5, y=3, z=-2" println
+
+# Verify
+"sol" mem-get 0 list-get "sol" mem-get 1 list-get add "sol" mem-get 2 list-get add "r1" mem-set
+"sol" mem-get 1 list-get 2 mul "sol" mem-get 2 list-get 5 mul add "r2" mem-set
+"sol" mem-get 0 list-get 2 mul "sol" mem-get 1 list-get 5 mul add "sol" mem-get 2 list-get sub "r3" mem-set
+"Verify: x+y+z=" print "r1" mem-get to-text print
+", 2y+5z=" print "r2" mem-get to-text print
+", 2x+5y-z=" print "r3" mem-get to-text print
+" ✓" println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"4×4 SYSTEM TESTS" println
+"═══════════════════════════════════════════════════════════════════" println
+"" println
+
+"Test: 2w + x + y + z = 10" println
+"      w + 2x + y + z = 11" println
+"      w + x + 2y + z = 12" println
+"      w + x + y + 2z = 13" println
+2 1 1 1  1 2 1 1  1 1 2 1  1 1 1 2  16 list
+10 11 12 13 4 list
+solve-4x4 "sol" mem-set
+"Solution: w=" print "sol" mem-get 0 list-get to-text print
+", x=" print "sol" mem-get 1 list-get to-text print
+", y=" print "sol" mem-get 2 list-get to-text print
+", z=" print "sol" mem-get 3 list-get to-text println
+"" println
+
+"═══════════════════════════════════════════════════════════════════" println
+"COMPLETE - All solvers implemented!" println
+"═══════════════════════════════════════════════════════════════════" println

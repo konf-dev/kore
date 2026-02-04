@@ -1,0 +1,14 @@
+#!/usr/bin/env kore
+
+"Testing list operations with def..." print
+
+# Simple function that returns a number
+[ 42 ] "get-num" def
+
+# Try to build a list using it
+"Building list..." print
+[]
+get-num list-push
+dup "List: " print dup to-text print "" print
+
+"Success!" print

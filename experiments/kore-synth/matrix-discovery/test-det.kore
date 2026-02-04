@@ -1,0 +1,18 @@
+# Debug test for determinant
+
+[ # ( matrix -- determinant )
+  # For [a,b,c,d] = [[a,b],[c,d]], det = a*d - b*c
+  "m" mem-set
+  "m" mem-get 0 list-get   # a
+  "m" mem-get 3 list-get   # d
+  mul                       # a*d
+  "m" mem-get 1 list-get   # b
+  "m" mem-get 2 list-get   # c
+  mul                       # b*c
+  sub                       # a*d - b*c
+] "det-2x2" def
+
+"Testing determinant:" println
+2 3 4 5 4 list "A" mem-set
+"det(A) = " print "A" mem-get det-2x2 to-text println
+"Expected: 2*5 - 3*4 = 10 - 12 = -2" println
