@@ -36,7 +36,7 @@ use crate::error::Error;
 use crate::stack::Stack;
 use crate::tool::Tool;
 use crate::value::{ext, Value};
-use crate::ext::autodiff::{requires_grad_check, get_tensor_id, tensor_with_grad};
+use crate::ext::autodiff::{requires_grad_check, get_tensor_id, tensor_with_grad, tensor_with_grad_and_inputs};
 use indexmap::IndexMap;
 
 /// Register all tensor tools
@@ -186,7 +186,9 @@ pub fn register(dict: &mut Dictionary) {
                         x_data.iter().map(|v| value_to_f64(v)).collect(),
                         y_data.iter().map(|v| value_to_f64(v)).collect(),
                     ];
-                    tensor_with_grad(result, e1.meta.clone(), "Add", vec![x_id, y_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![e1.meta.clone(), e2.meta.clone()];
+                    tensor_with_grad_and_inputs(result, e1.meta.clone(), "Add", vec![x_id, y_id], saved, input_metas)
                 } else {
                     Value::tensor(result, e1.meta.clone())
                 };
@@ -229,7 +231,9 @@ pub fn register(dict: &mut Dictionary) {
                         x_data.iter().map(|v| value_to_f64(v)).collect(),
                         y_data.iter().map(|v| value_to_f64(v)).collect(),
                     ];
-                    tensor_with_grad(result, e1.meta.clone(), "Mul", vec![x_id, y_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![e1.meta.clone(), e2.meta.clone()];
+                    tensor_with_grad_and_inputs(result, e1.meta.clone(), "Mul", vec![x_id, y_id], saved, input_metas)
                 } else {
                     Value::tensor(result, e1.meta.clone())
                 };
@@ -272,7 +276,9 @@ pub fn register(dict: &mut Dictionary) {
                     // Return tensor (not float) so we can track it
                     let mut meta = IndexMap::new();
                     meta.insert("shape".to_string(), Value::List(vec![Value::Int(1)]));
-                    tensor_with_grad(Value::List(vec![Value::Float(sum)]), Some(meta), "Sum", vec![x_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(Value::List(vec![Value::Float(sum)]), Some(meta), "Sum", vec![x_id], saved, input_metas)
                 } else {
                     // Original behavior: return float
                     Value::Float(sum)
@@ -348,6 +354,7 @@ pub fn register(dict: &mut Dictionary) {
 
     // tensor-scale: (tensor n -- tensor')
     // Multiply all elements by scalar
+    // Autodiff-aware: records gradient info when input requires gradient
     dict.register(Tool::native(
         "tensor-scale",
         "(tensor:Tensor n:Float -- tensor:Tensor)",
@@ -365,7 +372,21 @@ pub fn register(dict: &mut Dictionary) {
                 }
                 
                 let scaled = scale_elements(&ext.data, n);
-                let tensor = Value::tensor(scaled, ext.meta.clone());
+                
+                // Check if input requires gradient
+                let req_grad = requires_grad_check(&ext.meta);
+                
+                let tensor = if req_grad {
+                    // Record gradient info: d/dx(c*x) = c
+                    let x_id = get_tensor_id(&ext.meta);
+                    let saved = vec![vec![n]]; // Save the scalar
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(scaled, ext.meta.clone(), "Scale", vec![x_id], saved, input_metas)
+                } else {
+                    Value::tensor(scaled, ext.meta.clone())
+                };
+                
                 stack.push(tensor)?;
                 Ok((stack, ctx))
             })
@@ -547,7 +568,9 @@ pub fn register(dict: &mut Dictionary) {
                     let saved = vec![
                         x_data.iter().map(|v| value_to_f64(v)).collect(),
                     ];
-                    tensor_with_grad(result, ext.meta.clone(), "Relu", vec![x_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(result, ext.meta.clone(), "Relu", vec![x_id], saved, input_metas)
                 } else {
                     Value::tensor(result, ext.meta.clone())
                 };
@@ -728,7 +751,9 @@ pub fn register(dict: &mut Dictionary) {
                         vec![m as f64],           // m dimension
                         vec![n as f64],           // n dimension
                     ];
-                    tensor_with_grad(Value::List(result), None, "MatMul", vec![w_id, x_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![w_ext.meta.clone(), x_ext.meta.clone()];
+                    tensor_with_grad_and_inputs(Value::List(result), None, "MatMul", vec![w_id, x_id], saved, input_metas)
                 } else {
                     Value::tensor(Value::List(result), None)
                 };
@@ -913,7 +938,9 @@ pub fn register(dict: &mut Dictionary) {
                     // We save the output (softmax values) for the backward pass
                     let x_id = get_tensor_id(&ext.meta);
                     let saved = vec![softmax_vals]; // Save the softmax output
-                    tensor_with_grad(Value::List(result), ext.meta.clone(), "Softmax", vec![x_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(Value::List(result), ext.meta.clone(), "Softmax", vec![x_id], saved, input_metas)
                 } else {
                     Value::tensor(Value::List(result), ext.meta.clone())
                 };
@@ -954,7 +981,9 @@ pub fn register(dict: &mut Dictionary) {
                     let saved = vec![
                         x_data.iter().map(|v| value_to_f64(v)).collect(),
                     ];
-                    tensor_with_grad(result, ext.meta.clone(), "Log", vec![x_id], saved)
+                    // Store input metadata for recursive backward traversal
+                    let input_metas = vec![ext.meta.clone()];
+                    tensor_with_grad_and_inputs(result, ext.meta.clone(), "Log", vec![x_id], saved, input_metas)
                 } else {
                     Value::tensor(result, ext.meta.clone())
                 };

@@ -93,6 +93,18 @@ pub fn tensor_with_grad(
     input_ids: Vec<u64>,
     saved_tensors: Vec<Vec<f64>>,
 ) -> Value {
+    tensor_with_grad_and_inputs(data, shape, grad_fn, input_ids, saved_tensors, vec![])
+}
+
+/// Create a tensor with gradient info and input metadata for graph traversal
+pub fn tensor_with_grad_and_inputs(
+    data: Value,
+    shape: Option<IndexMap<String, Value>>,
+    grad_fn: &str,
+    input_ids: Vec<u64>,
+    saved_tensors: Vec<Vec<f64>>,
+    input_metas: Vec<Option<IndexMap<String, Value>>>,
+) -> Value {
     let id = new_tensor_id();
     let mut meta = shape.unwrap_or_default();
     meta.insert("id".to_string(), Value::Int(id as i64));
@@ -108,6 +120,12 @@ pub fn tensor_with_grad(
         .map(|t| f64_to_value_list(t))
         .collect();
     meta.insert("saved_tensors".to_string(), Value::List(saved));
+    
+    // Store input metadata for graph traversal during backward
+    let input_metas_val: Vec<Value> = input_metas.iter()
+        .map(|m| m.as_ref().map(|im| Value::Map(im.clone())).unwrap_or(Value::Null))
+        .collect();
+    meta.insert("input_metas".to_string(), Value::List(input_metas_val));
     
     Value::tensor(data, Some(meta))
 }
@@ -330,7 +348,7 @@ fn backward_pass(
     }
 }
 
-/// Process a single tensor's gradient info and compute input gradients
+/// Process a single tensor's gradient info and compute input gradients (RECURSIVE)
 fn process_grad_backward(
     meta: &IndexMap<String, Value>,
     upstream: &[f64],
@@ -362,6 +380,17 @@ fn process_grad_backward(
         })
         .unwrap_or_default();
     
+    // Get input metadata for recursive traversal
+    let input_metas: Vec<Option<IndexMap<String, Value>>> = meta.get("input_metas")
+        .and_then(|v| match v {
+            Value::List(l) => Some(l.iter().map(|v| match v {
+                Value::Map(m) => Some(m.clone()),
+                _ => None,
+            }).collect()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    
     // Compute input gradients based on grad_fn
     let input_grads: Vec<Vec<f64>> = match grad_fn {
         Some("Add") => backward_fns::add_backward(upstream, &saved_tensors),
@@ -380,12 +409,13 @@ fn process_grad_backward(
         Some(_) => return, // Unknown grad_fn
     };
     
-    // Accumulate gradients for inputs
+    // Accumulate gradients for inputs and recursively process
     for (i, input_id) in input_ids.iter().enumerate() {
         if *input_id == 0 {
             continue;
         }
         if let Some(input_grad) = input_grads.get(i) {
+            // Accumulate gradient
             grads.entry(*input_id)
                 .and_modify(|g| {
                     for (j, val) in input_grad.iter().enumerate() {
@@ -395,6 +425,12 @@ fn process_grad_backward(
                     }
                 })
                 .or_insert_with(|| input_grad.clone());
+            
+            // Recursively process input's gradient if it has metadata
+            if let Some(Some(input_meta)) = input_metas.get(i) {
+                let input_upstream = grads.get(input_id).cloned().unwrap_or_default();
+                process_grad_backward(input_meta, &input_upstream, grads);
+            }
         }
     }
 }

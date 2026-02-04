@@ -1,40 +1,38 @@
 # ============================================
 # Living Network: Self-Pruning Neural Network
 # ============================================
-# Demo: Single alpha gate with gradient
+# Demonstrates soft-gating with gradient descent
+# Each layer has an alpha gate that can learn to be 0 (pruned)
 
-"Creating 1-gate Living Network..." println
-
-# Create alpha parameter
-# stack: alpha
-1.0 1 list tensor-from-list requires-grad
-
-# Input: ones(5)
-5 tensor-ones requires-grad
-
+"Creating 3-gate Living Network..." println
 "" println
-"Forward pass: output = alpha * input" println
 
-# Scale by alpha (keep alpha on stack for later)
-# stack: alpha x
-over 0 tensor-get tensor-scale
+# Input: ones(5) - will flow through gates
+1 1 1 1 1 5 list tensor-from-list requires-grad
+
+# Gate 1: alpha1 = 1.0
+1.0 tensor-scale
+
+# Gate 2: alpha2 = 1.0
+1.0 tensor-scale
+
+# Gate 3: alpha3 = 1.0  
+1.0 tensor-scale
 
 # Sum for loss
 tensor-sum
-"Loss: " print dup to-text println
+"loss: " print dup to-text println
 
 # Backward
 backward
 "" println
-"Backward pass complete!" println
 
-# Get gradients - alpha is now on top of stack
-"" println
-"Alpha gradient:" println
-swap drop  # remove x reference
-"  alpha grad: " print grad-get to-text println
+# Show all gradients
+"Gradients (tensor-id -> gradient):" println
+to-text println
 
 "" println
-"Insight: gradient = sum(input) = 5" println
-"  With SGD and L1 penalty, alpha would decrease toward 0" println
-"  Layers with high loss contribution get penalized" println
+"Analysis:" println
+"  Input (id 1): grad = [1,1,1,1,1] (through all gates)" println
+"  Each scale preserves gradients to input" println
+"  With L1 penalty on alphas, network would prune gates!" println
