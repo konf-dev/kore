@@ -1,0 +1,59 @@
+-- math.kore — Extended math functions
+-- P1: all math functions are total tools (S → S)
+
+-- pi: push pi constant
+: pi 3.14159265358979323846 ;
+
+-- tau: push tau (2*pi)
+: tau 6.28318530717958647692 ;
+
+-- e: push Euler's number
+: e 2.71828182845904523536 ;
+
+-- deg->rad: (degrees -- radians)
+: deg->rad 3.14159265358979323846 fmul 180.0 fdiv ? ;
+
+-- rad->deg: (radians -- degrees)
+: rad->deg 180.0 fmul 3.14159265358979323846 fdiv ? ;
+
+-- ftan: (x -- tan(x)|error)
+-- P1: returns Error when cos(x)=0 (via fdiv returning Error)
+: ftan dup fsin swap fcos fdiv ;
+
+-- hypot: (x y -- sqrt(x²+y²))
+: hypot dup fmul swap dup fmul fadd fsqrt ;
+
+-- lerp: (a b t -- a+(b-a)*t) linear interpolation
+: lerp ->t ->b ->a
+  @b @a fsub @t fmul @a fadd
+;
+
+-- clamp: (x lo hi -- clamped)
+-- P1: total — always returns a value in [lo, hi]
+: clamp ->hi ->lo ->x
+  @x @lo < if @lo else
+  @x @hi > if @hi else
+  @x
+  end end
+;
+
+-- fmin: (a b -- min)
+-- P1: total — compares and returns the smaller value
+: fmin ->b ->a
+  @a @b <= if @a else @b end
+;
+
+-- fmax: (a b -- max)
+-- P1: total — compares and returns the larger value
+: fmax ->b ->a
+  @a @b >= if @a else @b end
+;
+
+-- sign: (x -- -1|0|1)
+-- P1: total — returns integer sign of a number
+: sign ->x
+  @x 0 = if 0 else
+  @x 0 < if -1 else
+  1
+  end end
+;

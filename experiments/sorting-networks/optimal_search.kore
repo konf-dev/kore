@@ -1,0 +1,239 @@
+-- ================================================================
+-- Optimal Sorting Network Search — Pure Kore
+-- ================================================================
+--
+-- Exhaustive search with lattice pruning (P4).
+-- Uses iterative deepening: try k=1,2,3,...
+-- until a k-comparator network sorts all 2^n binary inputs.
+--
+-- Pruning (constraint lattice / P4 information-theoretic bound):
+--   After placing d comparators, count unsorted inputs.
+--   Each remaining comparator can halve unsorted at best.
+--   If unsorted > 2^(budget-d), prune this branch.
+--
+-- Symmetry (P3): require comparators in canonical order:
+--   If last comparator was (a,b), next must be >= (a,b) lexicographically.
+--   This avoids exploring equivalent permutations of independent comparators.
+-- ================================================================
+
+-- ---- Utility ----
+
+-- (list -- n)  length of list, consuming list from stack view
+: list-len  len swap drop ;
+
+-- ---- Binary input generation ----
+
+-- (x n -- list)
+: to-bits
+  ->n ->x
+  ( ) ->acc
+  0 ->i
+  while i n < do
+    x 2 % acc swap append ->acc
+    x 2 / ->x
+    i 1 + ->i
+  end
+  acc reverse
+;
+
+-- (n -- all-inputs)
+: gen-all-inputs
+  ->n
+  1 ->total
+  0 ->i
+  while i n < do
+    total 2 * ->total
+    i 1 + ->i
+  end
+  ( ) ->all
+  0 ->x
+  while x total < do
+    x n to-bits all swap append ->all
+    x 1 + ->x
+  end
+  all
+;
+
+-- ---- Compare-and-swap ----
+
+-- (list i j -- list')
+: cswap
+  ->j ->i ->lst
+  lst i get ->vi
+  lst j get ->vj
+  vi vj > if
+    lst i vj set j vi set
+  else
+    lst
+  end
+;
+
+-- ---- Check sorted ----
+
+-- (list -- bool)
+: is-sorted
+  ->lst
+  lst list-len ->n
+  true ->ok
+  1 ->i
+  while i n < do
+    lst i 1 - get lst i get > if
+      false ->ok
+    end
+    i 1 + ->i
+  end
+  ok
+;
+
+-- ---- Apply one comparator to all inputs, return new input set ----
+
+-- (inputs ci cj -- inputs')
+-- Apply cswap(ci,cj) to every input in the list
+: apply-comp-to-all
+  ->cj ->ci ->inputs
+  inputs list-len ->total
+  ( ) ->result
+  0 ->k
+  while k total < do
+    inputs k get ci cj cswap result swap append ->result
+    k 1 + ->k
+  end
+  result
+;
+
+-- ---- Count unsorted ----
+
+-- (inputs -- count)
+: count-unsorted
+  ->inputs
+  inputs list-len ->total
+  0 ->bad
+  0 ->i
+  while i total < do
+    inputs i get is-sorted not if
+      bad 1 + ->bad
+    end
+    i 1 + ->i
+  end
+  bad
+;
+
+-- ---- Power of 2 ----
+
+-- (k -- 2^k)
+: pow2
+  ->k
+  1 ->r
+  0 ->i
+  while i k < do
+    r 2 * ->r
+    i 1 + ->i
+  end
+  r
+;
+
+-- ---- DFS search ----
+--
+-- Try to sort all inputs using exactly `budget` more comparators.
+-- `prev-ci` and `prev-cj` define canonical ordering constraint.
+-- Returns: network (list of pairs) or empty list if failed.
+--
+-- (inputs n budget prev-ci prev-cj -- network-or-empty found?)
+
+: search
+  ->prev-cj ->prev-ci ->budget ->n ->inputs
+
+  -- Base case: budget exhausted
+  budget 0 = if
+    inputs count-unsorted 0 = if
+      ( ) true    -- success: empty network, found!
+    else
+      ( ) false   -- failure: still unsorted, not found
+    end
+  else
+    -- Pruning (P4): if unsorted > 2^budget, impossible
+    inputs count-unsorted ->unsorted
+    unsorted budget pow2 > if
+      ( ) false   -- prune: too many unsorted for remaining budget
+    else
+      -- Try all comparators (ci, cj) where ci < cj
+      -- Respect canonical ordering: (ci,cj) >= (prev-ci, prev-cj)
+      ( ) ->found-net
+      false ->found
+
+      prev-ci ->ci
+      while ci n < do
+        found not if      -- stop searching once we found a solution
+          -- determine starting cj
+          ci prev-ci = if
+            prev-cj ->start-cj
+          else
+            ci 1 + ->start-cj
+          end
+
+          -- ensure cj > ci
+          start-cj ci 1 + < if
+            ci 1 + ->start-cj
+          end
+
+          start-cj ->cj
+          while cj n < do
+            found not if
+              -- Apply this comparator
+              inputs ci cj apply-comp-to-all ->new-inputs
+
+              -- Recurse
+              new-inputs n budget 1 - ci cj search ->sub-found ->sub-net
+
+              sub-found if
+                -- Prepend our comparator
+                ( ) ci cj pair append ->head
+                -- concatenate head + sub-net
+                sub-net list-len ->slen
+                0 ->si
+                while si slen < do
+                  sub-net si get head swap append ->head
+                  si 1 + ->si
+                end
+                head ->found-net
+                true ->found
+              end
+            end
+            cj 1 + ->cj
+          end
+        end
+        ci 1 + ->ci
+      end
+
+      found-net found
+    end
+  end
+;
+
+-- ================================================================
+-- MAIN: Find optimal sorting network for n=4
+-- Known optimal: 5 comparators
+-- ================================================================
+
+4 ->n
+
+-- Generate all 2^4 = 16 binary inputs
+n gen-all-inputs ->inputs
+
+-- Iterative deepening: try budgets 1, 2, 3, ...
+1 ->budget
+false ->done
+( ) ->result
+
+while done not do
+  inputs n budget 0 0 search ->found ->net
+  found if
+    net ->result
+    true ->done
+  else
+    budget 1 + ->budget
+  end
+end
+
+-- Output: budget and network
+budget result

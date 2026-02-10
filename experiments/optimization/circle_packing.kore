@@ -1,0 +1,75 @@
+-- ================================================================
+-- Circle Packing via Simulated Annealing
+-- ================================================================
+--
+-- Pack N circles of equal radius into a square.
+-- Uses penalty-based energy function + PRNG perturbation.
+--
+-- State: List of circles, each Pair(Pair(x, y), r)
+-- Energy = overlap_penalty + boundary_penalty
+-- ================================================================
+
+-- Helpers (inlined from stdlib for standalone use)
+: abs dup 0 < if neg end ;
+: prng-next 6364136223846793005 * 1442695040888963407 + dup ;
+: prng-float
+  prng-next -> seed
+  abs i2f 9223372036854775807 i2f fdiv
+  seed ;
+
+-- Circle constructors
+: circle-new  -- (x y r -- circle)
+  -> r -> y -> x
+  x y pair r pair ;
+
+: circle-x  unpair drop unpair drop ;
+: circle-y  unpair drop unpair swap drop ;
+: circle-r  unpair swap drop ;
+
+-- Distance between two circles' centers
+: circle-dist  -- (c1 c2 -- dist)
+  -> c2 -> c1
+  c1 circle-x c2 circle-x fsub dup fmul
+  c1 circle-y c2 circle-y fsub dup fmul
+  fadd fsqrt ;
+
+-- Overlap penalty for one pair
+: overlap-penalty  -- (c1 c2 -- penalty)
+  -> c2 -> c1
+  c1 circle-r c2 circle-r fadd -> min_dist
+  c1 c2 circle-dist -> d
+  min_dist d fsub -> gap
+  gap 0.0 gt if gap dup fmul else 0.0 end ;
+
+-- Boundary penalty for one circle in box [0, L]
+: boundary-pen  -- (circle L -- penalty)
+  -> L -> c
+  0.0 -> pen
+  c circle-r c circle-x fsub -> left_gap
+  left_gap 0.0 gt if pen left_gap dup fmul fadd -> pen end
+  c circle-r c circle-y fsub -> top_gap
+  top_gap 0.0 gt if pen top_gap dup fmul fadd -> pen end
+  c circle-x c circle-r fadd L fsub -> right_gap
+  right_gap 0.0 gt if pen right_gap dup fmul fadd -> pen end
+  c circle-y c circle-r fadd L fsub -> bot_gap
+  bot_gap 0.0 gt if pen bot_gap dup fmul fadd -> pen end
+  pen ;
+
+-- Compute total energy for 3 circles in box of side L
+: energy3  -- (c0 c1 c2 L -- E)
+  -> L -> c2 -> c1 -> c0
+  c0 c1 overlap-penalty
+  c0 c2 overlap-penalty fadd
+  c1 c2 overlap-penalty fadd
+  c0 L boundary-pen fadd
+  c1 L boundary-pen fadd
+  c2 L boundary-pen fadd ;
+
+-- Simple 3-circle packing test
+-- Radius 1.0, box side 4.0
+-- Place circles at valid positions: (1, 1), (3, 1), (2, 3)
+1.0 1.0 1.0 circle-new -> c0
+3.0 1.0 1.0 circle-new -> c1
+2.0 3.0 1.0 circle-new -> c2
+c0 c1 c2 4.0 energy3
+-- Should be 0.0 (no overlaps, all inside boundary)

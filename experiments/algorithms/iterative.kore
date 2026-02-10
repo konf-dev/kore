@@ -1,0 +1,72 @@
+-- ================================================================
+-- Iterative Algorithms in Kore
+-- ================================================================
+-- Each is a PROOF that while + composition suffices.
+-- No recursion needed. P3: composition = concatenation.
+-- ================================================================
+
+-- ============================================================
+-- 1. Fibonacci: F(20) = 6765
+-- ============================================================
+-- Fibonacci: direct stack discipline
+-- Stack layout: [a b n] (top = n)
+-- Loop body: decrement n, advance a,b → b,(a+b)
+0 1 20
+while dup 0 > do
+  -- [a b n]
+  1 -           -- [a b n-1]
+  rot rot       -- [n-1 a b]
+  swap over +   -- [n-1 b a+b]
+  rot           -- [b a+b n-1]
+end
+drop drop      -- drop n and b=F(21), leave a = F(20)
+-- Expected: 6765
+
+-- ============================================================
+-- 2. GCD via Euclid's algorithm
+-- gcd(252, 105) = 21
+-- ============================================================
+
+-- Stack: a b → gcd(a,b)
+-- while b != 0: a, b = b, a % b
+252 105
+while dup 0 > do
+  swap over %   -- b (a%b)
+end
+drop  -- remove the 0, leave gcd
+-- Expected: 21
+
+-- ============================================================
+-- 3. Integer square root (Newton's method)
+-- isqrt(144) = 12
+-- ============================================================
+-- x₀ = n, iterate: x = (x + n/x) / 2
+-- Stack: [n guess counter]
+144 dup  -- [n guess=n]
+10       -- [n guess 10]
+while dup 0 > do  -- [n guess counter]
+  1 -             -- [n guess counter-1]
+  rot rot         -- [counter-1 n guess]
+  over over /      -- [counter-1 n guess n/guess]
+  +               -- [counter-1 n (guess+n/guess)]
+  2 /             -- [counter-1 n new_guess]
+  rot             -- [n new_guess counter-1]
+end
+drop swap drop  -- leave guess = isqrt
+-- Expected: 12
+
+-- ============================================================
+-- 4. Power: 2^10 = 1024
+-- ============================================================
+-- base=2 exp=10 result=1
+1 2 10
+while dup 0 > do
+  rot rot      -- exp result base
+  swap over *  -- exp base (result*base)
+  swap         -- exp (result*base) base
+  rot 1 -      -- (result*base) base (exp-1)
+end
+drop drop  -- leave result
+-- Expected: 1024
+
+-- Stack: 6765 21 12 1024

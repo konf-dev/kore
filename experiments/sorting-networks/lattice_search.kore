@@ -1,0 +1,181 @@
+-- ================================================================
+-- Sorting Network Search — Parallel Lattice + Meet-in-Middle
+-- ================================================================
+--
+-- Two optimizations over bitset_search.kore:
+--
+-- 1. PARALLEL LATTICE (spawn per first-level comparator)
+--    Each first-level branch is an independent sublattice.
+--    spawn isolates each branch (P4), and when Kore gets true
+--    parallel spawn, this code gets N× speedup for free.
+--
+-- 2. MEET IN THE MIDDLE (bidirectional search)
+--    Forward: state₀ →(comps)→ ... → 0
+--    Backward: 0 →(undo comps)→ ... → state₀
+--    Search depth d/2 from each end, meet where frontiers overlap.
+--    Cuts O(b^d) → O(b^{d/2}).  ~10000× for n=6.
+--
+--    Key insight: cswap is its own inverse! So backward search
+--    uses the same apply-comp, just starting from state=0 and
+--    collecting reachable states.
+--
+-- ================================================================
+-- This file implements (1). See comments for (2) design.
+-- ================================================================
+
+-- ----------------------------------------------------------------
+-- Core words (same as bitset_search.kore)
+-- ----------------------------------------------------------------
+
+: getbit  ->b ->x  x 1 b shl band 0 != if 1 else 0 end ;
+: setbit  ->v ->b ->x
+  v 0 = if x 1 b shl bnot band else x 1 b shl bor end ;
+: cswap-bits  ->cj ->ci ->x
+  x ci getbit ->vi  x cj getbit ->vj
+  vi 1 = vj 0 = and if x ci 0 setbit cj 1 setbit else x end ;
+
+: is-sorted  ->n ->x
+  x 0 = if true else
+  1 n shl 1 - ->mask  mask x bxor ->flipped
+  flipped flipped 1 + band 0 = end ;
+
+: init-state  ->n
+  1 n shl ->total 0 ->state 0 ->k
+  while k total < do
+    k n is-sorted not if state 1 k shl bor ->state end
+    k 1 + ->k
+  end state ;
+
+: apply-comp  ->n ->cj ->ci ->state
+  1 n shl ->total 0 ->new-state 0 ->k
+  while k total < do
+    state 1 k shl band 0 != if
+      k ci cj cswap-bits ->k2
+      k2 n is-sorted not if new-state 1 k2 shl bor ->new-state end
+    end k 1 + ->k
+  end new-state ;
+
+: popcount  ->x 0 ->c
+  while x 0 != do x x 1 - band ->x c 1 + ->c end c ;
+
+-- ----------------------------------------------------------------
+-- DFS core (called inside each spawned sublattice)
+-- ----------------------------------------------------------------
+
+: search  ->ncomps ->n ->d ->budget ->state
+  state 0 = if true else
+  d budget = if false else
+  state popcount ->remain
+  1 budget d - shl ->max-fixable
+  remain max-fixable > if false else
+  false ->found
+  0 ->ci
+  while ci n 1 - < found not and do
+    ci 1 + ->cj
+    while cj n < found not and do
+      state ci cj n apply-comp ->ns
+      ns state != if
+        ns budget d 1 + n ncomps search ->found
+      end
+      cj 1 + ->cj
+    end
+    ci 1 + ->ci
+  end
+  found
+  end end end ;
+
+-- ----------------------------------------------------------------
+-- Parallel Lattice Search (P4: spawn per first-level comparator)
+-- ----------------------------------------------------------------
+-- For a given budget, try each first-level comparator in its own
+-- spawn. Each spawn is an independent sublattice of the search
+-- space — mutually exclusive by construction (different first move).
+--
+-- Currently spawn is sequential in the interpreter, but:
+-- (a) It demonstrates the correct P4 pattern
+-- (b) When Kore gets threaded spawn, same code → N× speedup
+-- (c) With fibers + round-robin, we get fair interleaving
+-- ----------------------------------------------------------------
+
+: par-search  ->ncomps ->n ->budget ->state
+  false ->found
+  0 ->ci
+  while ci n 1 - < found not and do
+    ci 1 + ->cj
+    while cj n < found not and do
+      state ci cj n apply-comp ->ns
+      ns state != if
+        -- Each first-level branch is an independent sublattice.
+        -- In a parallel Kore, this would be:
+        --   [ ns budget 1 n ncomps search ] 0 spawn
+        -- For now, direct call (same semantics, sequential):
+        ns budget 1 n ncomps search ->found
+      end
+      cj 1 + ->cj
+    end
+    ci 1 + ->ci
+  end
+  found ;
+
+-- ================================================================
+-- MAIN
+-- ================================================================
+5 ->n
+n n 1 - * 2 / ->ncomps
+n init-state ->state
+
+1 ->budget  false ->done
+while done not do
+  state budget n ncomps par-search ->found
+  found if true ->done else budget 1 + ->budget end
+end
+budget
+
+-- ================================================================
+-- DESIGN NOTES: Meet-in-the-Middle (future optimization)
+-- ================================================================
+--
+-- The key observation: cswap(i,j) is its own inverse.
+--   apply-comp(apply-comp(state, i, j), i, j) = state
+--
+-- So we can search BACKWARDS from state=0:
+--
+-- FORWARD frontier:
+--   F(0) = {state₀}
+--   F(k+1) = { apply-comp(s,i,j) | s ∈ F(k), (i,j) ∈ comparators }
+--
+-- BACKWARD frontier:
+--   B(0) = {0}                    -- goal: all sorted
+--   B(k+1) = { unapply-comp(s,i,j) | s ∈ B(k), (i,j) ∈ comparators }
+--
+-- where unapply-comp = apply-comp (self-inverse!), but we INCLUDE
+-- inputs that the comparator would sort (reverse the removal).
+--
+-- If F(d₁) ∩ B(d₂) ≠ ∅ for d₁ + d₂ = budget, we have a solution.
+--
+-- For n=6 (budget=12):
+--   DFS:  ~15^12 = 130 billion nodes
+--   MITM: ~15^6  = 11 million nodes (per direction)
+--   Speedup: ~10000×
+--
+-- Requirements:
+--   - Hash set or sorted array for frontier storage
+--   - ~11M states × 8 bytes = ~88 MB (fits in RAM)
+--   - Kore needs: array/list with O(1) lookup, or a map type
+--
+-- The backward apply-comp is different:
+--   Forward:  keep only unsorted outputs
+--   Backward: for each state in B, for each comparator (i,j),
+--             for each possible input that (i,j) would map to
+--             a value in state, add that input to the new state.
+--
+-- Since cswap is self-inverse on individual values, backward
+-- on the bitset level is:
+--   unapply-comp(state, i, j, n):
+--     for k in 0..2^n:
+--       k2 = cswap(k, i, j)
+--       if bit k2 set in state → set bit k in result
+--       if k is sorted → also set bit k (it was removed going forward)
+--     This reconstructs what the state looked like BEFORE the comp.
+--
+-- ================================================================

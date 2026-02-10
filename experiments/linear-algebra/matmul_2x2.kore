@@ -1,0 +1,38 @@
+-- ================================================================
+-- Matrix Multiply: 2×2
+-- ================================================================
+--
+-- Proves: LIST + MAP + FOLD + ZIP + functions = linear algebra
+--
+-- Mathematical decomposition:
+--   dot(a,b)    = fold(+, 0, map(unpair·*, zip(a,b)))
+--   matmul(A,B) = [[dot(row_i, col_j) for j] for i]
+--
+-- In Kore (P3: composition = concatenation):
+--   dot = zip [unpair *] map 0 [+] fold
+--
+-- Test case:
+--   A = [[1,2],[3,4]]
+--   B = [[5,6],[7,8]]
+--   A×B = [[1·5+2·7, 1·6+2·8], [3·5+4·7, 3·6+4·8]]
+--       = [[19, 22], [43, 50]]
+-- ================================================================
+
+-- dot product: (vec vec -- scalar)
+: dot zip [ unpair * ] map 0 [ + ] fold ;
+
+-- Extract column vectors from B manually
+-- B = [[5,6],[7,8]] → col0 = [5,7], col1 = [6,8]
+
+-- Row 0 of A × each column of B
+( 1 2 ) ( 5 7 ) dot  -- r00 = 19
+( 1 2 ) ( 6 8 ) dot  -- r01 = 22
+collect 2             -- row0 = [19, 22]
+
+-- Row 1 of A × each column of B
+( 3 4 ) ( 5 7 ) dot  -- r10 = 43
+( 3 4 ) ( 6 8 ) dot  -- r11 = 50
+collect 2             -- row1 = [43, 50]
+
+-- Assemble result matrix
+collect 2             -- result = [[19,22],[43,50]]

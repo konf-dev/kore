@@ -1,0 +1,79 @@
+-- ================================================================
+-- Gradient Descent: minimize f(x) = x² using autodiff
+-- ================================================================
+--
+-- This demonstrates:
+-- 1. Forward-mode autodiff (dual numbers)  [P1: tools]
+-- 2. While loops (iterative)               [P3: composition]
+-- 3. Function composition                  [P3: concatenation]
+--
+-- Algorithm:
+--   x₀ = 10.0, learning_rate = 0.1
+--   repeat:
+--     (val, grad) = f_dual(x)    -- compute f(x) and f'(x)
+--     x = x - lr * grad          -- gradient step
+--   until |grad| < 0.01
+--
+-- f(x) = x², so f'(x) = 2x
+-- Sequence: 10 → 8 → 6.4 → 5.12 → ... → ~0
+-- ================================================================
+
+-- Dual number operations (from stdlib)
+: fst unpair drop ;
+: snd unpair swap drop ;
+: dual pair ;
+: undual unpair ;
+: dconst 0.0 dual ;
+: dvar 1.0 dual ;
+
+: dadd
+  unpair rot unpair rot
+  fadd rot rot swap fadd swap pair
+;
+
+: dmul
+  over over
+  fst swap fst fmul rot rot
+  over over snd swap fst fmul rot rot
+  fst swap snd fmul fadd pair
+;
+
+-- f(x) = x²  as dual: d(x,1) * d(x,1)
+: f_dual dvar dup dmul ;
+
+-- Gradient descent step: x → x - lr * grad
+-- Stack: x
+-- Computes: dual_result = f_dual(x), extracts grad, updates x
+: gd_step
+  dup f_dual     -- x (val,grad)
+  snd            -- x grad
+  0.1 fmul       -- x (lr*grad)
+  swap over      -- (lr*grad) x (lr*grad)
+  fsub           -- (lr*grad) (x - lr*grad)
+  swap drop      -- x_new
+;
+
+-- Run: start at x=10.0, iterate 50 steps
+-- (50 steps is enough for x² with lr=0.1 to converge near 0)
+10.0
+
+-- Unrolled: 50 steps of gradient descent
+-- x = x - 0.1 * 2x = x * (1 - 0.2) = 0.8x
+-- After 50 steps: 10 * 0.8^50 ≈ 0.00014
+
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+gd_step gd_step gd_step gd_step gd_step
+
+-- Also show f(x_final)
+dup dup fmul
+
+-- Stack: x_final f(x_final)
+-- Expected: x ≈ 0.00014, f(x) ≈ 2e-8

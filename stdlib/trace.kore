@@ -1,0 +1,72 @@
+-- ================================================================
+-- Kore Standard Library: Tracing
+-- ================================================================
+--
+-- A trace is a computation log: List of Pair(step_number, value).
+-- Used for debugging, reproducibility, and determinism proofs.
+--
+-- P1: Each trace operation is S→S (trace in, trace out).
+-- P3: Composition: trace-step ∘ trace-step = multi-step trace.
+-- ================================================================
+
+-- trace-new: ( -- trace)
+-- Create an empty trace.
+: trace-new ( ) ;
+
+-- trace-step: (trace value -- trace')
+-- Record a value on the trace with its step number.
+: trace-step
+  -> val -> trace
+  trace len swap drop -> step
+  trace step val pair append
+;
+
+-- trace-get: (trace i -- entry)
+-- Get the i-th trace entry: Pair(step, value).
+: trace-get get ;
+
+-- trace-value: (entry -- value)
+-- Extract the value from a trace entry.
+: trace-value unpair swap drop ;
+
+-- trace-step-num: (entry -- step)
+-- Extract the step number from a trace entry.
+: trace-step-num unpair drop ;
+
+-- trace-len: (trace -- trace n)
+-- Get the number of entries in the trace.
+: trace-len len ;
+
+-- trace-last: (trace -- value|error)
+-- Get the most recent traced value.
+-- P1-safe: returns Error if trace is empty.
+: trace-last
+  dup len swap drop ->n
+  @n 0 = if
+    drop "trace-last: empty trace" error
+  else
+    @n 1 - get
+    trace-value
+  end
+;
+
+-- trace-fingerprint: (trace -- hash)
+-- Compute a simple integer hash of all traced values.
+-- Useful for determinism checking: same computation → same fingerprint.
+: trace-fingerprint
+  0 [ unpair swap drop + ] fold
+;
+
+-- trace-values: (trace -- values)
+-- Extract just the values from a trace (strip step numbers).
+: trace-values
+  [ unpair swap drop ] map
+;
+
+-- trace-replay: (trace quote -- results)
+-- Apply a quote to each traced value, collecting results.
+-- Useful for re-processing a recorded computation.
+: trace-replay
+  -> q
+  trace-values q map
+;

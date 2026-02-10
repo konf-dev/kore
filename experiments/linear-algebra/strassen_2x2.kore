@@ -1,0 +1,52 @@
+-- ================================================================
+-- Strassen 2×2: 7 multiplications instead of 8
+-- ================================================================
+--
+-- Standard 2×2 matmul uses 8 multiplications.
+-- Strassen (1969) discovered a bilinear decomposition using only 7.
+--
+-- A = [[a,b],[c,d]]   B = [[e,f],[g,h]]
+--
+-- M1 = (a+d)*(e+h)    M2 = (c+d)*e      M3 = a*(f-h)
+-- M4 = d*(g-e)         M5 = (a+b)*h      M6 = (c-a)*(e+f)
+-- M7 = (b-d)*(g+h)
+--
+-- C11 = M1+M4-M5+M7   C12 = M3+M5
+-- C21 = M2+M4          C22 = M1-M2+M3+M6
+--
+-- Test:  A = [[1,2],[3,4]]  B = [[5,6],[7,8]]
+--        A×B = [[19,22],[43,50]]
+-- ================================================================
+
+-- Extract matrix elements into locals
+-- A = [[1,2],[3,4]]
+( ( 1 2 ) ( 3 4 ) ) ->A
+A 0 get 0 get ->a   A 0 get 1 get ->b
+A 1 get 0 get ->c   A 1 get 1 get ->d
+
+-- B = [[5,6],[7,8]]
+( ( 5 6 ) ( 7 8 ) ) ->B
+B 0 get 0 get ->e   B 0 get 1 get ->f
+B 1 get 0 get ->g   B 1 get 1 get ->h
+
+-- 7 multiplications (the heart of Strassen)
+a d + e h + * ->m1
+c d + e     * ->m2
+a     f h - * ->m3
+d     g e - * ->m4
+a b + h     * ->m5
+c a - e f + * ->m6
+b d - g h + * ->m7
+
+-- 4 results from additions/subtractions of M-values
+m1 m4 + m5 - m7 +    -- C11 = 19
+m3 m5 +               -- C12 = 22
+m2 m4 +               -- C21 = 43
+m1 m2 - m3 + m6 +    -- C22 = 50
+
+-- Assemble result matrix
+collect 2 ->row1
+collect 2 ->row0
+row0 row1 collect 2
+
+-- Verify: result should be [[19,22],[43,50]]

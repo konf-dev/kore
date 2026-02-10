@@ -1,0 +1,202 @@
+-- ================================================================
+-- Sorting Network Search — Meet in the Middle (MITM)
+-- ================================================================
+--
+-- Instead of searching depth d from state₀ → 0,
+-- search depth d/2 from BOTH ends and find where they meet.
+--
+-- FORWARD:  state₀ → apply comps → frontier F at depth d/2
+-- BACKWARD: 0 → unapply comps → frontier B at depth d/2
+-- Solution exists iff F ∩ B ≠ ∅
+--
+-- Complexity: O(b^d) → O(b^{d/2}) where b = C(n,2)
+-- For n=6: 15^12 ≈ 130B → 15^6 ≈ 11M — ~10000× faster
+--
+-- Key insight: cswap(i,j) is self-inverse on individual values.
+-- But on the STATE BITSET, forward and backward differ:
+--   Forward:  apply comp, REMOVE newly sorted inputs
+--   Backward: unapply comp, ADD back inputs that were sorted
+--
+-- We store frontiers as sorted lists of states (i64 bitsets).
+-- ================================================================
+
+-- ----------------------------------------------------------------
+-- Core words
+-- ----------------------------------------------------------------
+
+: getbit  ->b ->x  x 1 b shl band 0 != if 1 else 0 end ;
+: setbit  ->v ->b ->x
+  v 0 = if x 1 b shl bnot band else x 1 b shl bor end ;
+: cswap-bits  ->cj ->ci ->x
+  x ci getbit ->vi  x cj getbit ->vj
+  vi 1 = vj 0 = and if x ci 0 setbit cj 1 setbit else x end ;
+
+: is-sorted  ->n ->x
+  x 0 = if true else
+  1 n shl 1 - ->mask  mask x bxor ->flipped
+  flipped flipped 1 + band 0 = end ;
+
+: popcount  ->x 0 ->c
+  while x 0 != do x x 1 - band ->x c 1 + ->c end c ;
+
+-- ----------------------------------------------------------------
+-- Forward apply-comp (same as before): remove newly sorted
+-- ----------------------------------------------------------------
+: apply-comp  ->n ->cj ->ci ->state
+  1 n shl ->total  0 ->new-state  0 ->k
+  while k total < do
+    state 1 k shl band 0 != if
+      k ci cj cswap-bits ->k2
+      k2 n is-sorted not if
+        new-state 1 k2 shl bor ->new-state
+      end
+    end
+    k 1 + ->k
+  end new-state ;
+
+-- ----------------------------------------------------------------
+-- Backward unapply-comp: reverse a comparator application
+-- Given a state (bitset of "active" inputs at some point),
+-- reconstruct what the state was BEFORE comparator (ci,cj).
+--
+-- Logic: for each possible input k:
+--   k2 = cswap(k, ci, cj)
+--   If k2 is in the current state → k was in the previous state
+--   If k is sorted → k was removed by the forward step,
+--     so it must have existed before. Add it back.
+-- ----------------------------------------------------------------
+: unapply-comp  ->n ->cj ->ci ->state
+  1 n shl ->total  0 ->prev-state  0 ->k
+  while k total < do
+    k ci cj cswap-bits ->k2
+    -- If k2 is active in current state, then k was active before
+    state 1 k2 shl band 0 != if
+      prev-state 1 k shl bor ->prev-state
+    end
+    -- If k is sorted AND k2 was the result of sorting k,
+    -- then k was active before (the forward step removed it)
+    k n is-sorted if
+      k2 n is-sorted not if
+        -- k2 (unsorted) was in the pre-state, got swapped to k (sorted)
+        -- so k2 was in the pre-state
+        prev-state 1 k2 shl bor ->prev-state
+      end
+    end
+    k 1 + ->k
+  end prev-state ;
+
+-- ----------------------------------------------------------------
+-- Frontier expansion: given a list of states, apply all comparators
+-- and collect unique resulting states.
+--
+-- For forward: apply-comp
+-- For backward: unapply-comp
+-- Returns a sorted, deduplicated list.
+-- ----------------------------------------------------------------
+
+-- ( frontier n direction -- frontier' )
+-- direction: 0 = forward, 1 = backward
+: expand-frontier  ->dir ->n ->frontier
+  ( ) ->next
+  0 ->fi
+  frontier len ->flen
+  while fi flen < do
+    frontier fi get ->s
+    0 ->ci
+    while ci n 1 - < do
+      ci 1 + ->cj
+      while cj n < do
+        dir 0 = if
+          s ci cj n apply-comp
+        else
+          s ci cj n unapply-comp
+        end ->ns
+        ns s != if
+          -- Add to next if not already present
+          -- (simple linear scan — fine for moderate frontier sizes)
+          true ->is-new
+          0 ->ni
+          next len ->nlen
+          while ni nlen < is-new and do
+            next ni get ns = if false ->is-new end
+            ni 1 + ->ni
+          end
+          is-new if next ns append ->next end
+        end
+        cj 1 + ->cj
+      end
+      ci 1 + ->ci
+    end
+    fi 1 + ->fi
+  end
+  next ;
+
+-- ----------------------------------------------------------------
+-- Check intersection of two sorted lists
+-- ----------------------------------------------------------------
+: lists-intersect  ->b ->a
+  false ->found
+  0 ->ai
+  a len ->alen
+  while ai alen < found not and do
+    0 ->bi
+    b len ->blen
+    while bi blen < found not and do
+      a ai get b bi get = if true ->found end
+      bi 1 + ->bi
+    end
+    ai 1 + ->ai
+  end
+  found ;
+
+-- ----------------------------------------------------------------
+-- MITM search for a given budget
+-- ----------------------------------------------------------------
+-- ( state budget n -- found? )
+: mitm-search  ->n ->budget ->state
+  -- Split budget into forward half and backward half
+  budget 2 / ->fwd-depth
+  budget fwd-depth - ->bwd-depth
+
+  -- Forward frontier: expand from state₀
+  ( ) state append ->fwd
+  0 ->fd
+  while fd fwd-depth < do
+    fwd n 0 expand-frontier ->fwd
+    fd 1 + ->fd
+  end
+
+  -- Backward frontier: expand from 0 (goal state)
+  ( ) 0 append ->bwd
+  0 ->bd
+  while bd bwd-depth < do
+    bwd n 1 expand-frontier ->bwd
+    bd 1 + ->bd
+  end
+
+  -- Check if frontiers intersect
+  fwd bwd lists-intersect ;
+
+-- ----------------------------------------------------------------
+-- Init state
+-- ----------------------------------------------------------------
+: init-state  ->n
+  1 n shl ->total  0 ->state  0 ->k
+  while k total < do
+    k n is-sorted not if state 1 k shl bor ->state end
+    k 1 + ->k
+  end state ;
+
+-- ================================================================
+-- MAIN
+-- ================================================================
+5 ->n
+n init-state ->state
+
+-- Iterative deepening with MITM
+1 ->budget  false ->done
+while done not do
+  state budget n mitm-search ->found
+  found if true ->done else budget 1 + ->budget end
+end
+budget

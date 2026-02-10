@@ -1,0 +1,135 @@
+-- ================================================================
+-- Kore Standard Library: Prelude
+-- ================================================================
+--
+-- Everything here is DERIVED from the four postulates.
+-- Zero new opcodes. Pure composition (P3).
+--
+-- Convention: function signature in comment as (inputs -- outputs)
+-- ================================================================
+
+-- ============================================================
+-- Pair projections
+-- ============================================================
+-- unpair (a,b) pushes a then b (b on top of stack)
+: fst unpair drop ;          -- (pair -- first)
+: snd unpair swap drop ;     -- (pair -- second)
+
+-- ============================================================
+-- Numeric utilities
+-- ============================================================
+: abs dup 0 < if neg end ;              -- (int -- |int|)
+: fabs dup 0.0 le if fneg end ;         -- (float -- |float|)
+: max over over < if swap end drop ;    -- (a b -- max(a,b))
+: min over over > if swap end drop ;    -- (a b -- min(a,b))
+: fmax over over le if swap end drop ;  -- (f f -- max)
+: fmin over over ge if swap end drop ;  -- (f f -- min)
+
+-- ============================================================
+-- Activation functions (for neural nets)
+-- ============================================================
+: relu dup 0.0 le if drop 0.0 end ;    -- (float -- max(0,float))
+
+-- ============================================================
+-- List reductions
+-- ============================================================
+: sum 0 [ + ] fold ;                    -- (list<int> -- int)
+: product 1 [ * ] fold ;               -- (list<int> -- int)
+: fsum 0.0 [ fadd ] fold ;             -- (list<float> -- float)
+
+-- ============================================================
+-- Vector operations (List<Float>)
+-- ============================================================
+
+-- dot product: fold(+, 0, map(unpair·*, zip(a,b)))
+-- This is THE fundamental operation of linear algebra
+: dot zip [ unpair * ] map 0 [ + ] fold ;       -- (vec vec -- scalar) [int]
+: fdot zip [ unpair fmul ] map 0.0 [ fadd ] fold ;  -- (vec vec -- scalar) [float]
+
+-- vector addition
+: vadd zip [ unpair + ] map ;           -- (vec vec -- vec)
+: fvadd zip [ unpair fadd ] map ;       -- (vec vec -- vec)
+
+-- element-wise multiply
+: vmul zip [ unpair * ] map ;           -- (vec vec -- vec)
+
+-- scalar multiply (requires the scalar to be below the vector)
+-- usage: 3 ( 1 2 3 ) smul → ( 3 6 9 )
+-- Note: inside the map quote, only the list element is on stack.
+-- For scalar multiply, we need a different approach:
+-- smul = map with a captured scalar. But Kore doesn't have closures.
+-- Instead: we use a different pattern.
+
+-- ============================================================
+-- Dual number arithmetic (Forward-mode AD)
+-- ============================================================
+-- Dual number x̃ = (value, derivative) = Pair(Float, Float)
+-- No closures, no tapes, no compiler plugins.
+-- Just Pair (P1) + composition (P3).
+
+: dual pair ;                -- (val der -- (val,der))
+: undual unpair ;            -- ((val,der) -- val der)
+: dconst 0.0 dual ;         -- (x -- (x,0))   constant
+: dvar 1.0 dual ;           -- (x -- (x,1))   variable
+
+-- dadd: (a+b, da+db)
+: dadd
+  unpair rot unpair rot
+  fadd rot rot swap fadd swap pair ;
+
+-- dmul: (a*b, a*db + da*b)  [product rule]
+: dmul
+  over over
+  fst swap fst fmul rot rot
+  over over snd swap fst fmul rot rot
+  fst swap snd fmul fadd pair ;
+
+-- dneg: (-a, -da)
+: dneg unpair fneg swap fneg swap pair ;
+
+-- dsub: (a-b, da-db)
+: dsub dneg dadd ;
+
+-- ============================================================
+-- Higher-order list utilities (use training primitives)
+-- ============================================================
+-- P3: pure composition of existing ops. Zero new opcodes.
+
+-- any/all: reduce booleans over a predicate
+-- any = "does any element satisfy pred?"
+-- usage: ( 1 2 3 ) [ 2 > ] any  → true
+: any filter empty? not swap drop ;  -- (list pred -- bool)
+
+-- all: "do all elements satisfy pred?"
+-- Note: len is non-destructive (pushes length, keeps list)
+-- Stack: (list pred)
+-- swap len gives (pred list n), rot rot gives (n pred list)
+-- swap gives (n list pred), filter gives (n filtered)
+-- len gives (n filtered flen), rot rot gives (flen n filtered)
+-- drop gives (flen n), = gives (bool)
+-- usage: ( 2 4 6 ) [ 2 mod 0 = ] all → true
+: all swap len rot rot swap filter len rot rot drop = ; -- (list pred -- bool)
+
+-- count: count elements satisfying predicate
+-- usage: ( 1 2 3 4 5 ) [ 3 > ] count → 2
+: count filter len swap drop ;       -- (list pred -- n)
+
+-- take: first N elements of a list
+-- Strategy: compute drops=(len-n), reverse, tail drops times, reverse back
+-- Note: len is non-destructive (peeks top)
+-- usage: ( 10 20 30 40 50 ) 3 take → ( 10 20 30 )
+: take swap len rot - swap reverse swap [ tail ] times reverse ; -- (list n -- list')
+
+-- drop-n: drop first N elements (tail applied N times)
+-- usage: ( 10 20 30 40 50 ) 2 drop-n → ( 30 40 50 )
+: drop-n [ tail ] times ;            -- (list n -- list')
+
+-- flatten: flatten a list of lists into a single list
+-- usage: ( ( 1 2 ) ( 3 4 ) ) flatten → ( 1 2 3 4 )
+: flatten ( ) [ concat ] fold ;      -- (list<list> -- list)
+
+-- enumerate: pair each element with its index
+-- Note: len is non-destructive (peeks), so no dup needed
+-- usage: ( 10 20 30 ) enumerate → ( (0,10) (1,20) (2,30) )
+: enumerate len 0 swap range zip [ unpair swap pair ] map ; -- (list -- list<pair>)
+

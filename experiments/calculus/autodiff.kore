@@ -1,0 +1,114 @@
+-- ================================================================
+-- Forward-Mode Automatic Differentiation via Dual Numbers
+-- ================================================================
+--
+-- Dual number: x̃ = (x, ẋ) = Pair(value, derivative)
+-- No new opcodes — pure composition (P3), everything a tool (P1).
+--
+-- Lift rules:
+--   ã + b̃ = (a+b, ȧ+ḃ)
+--   ã × b̃ = (a·b, a·ḃ + ȧ·b)     [product rule]
+--   -ã   = (-a, -ȧ)
+-- ================================================================
+
+-- Pair projections
+-- unpair (a,b) → a b  (b on top)
+: fst unpair drop ;          -- (a,b) → a  [drop b, keep a]
+: snd unpair swap drop ;     -- (a,b) → b  [swap, drop a, keep b]
+
+-- Dual number constructors
+: dual pair ;                -- (value deriv -- (value,deriv))
+: undual unpair ;            -- ((value,deriv) -- value deriv)
+
+-- Constant: derivative is 0
+: dconst 0.0 dual ;          -- (x -- (x,0))
+
+-- Variable: derivative is 1 (w.r.t. itself)  
+: dvar 1.0 dual ;            -- (x -- (x,1))
+
+-- ============================================================
+-- dadd: ((a,da) (b,db) -- (a+b, da+db))
+-- ============================================================
+: dadd
+  unpair          -- (a,da) b db         [b=val, db=deriv on top]
+  rot             -- b db (a,da)
+  unpair          -- b db a da           [a=val, da=deriv on top]
+  rot             -- b a da db           [wait: rot (db a da) → (a da db)]
+  fadd            -- b a (da+db)
+  rot             -- a (da+db) b
+  rot             -- (da+db) b a
+  swap            -- (da+db) a b
+  fadd            -- (da+db) (a+b)
+  swap            -- (a+b) (da+db)
+  pair            -- ((a+b),(da+db))
+;
+
+-- ============================================================
+-- dmul: ((a,da) (b,db) -- (a*b, a*db + da*b))
+-- Uses over/over to duplicate both pairs, then extracts
+-- ============================================================
+: dmul
+  -- stack: (a,da) (b,db)
+  over over       -- (a,da) (b,db) (a,da) (b,db)
+  
+  -- Compute value: a * b
+  fst             -- ... (a,da) (b,db) (a,da) b
+  swap            -- ... (a,da) (b,db) b (a,da)
+  fst             -- ... (a,da) (b,db) b a
+  fmul            -- ... (a,da) (b,db) (a*b)
+  
+  -- Move result down
+  rot rot         -- ... (a*b) (a,da) (b,db)
+  
+  -- Compute a*db
+  over over       -- ... (a*b) (a,da) (b,db) (a,da) (b,db)
+  snd             -- ... (a*b) (a,da) (b,db) (a,da) db
+  swap            -- ... (a*b) (a,da) (b,db) db (a,da)
+  fst             -- ... (a*b) (a,da) (b,db) db a
+  fmul            -- ... (a*b) (a,da) (b,db) (a*db)
+  
+  -- Compute da*b
+  rot rot         -- ... (a*b) (a*db) (a,da) (b,db)
+  fst             -- ... (a*b) (a*db) (a,da) b
+  swap            -- ... (a*b) (a*db) b (a,da)
+  snd             -- ... (a*b) (a*db) b da
+  fmul            -- ... (a*b) (a*db) (da*b)
+  
+  -- Derivative = a*db + da*b
+  fadd            -- ... (a*b) (a*db + da*b)
+  pair            -- (a*b, a*db + da*b)
+;
+
+-- ============================================================
+-- dneg: ((a,da) -- (-a, -da))
+-- ============================================================
+: dneg unpair fneg swap fneg swap pair ;
+
+-- ============================================================
+-- TEST 1: f(x) = x + 3 at x=2
+-- f'(x) = 1
+-- Expected: value=5.0, deriv=1.0
+-- ============================================================
+2.0 dvar 3.0 dconst dadd undual
+-- Stack: 5.0 1.0
+drop drop
+
+-- ============================================================
+-- TEST 2: f(x) = x² at x=3
+-- f'(x) = 2x = 6
+-- Expected: value=9.0, deriv=6.0
+-- ============================================================
+3.0 dvar dup dmul undual
+-- Stack: 9.0 6.0
+drop drop
+
+-- ============================================================
+-- TEST 3: f(x) = (x+1)(x+2) at x=3
+-- f(3) = 4 × 5 = 20
+-- f'(x) = (x+2) + (x+1) = 2x+3 = 9
+-- Expected: value=20.0, deriv=9.0
+-- ============================================================
+3.0 dvar 1.0 dconst dadd
+3.0 dvar 2.0 dconst dadd
+dmul undual
+-- Final stack: 20.0 9.0

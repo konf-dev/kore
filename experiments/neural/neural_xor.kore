@@ -1,0 +1,104 @@
+-- ================================================================
+-- Neural Network: XOR in Pure Kore
+-- ================================================================
+--
+-- Architecture: 2 → 2 → 1
+--   Layer 1: W₁ = [[1,1],[1,1]], b₁ = [0,-1]
+--   Layer 2: W₂ = [[1,-2]],     b₂ = [0]
+--   Activation: relu
+--
+-- These weights solve XOR:
+--   h = relu(W₁ · x + b₁)
+--   y = relu(W₂ · h + b₂)
+--
+-- No PyTorch. No TensorFlow. No frameworks.
+-- Just 4 postulates + composition.
+-- ================================================================
+
+-- Stdlib
+: fst unpair drop ;
+: snd unpair swap drop ;
+: relu dup 0.0 le if drop 0.0 end ;
+: dot zip [ unpair * ] map 0 [ + ] fold ;
+: vadd zip [ unpair + ] map ;
+
+-- ============================================================
+-- Neural network layer
+-- ============================================================
+-- A layer forward pass: y = relu(W·x + b)
+-- W is a matrix (list of rows), x is a vector, b is a bias vector
+--
+-- For W=[r₀,r₁,...], x, b=[b₀,b₁,...]:
+--   out[i] = relu(dot(r_i, x) + b_i)
+--
+-- We compute each row's dot product manually since map
+-- can't capture the input vector x in a closure.
+
+-- Compute one neuron: (row_weights input bias_val -- output)
+: neuron
+  rot rot    -- bias row input
+  dot        -- bias dot_result
+  +          -- bias + dot_result
+  i2f relu   -- apply activation
+;
+
+-- ============================================================
+-- Forward pass for all 4 XOR inputs
+-- ============================================================
+
+-- Weights (integers for clean computation)
+-- W₁ row 0 = [1, 1]
+-- W₁ row 1 = [1, 1]
+-- b₁ = [0, -1]
+-- W₂ row 0 = [1, -2]
+-- b₂ = [0]
+
+-- ============================================================
+-- Input (0, 0) → expected 0
+-- ============================================================
+-- Layer 1: h = relu(W₁·x + b₁)
+( 1 1 ) ( 0 0 ) 0 neuron    -- h₀ = relu(0+0+0) = 0.0
+( 1 1 ) ( 0 0 ) -1 neuron   -- h₁ = relu(0+0-1) = 0.0
+-- Layer 2: y = relu(W₂·h + b₂)
+-- h = [h₀, h₁], but h₀ and h₁ are on stack as floats
+-- W₂ = [1, -2], b₂ = 0
+-- y = relu(1*h₀ + (-2)*h₁ + 0)
+-- h₀=0.0, h₁=0.0 → y = relu(0) = 0.0
+swap 1.0 fmul swap -2.0 fmul fadd 0.0 fadd relu
+-- Stack: 0.0  (XOR(0,0) = 0 ✓)
+
+-- ============================================================
+-- Input (0, 1) → expected 1
+-- ============================================================
+( 1 1 ) ( 0 1 ) 0 neuron    -- h₀ = relu(1+0) = 1.0
+( 1 1 ) ( 0 1 ) -1 neuron   -- h₁ = relu(1-1) = 0.0
+swap 1.0 fmul swap -2.0 fmul fadd 0.0 fadd relu
+-- Stack: 0.0 1.0  (XOR(0,1) = 1 ✓)
+
+-- ============================================================
+-- Input (1, 0) → expected 1
+-- ============================================================
+( 1 1 ) ( 1 0 ) 0 neuron    -- h₀ = relu(1+0) = 1.0
+( 1 1 ) ( 1 0 ) -1 neuron   -- h₁ = relu(1-1) = 0.0
+swap 1.0 fmul swap -2.0 fmul fadd 0.0 fadd relu
+-- Stack: 0.0 1.0 1.0  (XOR(1,0) = 1 ✓)
+
+-- ============================================================
+-- Input (1, 1) → expected 0
+-- ============================================================
+( 1 1 ) ( 1 1 ) 0 neuron    -- h₀ = relu(2+0) = 2.0
+( 1 1 ) ( 1 1 ) -1 neuron   -- h₁ = relu(2-1) = 1.0
+swap 1.0 fmul swap -2.0 fmul fadd 0.0 fadd relu
+-- Stack: 0.0 1.0 1.0 0.0  (XOR(1,1) = 0 ✓)
+
+-- ============================================================
+-- Result: Stack should be [0.0, 1.0, 1.0, 0.0]
+-- This IS the XOR truth table!
+-- 
+-- Proven: A 2-layer neural network with relu activation
+-- can compute XOR. Built entirely from Kore primitives:
+--   dot product = zip + map + fold
+--   relu = if-else + comparison
+--   forward pass = function composition
+--   Zero new opcodes.
+-- ============================================================

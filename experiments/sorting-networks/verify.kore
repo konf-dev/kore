@@ -1,0 +1,260 @@
+-- Sorting Network Zero-One Verifier
+-- Verifies known optimal sorting networks via the zero-one principle
+-- If net sorts all 2^n binary sequences then it sorts all sequences (Knuth)
+
+-- compare-and-swap: (list i j -- list')
+: cswap ->j ->i ->v
+  v i get ->a  v j get ->b
+  a b > if v i b set j a set else v end
+;
+
+-- check if list is non-decreasing: (list -- bool)
+: is-sorted ->v
+  v len swap drop 1 - ->last
+  true ->ok
+  0 ->idx
+  while idx last < do
+    v idx get v idx 1 + get > if
+      false ->ok
+    end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+-- 2^n: (n -- 2^n)
+: pow2 ->n
+  1 ->r
+  0 ->k
+  while k n < do
+    r 2 * ->r
+    k 1 + ->k
+  end
+  r
+;
+
+-- integer to n-bit binary list: (val n -- list)
+: to-bits ->n ->val
+  ( ) ->result
+  0 ->k
+  while k n < do
+    result val 2 % append ->result
+    val 2 / ->val
+    k 1 + ->k
+  end
+  result
+;
+
+-- Optimal networks from bertdobbelaere.github.io/sorting_networks.html
+
+-- n=4: 5 comparators (Knuth)
+: net4
+  0 2 cswap  1 3 cswap
+  0 1 cswap  2 3 cswap
+  1 2 cswap
+;
+
+-- n=5: 9 comparators (Knuth)
+: net5
+  0 3 cswap  1 4 cswap
+  0 2 cswap  1 3 cswap
+  0 1 cswap  2 4 cswap
+  1 2 cswap  3 4 cswap
+  2 3 cswap
+;
+
+-- n=6: 12 comparators (Knuth)
+: net6
+  0 5 cswap  1 3 cswap  2 4 cswap
+  1 2 cswap  3 4 cswap
+  0 3 cswap  2 5 cswap
+  0 1 cswap  2 3 cswap  4 5 cswap
+  1 2 cswap  3 4 cswap
+;
+
+-- n=7: 16 comparators (Knuth)
+: net7
+  0 6 cswap  2 3 cswap  4 5 cswap
+  0 2 cswap  1 4 cswap  3 6 cswap
+  0 1 cswap  2 5 cswap  3 4 cswap
+  1 2 cswap  4 6 cswap
+  2 3 cswap  4 5 cswap
+  1 2 cswap  3 4 cswap  5 6 cswap
+;
+
+-- n=8: 19 comparators (Knuth)
+: net8
+  0 2 cswap  1 3 cswap  4 6 cswap  5 7 cswap
+  0 4 cswap  1 5 cswap  2 6 cswap  3 7 cswap
+  0 1 cswap  2 3 cswap  4 5 cswap  6 7 cswap
+  2 4 cswap  3 5 cswap
+  1 4 cswap  3 6 cswap
+  1 2 cswap  3 4 cswap  5 6 cswap
+;
+
+-- n=9: 25 comparators (Knuth + CCFS16 optimal proof)
+: net9
+  0 3 cswap  1 7 cswap  2 5 cswap  4 8 cswap
+  0 7 cswap  2 4 cswap  3 8 cswap  5 6 cswap
+  0 2 cswap  1 3 cswap  4 5 cswap  7 8 cswap
+  1 4 cswap  3 6 cswap  5 7 cswap
+  0 1 cswap  2 4 cswap  3 5 cswap  6 8 cswap
+  2 3 cswap  4 5 cswap  6 7 cswap
+  1 2 cswap  3 4 cswap  5 6 cswap
+;
+
+-- n=10: 29 comparators (CCFS16 optimal proof)
+: net10
+  0 8 cswap  1 9 cswap  2 7 cswap  3 5 cswap  4 6 cswap
+  0 2 cswap  1 4 cswap  5 8 cswap  7 9 cswap
+  0 3 cswap  2 4 cswap  5 7 cswap  6 9 cswap
+  0 1 cswap  3 6 cswap  8 9 cswap
+  1 5 cswap  2 3 cswap  4 8 cswap  6 7 cswap
+  1 2 cswap  3 5 cswap  4 6 cswap  7 8 cswap
+  2 3 cswap  4 5 cswap  6 7 cswap
+  3 4 cswap  5 6 cswap
+;
+
+-- n=11: 35 comparators (Harder19 optimal proof)
+: net11
+  0 9 cswap  1 6 cswap  2 4 cswap  3 7 cswap  5 8 cswap
+  0 1 cswap  3 5 cswap  4 10 cswap  6 9 cswap  7 8 cswap
+  1 3 cswap  2 5 cswap  4 7 cswap  8 10 cswap
+  0 4 cswap  1 2 cswap  3 7 cswap  5 9 cswap  6 8 cswap
+  0 1 cswap  2 6 cswap  4 5 cswap  7 8 cswap  9 10 cswap
+  2 4 cswap  3 6 cswap  5 7 cswap  8 9 cswap
+  1 2 cswap  3 4 cswap  5 6 cswap  7 8 cswap
+  2 3 cswap  4 5 cswap  6 7 cswap
+;
+
+-- n=12: 39 comparators (Harder19 optimal proof)
+: net12
+  0 8 cswap  1 7 cswap  2 6 cswap  3 11 cswap  4 10 cswap  5 9 cswap
+  0 1 cswap  2 5 cswap  3 4 cswap  6 9 cswap  7 8 cswap  10 11 cswap
+  0 2 cswap  1 6 cswap  5 10 cswap  9 11 cswap
+  0 3 cswap  1 2 cswap  4 6 cswap  5 7 cswap  8 11 cswap  9 10 cswap
+  1 4 cswap  3 5 cswap  6 8 cswap  7 10 cswap
+  1 3 cswap  2 5 cswap  6 9 cswap  8 10 cswap
+  2 3 cswap  4 5 cswap  6 7 cswap  8 9 cswap
+  4 6 cswap  5 7 cswap
+  3 4 cswap  5 6 cswap  7 8 cswap
+;
+
+-- n=13: 45 comparators (best known -- gap: 44..45)
+: net13
+  0 12 cswap  1 10 cswap  2 9 cswap  3 7 cswap  5 11 cswap  6 8 cswap
+  1 6 cswap  2 3 cswap  4 11 cswap  7 9 cswap  8 10 cswap
+  0 4 cswap  1 2 cswap  3 6 cswap  7 8 cswap  9 10 cswap  11 12 cswap
+  4 6 cswap  5 9 cswap  8 11 cswap  10 12 cswap
+  0 5 cswap  3 8 cswap  4 7 cswap  6 11 cswap  9 10 cswap
+  0 1 cswap  2 5 cswap  6 9 cswap  7 8 cswap  10 11 cswap
+  1 3 cswap  2 4 cswap  5 6 cswap  9 10 cswap
+  1 2 cswap  3 4 cswap  5 7 cswap  6 8 cswap
+  2 3 cswap  4 5 cswap  6 7 cswap  8 9 cswap
+  3 4 cswap  5 6 cswap
+;
+
+-- Per-n verification functions
+
+: verify4
+  4 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 4 to-bits net4 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify5
+  5 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 5 to-bits net5 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify6
+  6 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 6 to-bits net6 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify7
+  7 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 7 to-bits net7 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify8
+  8 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 8 to-bits net8 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify9
+  9 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 9 to-bits net9 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify10
+  10 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 10 to-bits net10 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify11
+  11 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 11 to-bits net11 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify12
+  12 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 12 to-bits net12 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+: verify13
+  13 pow2 ->total  true ->ok  0 ->idx
+  while idx total < do
+    idx 13 to-bits net13 is-sorted not if false ->ok end
+    idx 1 + ->idx
+  end
+  ok
+;
+
+-- Run all verifications
+-- Stack will contain: n=4 n=5 ... n=13 (all should be true)
+verify4
+verify5
+verify6
+verify7
+verify8
+verify9
+verify10
+verify11
+verify12
+verify13

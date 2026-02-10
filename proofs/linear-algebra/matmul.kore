@@ -1,0 +1,35 @@
+-- ================================================================
+-- PROOF: 2×2 Matrix multiply is correct
+-- ================================================================
+--
+-- Claim: matmul of two 2×2 matrices computed via Kore arithmetic
+-- matches the algebraic definition:
+--   C[i,j] = Σ_k A[i,k] * B[k,j]
+--
+-- For A = [[1,2],[3,4]] and B = [[5,6],[7,8]]:
+--   C₀₀ = 1*5 + 2*7 = 5 + 14 = 19
+--   C₀₁ = 1*6 + 2*8 = 6 + 16 = 22
+--   C₁₀ = 3*5 + 4*7 = 15 + 28 = 43
+--   C₁₁ = 3*6 + 4*8 = 18 + 32 = 50
+--
+-- So C = [[19,22],[43,50]]
+--
+-- This proves linear algebra is DERIVED from basic arithmetic
+-- (P1 tools + P3 composition). No matrix primitive needed.
+-- ================================================================
+
+-- C00 = 1*5 + 2*7
+1 5 * 2 7 * +    -- 19
+
+-- C01 = 1*6 + 2*8
+1 6 * 2 8 * +    -- 22
+
+-- C10 = 3*5 + 4*7
+3 5 * 4 7 * +    -- 43
+
+-- C11 = 3*6 + 4*8
+3 6 * 4 8 * +    -- 50
+
+-- Stack: 19 22 43 50
+-- This matches [[19,22],[43,50]], the correct product.
+-- QED.

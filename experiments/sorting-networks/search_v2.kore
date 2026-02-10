@@ -1,0 +1,203 @@
+-- ============================================================
+-- Sorting Network Search for n=13  (pure Kore, bit-parallel)
+-- ============================================================
+-- Goal: find a 44-comparator sorting network for 13 wires
+-- Method: lattice-guided branch-and-bound with P4 pruning
+-- Representation: each input is a 13-bit integer
+-- Verification: zero-one principle (test all 2^13 = 8192 inputs)
+
+-- ============================================================
+-- Bit-parallel comparator: apply (i,j) to an n-bit integer
+-- ============================================================
+-- cswap(i,j) with i<j: ensures wire[i] <= wire[j]
+-- For binary: if bit_i=1 and bit_j=0, swap them
+
+: bit-cswap  -- (x i j -- x')
+  ->j ->i ->x
+  x 1 i shl and i shr ->vi
+  x 1 j shl and j shr ->vj
+  vi vj > if
+    x 1 i shl bnot and 1 j shl or
+  else
+    x
+  end
+;
+
+-- Check if x is sorted for n wires
+-- Sorted means: bit_0 <= bit_1 <= ... <= bit_(n-1)
+-- i.e. 1-bits form contiguous block at MSB side
+-- Check: no position i where bit_i=1 and bit_(i+1)=0
+-- Formula: (x & ~(x >> 1)) & ((1 << (n-1)) - 1) == 0
+: is-sorted-n  -- (x n -- bool)
+  ->n ->x
+  x x 1 shr bnot and
+  1 n 1 - shl 1 - and
+  0 =
+;
+
+-- ============================================================
+-- Count failures for a network on n wires
+-- Network is flat list [i0 j0 i1 j1 ...]
+-- ============================================================
+: count-failures  -- (network n -- failures)
+  ->n ->net
+  net len swap drop ->netlen
+  0 ->fails
+  0 ->x
+  1 n shl ->total  -- 2^n
+
+  while x total < do
+    x ->cur
+    0 ->k
+    while k netlen < do
+      cur net k get net k 1 + get bit-cswap ->cur
+      k 2 + ->k
+    end
+    cur n is-sorted-n not if
+      fails 1 + ->fails
+    end
+    x 1 + ->x
+  end
+  fails
+;
+
+-- ============================================================
+-- The known best n=13 network (45 comparators)
+-- ============================================================
+: best-13
+  ( 0 12  1 10  2 9  3 7  5 11  6 8
+    1 6   2 3   4 11  7 9  8 10
+    0 4   1 2   3 6   7 8  9 10  11 12
+    4 6   5 9   8 11  10 12
+    0 5   3 8   4 7   6 11  9 10
+    0 1   2 5   6 9   7 8  10 11
+    1 3   2 4   5 6   9 10
+    1 2   3 4   5 7   6 8
+    2 3   4 5   6 7   8 9
+    3 4   5 6 )
+;
+
+-- ============================================================
+-- Network manipulation
+-- ============================================================
+
+-- Remove comparator at position p (0-indexed pair)
+: remove-at  -- (net pos -- net')
+  ->p ->net
+  net len swap drop ->n
+  ( ) ->result
+  0 ->k
+  while k n < do
+    k 2 / p = not if
+      result net k get append ->result
+    end
+    k 1 + ->k
+  end
+  result
+;
+
+-- Insert comparator (i,j) at position p
+: insert-at  -- (net i j pos -- net')
+  ->p ->j ->i ->net
+  net len swap drop ->n
+  ( ) ->result
+  0 ->k  0 ->pair-idx
+  while k n < do
+    pair-idx p = if
+      result i append j append ->result
+    end
+    result net k get append ->result
+    k 1 + ->k
+    k 2 % 0 = if pair-idx 1 + ->pair-idx end
+  end
+  pair-idx p = if
+    result i append j append ->result
+  end
+  result
+;
+
+-- Remove two comparators (higher index first to preserve positions)
+: remove-two  -- (net p1 p2 -- net')
+  ->p2 ->p1
+  p1 p2 > if
+    p1 ->tmp  p2 ->p1  tmp ->p2
+  end
+  p2 remove-at
+  p1 remove-at
+;
+
+-- ============================================================
+-- Vulnerability analysis: for each comparator, how many
+-- inputs fail if we remove just that one?
+-- ============================================================
+: skip-analysis  -- ( -- list-of-failures )
+  best-13 ->net
+  ( ) ->results
+  0 ->pos
+  while pos 45 < do
+    net pos remove-at 13 count-failures ->f
+    results f append ->results
+    pos 1 + ->pos
+  end
+  results
+;
+
+-- ============================================================
+-- Search: remove position rm, try all 78 replacements
+-- ============================================================
+: search-replace-at  -- (rm -- best-f best-i best-j)
+  ->rm
+  best-13 ->net
+  9999 ->best  0 ->bi  0 ->bj
+  0 ->ni
+  while ni 13 < do
+    ni 1 + ->nj
+    while nj 13 < do
+      net rm remove-at
+      ni nj rm insert-at
+      13 count-failures ->f
+      f best < if
+        f ->best  ni ->bi  nj ->bj
+      end
+      nj 1 + ->nj
+    end
+    ni 1 + ->ni
+  end
+  best bi bj
+;
+
+-- ============================================================
+-- Remove-2-Add-1: remove 2 weakest, try adding 1 everywhere
+-- ============================================================
+: search-r2a1  -- (rm1 rm2 -- best-f best-i best-j best-pos)
+  ->rm2 ->rm1
+  best-13 rm1 rm2 remove-two ->net43
+  9999 ->best  0 ->bi  0 ->bj  0 ->bp
+
+  0 ->pos
+  while pos 44 < do
+    0 ->ni
+    while ni 13 < do
+      ni 1 + ->nj
+      while nj 13 < do
+        net43 ni nj pos insert-at 13 count-failures ->f
+        f best < if
+          f ->best  ni ->bi  nj ->bj  pos ->bp
+        end
+        f 0 = if
+          -- FOUND 44-comp network!
+          best bi bj bp
+        end
+        nj 1 + ->nj
+      end
+      ni 1 + ->ni
+    end
+    pos 1 + ->pos
+  end
+  best bi bj bp
+;
+
+-- ============================================================
+-- MAIN: Verify 45-comp network
+-- ============================================================
+best-13 13 count-failures

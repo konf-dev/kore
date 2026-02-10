@@ -1,0 +1,125 @@
+-- ================================================================
+-- Kore Standard Library: Optimizers
+-- ================================================================
+--
+-- First-order optimization algorithms for gradient descent.
+-- All operate on parameter vectors (List<Float>) and gradient
+-- vectors (List<Float>).
+--
+-- Design follows P1: each optimizer step is S→S.
+-- Composition (P3): chain multiple steps for training loops.
+-- ================================================================
+
+-- ================================================================
+-- Gradient Clipping
+-- ================================================================
+
+-- grad-norm: (grads -- grads norm)
+-- Compute L2 norm of gradient vector (does not consume grads).
+: grad-norm
+  dup 0.0 [ dup fmul fadd ] fold fsqrt
+;
+
+-- grad-clip: (grads max_norm -- grads')
+-- Clip gradients by global L2 norm.
+-- If ||grads|| > max_norm, scale down to have norm = max_norm.
+: grad-clip
+  -> max_norm
+  grad-norm -> norm
+  norm max_norm gt if
+    max_norm norm fdiv -> scale
+    [ scale fmul ] map
+  end
+;
+
+-- ================================================================
+-- SGD (Stochastic Gradient Descent)
+-- ================================================================
+
+-- sgd-step: (params grads lr -- params')
+-- θ' = θ - lr * ∇θ
+: sgd-step
+  -> lr -> grads -> params
+  params grads zip
+  [ unpair -> g -> p
+    p lr g fmul fsub ] map
+;
+
+-- ================================================================
+-- Momentum SGD
+-- ================================================================
+
+-- momentum-step: (params grads velocity mu lr -- params' velocity')
+-- v' = mu * v + grads
+-- θ' = θ - lr * v'
+: momentum-step
+  -> lr -> mu -> velocity -> grads -> params
+  -- Update velocity: v' = mu * v + g
+  velocity grads zip
+  [ unpair -> g -> v
+    mu v fmul g fadd ] map -> velocity_new
+  -- Update params: θ' = θ - lr * v'
+  params velocity_new zip
+  [ unpair -> v -> p
+    p lr v fmul fsub ] map
+  velocity_new
+;
+
+-- ================================================================
+-- Adam Optimizer
+-- ================================================================
+
+-- adam-step: (params grads m v t beta1 beta2 lr eps -- params' m' v' t')
+-- m' = beta1 * m + (1 - beta1) * g
+-- v' = beta2 * v + (1 - beta2) * g²
+-- m_hat = m' / (1 - beta1^t)
+-- v_hat = v' / (1 - beta2^t)
+-- θ' = θ - lr * m_hat / (sqrt(v_hat) + eps)
+--
+-- P1 note: fdiv/flog now return Error values on failure instead of
+-- aborting, so division by zero (e.g., bc1=0 when t=0) propagates
+-- as an Error value through the computation rather than crashing.
+-- Callers should use ? to propagate or is-error to check.
+-- t should start at 1 (first step), not 0.
+: adam-step
+  -> eps -> lr -> beta2 -> beta1 -> t -> v -> m -> grads -> params
+  -- Update biased first moment: m' = β₁m + (1-β₁)g
+  1.0 beta1 fsub -> one_minus_b1
+  m grads zip
+  [ unpair -> g -> mi
+    beta1 mi fmul one_minus_b1 g fmul fadd ] map -> m_new
+  -- Update biased second moment: v' = β₂v + (1-β₂)g²
+  1.0 beta2 fsub -> one_minus_b2
+  v grads zip
+  [ unpair -> g -> vi
+    beta2 vi fmul one_minus_b2 g dup fmul fmul fadd ] map -> v_new
+  -- Bias correction
+  t i2f -> tf
+  1.0 beta1 tf flog fmul fexp fsub -> bc1
+  1.0 beta2 tf flog fmul fexp fsub -> bc2
+  -- Update params: θ' = θ - lr * (m'/bc1) / (sqrt(v'/bc2) + eps)
+  params m_new zip v_new zip
+  [ unpair -> vi_new
+    unpair -> mi_new -> pi
+    mi_new bc1 fdiv -> m_hat
+    vi_new bc2 fdiv fsqrt eps fadd -> denom
+    pi lr m_hat fmul denom fdiv fsub ] map
+  m_new v_new t 1 +
+;
+
+-- ================================================================
+-- Utilities
+-- ================================================================
+
+-- zeros: (n -- list)
+-- Create a list of n zeros (floats).
+: zeros
+  -> n
+  ( ) -> acc
+  0 -> i
+  while i n < do
+    acc 0.0 append -> acc
+    i 1 + -> i
+  end
+  acc
+;

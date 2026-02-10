@@ -1,0 +1,79 @@
+-- ================================================================
+-- PROOF: P2 — Apply is the Only Fundamental Operation
+-- ================================================================
+--
+-- Claim: The ONLY primitive operation is `apply: Tool × State → State`.
+--        Everything else is derivable.
+--
+-- Method: Show that all "complex" operations reduce to
+--         applying quotes (anonymous tools) to the stack.
+-- ================================================================
+
+-- ————————————————————————————————————————
+-- Lemma 1: Functions are named quotes
+-- ————————————————————————————————————————
+
+-- : double dup + ;  is just naming the quote [dup +]
+-- calling `double` ≡ applying the quote
+
+: double dup + ;
+
+: lemma1
+  3 double             -- 6
+  3 [ dup + ] apply    -- 6
+  =                    -- true: function call = apply
+;
+
+-- ————————————————————————————————————————
+-- Lemma 2: map is repeated apply
+-- ————————————————————————————————————————
+
+: lemma2
+  ( 1 2 3 ) [ dup * ] map   -- [1, 4, 9]
+  ->sq
+  sq 0 get 1 =
+  sq 1 get 4 = and
+  sq 2 get 9 = and          -- map = apply per element
+;
+
+-- ————————————————————————————————————————
+-- Lemma 3: fold is iterated apply
+-- ————————————————————————————————————————
+
+: lemma3
+  ( 1 2 3 4 5 ) 0 [ + ] fold   -- 15
+  0 1 + 2 + 3 + 4 + 5 +        -- 15
+  =                              -- fold = iterated binary apply
+;
+
+-- ————————————————————————————————————————
+-- Lemma 4: Conditionals are quote selection + apply
+-- ————————————————————————————————————————
+
+-- if..else..end is sugar for selecting and applying a branch
+: lemma4
+  true if 42 else 0 end 42 =     -- true branch selected
+  false if 42 else 0 end 0 = and -- false branch selected
+;
+
+-- ————————————————————————————————————————
+-- Lemma 5: Composition is apply-after-apply
+-- ————————————————————————————————————————
+
+: f 1 + ;
+: g 2 * ;
+
+: lemma5
+  3 f g                       -- (3+1)*2 = 8
+  3 [ 1 + ] apply [ 2 * ] apply  -- same thing
+  =
+;
+
+-- ————————————————————————————————————————
+-- Theorem: All computation reduces to apply
+-- ————————————————————————————————————————
+
+lemma1 lemma2 and lemma3 and lemma4 and lemma5 and
+
+-- Stack: true
+-- QED: Apply is the only fundamental operation.

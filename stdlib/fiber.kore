@@ -1,0 +1,81 @@
+-- ================================================================
+-- Kore Standard Library: Fibers (Cooperative Multitasking)
+-- ================================================================
+--
+-- A fiber is a suspended computation with its own stack.
+-- Fibers enable cooperative multitasking: step one, step another,
+-- interleave computations without threads.
+--
+-- P1: Each fiber operation is S→S
+-- P2: fiber-step applies one instruction (fundamental operation)
+-- P3: Interleaving = concatenation of step sequences
+-- P4: Fiber isolation constrains side effects to the fiber's stack
+-- ================================================================
+
+-- fiber-run: (fiber -- fiber)
+-- Run a fiber to completion.
+: fiber-run
+  -> f
+  f fiber-status -> done
+  while done not do
+    f fiber-step -> done -> f
+  end
+  f
+;
+
+-- fiber-result: (fiber -- value|error)
+-- Get the top of a completed fiber's stack.
+-- P1-safe: returns Error if fiber stack is empty.
+: fiber-result
+  fiber-stack swap drop
+  dup len swap drop ->n
+  @n 0 = if
+    drop "fiber-result: empty fiber stack" error
+  else
+    @n 1 - get
+  end
+;
+
+-- fiber-result-all: (fiber -- list)
+-- Get the entire stack of a fiber as a list.
+: fiber-result-all
+  fiber-stack swap drop
+;
+
+-- is-fiber-done: (fiber -- fiber bool)
+-- Check if a fiber has finished (alias for fiber-status).
+: is-fiber-done fiber-status ;
+
+-- fiber-map: (list quote -- results)
+-- Run a quote as a fiber for each element in a list.
+-- Each fiber gets one element pushed onto its stack.
+: fiber-map
+  -> q -> items
+  ( ) -> results
+  0 -> i
+  items len swap drop -> n
+  while i n < do
+    items i get -> item
+    q fiber-new item fiber-push fiber-run
+    fiber-result -> result
+    results result append -> results
+    i 1 + -> i
+  end
+  results
+;
+
+-- fiber-fork: (fiber -- fiber fiber)
+-- Clone a fiber, producing two independent copies.
+-- Both fibers have identical stack, PC, and locals at the point of fork.
+-- After forking, they can diverge independently.
+-- This is P1-pure: dup on a fiber value copies the entire state.
+: fiber-fork dup ;
+
+-- fiber-send: (fiber chan value -- fiber)
+-- Push a value onto a fiber's stack via a channel.
+-- Convenience wrapper: sends to channel, fiber can receive later.
+: fiber-send
+  -> val -> ch -> f
+  ch val chan-send
+  f
+;

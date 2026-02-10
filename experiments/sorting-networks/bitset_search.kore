@@ -1,0 +1,121 @@
+-- ================================================================
+-- Sorting Network Optimal Search — Pure Kore (P1-P4)
+-- ================================================================
+--
+-- P1: Every word is total — no partial functions, no crashes.
+-- P2: Deterministic — same stack in, same stack out.
+-- P3: Composition = concatenation — words compose by juxtaposition.
+-- P4: Constraints attenuate — pruning only removes possibilities.
+--
+-- State = single i64 bitset. Bit k set → input k still unsorted.
+-- 0-1 Principle (Knuth): sort all 2^n binary inputs → sorts everything.
+--
+-- Verified results:
+--   n=3 → 3  (16ms)
+--   n=4 → 5  (12ms)
+--   n=5 → 9  (1.3s)
+-- All match known optimal values.
+-- ================================================================
+
+-- ----------------------------------------------------------------
+-- Bit manipulation
+-- ----------------------------------------------------------------
+
+-- ( x bit -- val )
+: getbit  ->b ->x  x 1 b shl band 0 != if 1 else 0 end ;
+
+-- ( x bit val -- x' )
+: setbit  ->v ->b ->x
+  v 0 = if x 1 b shl bnot band else x 1 b shl bor end ;
+
+-- ( x ci cj -- x' )  conditional swap: if bit ci > bit cj, swap
+: cswap-bits  ->cj ->ci ->x
+  x ci getbit ->vi  x cj getbit ->vj
+  vi 1 = vj 0 = and if x ci 0 setbit cj 1 setbit else x end ;
+
+-- ----------------------------------------------------------------
+-- Sorted check: non-decreasing means 1...10...0 (1s at top)
+-- Flip within n-bit range, then check contiguous 1s from LSB.
+-- ----------------------------------------------------------------
+
+-- ( x n -- bool )  is this n-bit value sorted (non-decreasing)?
+: is-sorted  ->n ->x
+  x 0 = if true else
+  1 n shl 1 - ->mask
+  mask x bxor ->flipped
+  flipped flipped 1 + band 0 =
+  end ;
+
+-- ----------------------------------------------------------------
+-- State construction and evolution
+-- ----------------------------------------------------------------
+
+-- ( n -- state )  bitset of all unsorted n-bit inputs
+: init-state  ->n
+  1 n shl ->total 0 ->state 0 ->k
+  while k total < do
+    k n is-sorted not if state 1 k shl bor ->state end
+    k 1 + ->k
+  end state ;
+
+-- ( state ci cj n -- state' )  apply comparator, clear newly sorted
+: apply-comp  ->n ->cj ->ci ->state
+  1 n shl ->total 0 ->new-state 0 ->k
+  while k total < do
+    state 1 k shl band 0 != if
+      k ci cj cswap-bits ->k2
+      k2 n is-sorted not if new-state 1 k2 shl bor ->new-state end
+    end k 1 + ->k
+  end new-state ;
+
+-- ( x -- count )  population count
+: popcount  ->x 0 ->c
+  while x 0 != do x x 1 - band ->x c 1 + ->c end c ;
+
+-- ----------------------------------------------------------------
+-- DFS with P4 pruning (iterative deepening)
+-- ----------------------------------------------------------------
+
+-- ( state budget d n ncomps -- found? )
+-- d = current depth (avoids 'depth' opcode collision)
+: search  ->ncomps ->n ->d ->budget ->state
+  -- P1: base case, total
+  state 0 = if true else
+  -- budget exhausted
+  d budget = if false else
+  -- P4: prune if remaining > 2^(budget-depth)
+  state popcount ->remain
+  1 budget d - shl ->max-fixable
+  remain max-fixable > if false else
+  -- P3: enumerate all comparators
+  false ->found
+  0 ->ci
+  while ci n 1 - < found not and do
+    ci 1 + ->cj
+    while cj n < found not and do
+      state ci cj n apply-comp ->ns
+      ns state != if
+        ns budget d 1 + n ncomps search ->found
+      end
+      cj 1 + ->cj
+    end
+    ci 1 + ->ci
+  end
+  found
+  end end end ;
+
+-- ================================================================
+-- MAIN: Change n here. Finds minimum comparators.
+-- ================================================================
+5 ->n
+n n 1 - * 2 / ->ncomps
+n init-state ->state
+
+-- Iterative deepening
+1 ->budget
+false ->done
+while done not do
+  state budget 0 n ncomps search ->found
+  found if true ->done else budget 1 + ->budget end
+end
+budget

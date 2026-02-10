@@ -1,0 +1,9 @@
+-- Factorial in Kore
+: fact 
+  dup 1 <=            -- n <= 1?
+  [ drop 1 ]          -- base case: return 1
+  [ dup 1 - fact * ]  -- recursive case: n * fact(n-1)
+  case
+;
+
+5 fact

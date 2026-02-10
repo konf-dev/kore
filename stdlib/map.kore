@@ -1,0 +1,82 @@
+-- map.kore — HashMap utility functions
+-- P2: built from fundamental map-new/get/set/keys/has
+
+-- map-from-pairs: (list-of-pairs -- map)
+-- Takes a list of [key value] pairs and builds a map
+: map-from-pairs
+  map-new swap
+  [ swap map-set ] each
+;
+
+-- map-values: (map -- list)
+-- Get all values from a map
+: map-values
+  dup map-keys
+  swap ->m
+  [ @m swap map-get ] map
+;
+
+-- map-count: (map -- n)
+-- Count entries in a map
+: map-count map-keys length ;
+
+-- map-empty?: (map -- map bool)
+-- Check if map is empty (non-destructive)
+: map-empty? dup map-keys length 0 = ;
+
+-- map-remove: (map key -- map)
+-- Remove a key from map by rebuilding without it
+: map-remove
+  ->k
+  dup map-keys
+  map-new ->result
+  [
+    dup @k = if
+      drop
+    else
+      ->key
+      over @key map-get
+      @result @key rot map-set !result
+    end
+  ] each
+  drop @result
+;
+
+-- map-merge: (map1 map2 -- merged)
+-- Merge two maps, map2 values take priority
+: map-merge
+  ->m2
+  dup map-keys
+  -- start with copy of m1 entries
+  map-new ->result
+  [
+    ->key
+    over @key map-get
+    @result @key rot map-set !result
+  ] each
+  drop
+  -- now add m2 entries
+  @m2 dup map-keys
+  [
+    ->key
+    @m2 @key map-get
+    @result @key rot map-set !result
+  ] each
+  drop
+  @result
+;
+
+-- map-update: (map key quote -- map|error)
+-- Update a map value by applying a quote to the current value.
+-- P1-safe: returns Error if key not found.
+: map-update
+  ->f ->key
+  dup @key map-has ->exists swap drop
+  @exists not if
+    "map-update: key not found" error swap drop
+  else
+    dup @key map-get
+    @f apply
+    swap @key rot map-set
+  end
+;

@@ -1,0 +1,46 @@
+-- ================================================================
+-- Rosenbrock Function Minimization via Gradient Descent
+-- ================================================================
+--
+-- f(x,y) = (1-x)² + 100(y-x²)²
+-- Minimum at (1, 1) with f(1,1) = 0
+--
+-- We use manual gradient computation (closed-form):
+--   ∂f/∂x = -2(1-x) + 100·2(y-x²)·(-2x)
+--         = -2 + 2x - 400x(y-x²)
+--   ∂f/∂y = 100·2(y-x²)
+--         = 200(y-x²)
+-- ================================================================
+
+-- Rosenbrock function
+: rosenbrock  -- (x y -- f)
+  -> y -> x
+  1.0 x fsub dup fmul              -- (1-x)²
+  y x dup fmul fsub dup fmul       -- (y-x²)²
+  100.0 fmul fadd                  -- (1-x)² + 100(y-x²)²
+;
+
+-- Gradient of Rosenbrock
+: rosenbrock-grad  -- (x y -- dx dy)
+  -> y -> x
+  -- dx = -2 + 2x - 400x(y - x²)
+  -2.0 2.0 x fmul fadd
+  400.0 x fmul y x dup fmul fsub fmul fsub -> dx
+  -- dy = 200(y - x²)
+  200.0 y x dup fmul fsub fmul -> dy
+  dx dy
+;
+
+-- Gradient descent
+-- Start at (-1.5, 1.5), lr=0.001, 5000 steps
+-1.5 -> x
+1.5 -> y
+0 -> step
+while step 5000 < do
+  x y rosenbrock-grad -> dy -> dx
+  x 0.001 dx fmul fsub -> x
+  y 0.001 dy fmul fsub -> y
+  step 1 + -> step
+end
+x y rosenbrock
+-- Should be close to (1, 1) with f ≈ 0

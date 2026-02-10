@@ -1,0 +1,132 @@
+-- stdlib/string.kore — String manipulation tools
+-- Pure derivations from string opcodes. P1: every tool is S → S.
+
+-- str-empty? : (str -- str bool) Check if string is empty
+: str-empty? str-len 0 = ;
+
+-- str-starts? : (str prefix -- bool) Check if string starts with prefix
+: str-starts?
+  -> prefix -> s
+  prefix str-len swap drop -> plen
+  s str-len swap drop -> slen
+  slen plen < if
+    false
+  else
+    s 0 plen str-slice prefix =
+  end
+;
+
+-- str-ends? : (str suffix -- bool) Check if string ends with suffix
+: str-ends?
+  -> suffix -> s
+  suffix str-len swap drop -> slen_suffix
+  s str-len swap drop -> slen
+  slen slen_suffix < if
+    false
+  else
+    s slen slen_suffix - slen str-slice suffix =
+  end
+;
+
+-- str-contains? : (str pattern -- bool) Check if string contains pattern
+: str-contains? str-find 0 >= ;
+
+-- str-repeat : (str n -- str) Repeat string n times
+: str-repeat
+  -> n -> s
+  ""
+  while n 0 > do
+    s str-concat
+    n 1 - -> n
+  end
+;
+
+-- str-reverse : (str -- str) Reverse a string
+: str-reverse
+  -> s
+  s str-len swap drop -> slen
+  ""
+  slen 1 -
+  while dup 0 >= do
+    -> i
+    s i i 1 + str-slice str-concat
+    i 1 -
+  end
+  drop  -- drop -1 counter
+;
+
+-- str-upper? : (str -- str bool) Check if first char is uppercase A-Z
+: str-upper?
+  dup 0 str-get -> ch
+  ch "A" >= ch "Z" <= and
+;
+
+-- str-lower? : (str -- str bool) Check if first char is lowercase a-z
+: str-lower?
+  dup 0 str-get -> ch
+  ch "a" >= ch "z" <= and
+;
+
+-- str-join : (list sep -- str) Join list elements with separator
+: str-join
+  -> sep -> items
+  items len swap drop -> n
+  n 0 = if "" else
+    items 0 get to-str -> result
+    1 -> i
+    while i n < do
+      result sep str-concat items i get to-str str-concat -> result
+      i 1 + -> i
+    end
+    result
+  end
+;
+
+-- str-split-at : (str pos -- left right) Split string at position
+: str-split-at
+  -> pos -> s
+  s 0 pos str-slice
+  s pos s str-len swap drop str-slice
+;
+
+-- str-chars : (str -- list) Convert string to list of single-char strings
+: str-chars
+  -> s
+  s str-len swap drop -> n
+  ( )
+  0 -> i
+  while i n < do
+    s i i 1 + str-slice append
+    i 1 + -> i
+  end
+;
+
+-- ===== New string operations (v0.16) =====
+
+-- words : (str -- list) Split by spaces
+: words " " str-split ;
+
+-- lines : (str -- list) Split by newlines
+: lines "\n" str-split ;
+
+-- unwords : (list -- str) Join with spaces
+: unwords " " str-join ;
+
+-- unlines : (list -- str) Join with newlines
+: unlines "\n" str-join ;
+
+-- str-capitalize : (str -- str) Capitalize first letter
+: str-capitalize
+  ->s
+  @s str-len swap drop 0 = if
+    @s
+  else
+    @s 0 1 str-slice str-upper
+    @s 1 @s str-len swap drop str-slice
+    str-concat
+  end
+;
+
+-- str-replace-all : (str old new -- str) Replace all occurrences
+-- Alias using the built-in str-replace
+: str-replace-all str-replace ;

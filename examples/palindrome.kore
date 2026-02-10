@@ -1,0 +1,123 @@
+-- ================================================================
+-- Palindrome Checker in Kore
+-- ================================================================
+-- Accepts a string and checks if it is a palindrome.
+-- Handles: empty strings, single chars, odd/even length,
+--          type errors (non-string input), and index errors.
+--
+-- Usage:
+--   korec compile examples/palindrome.kore -o /tmp/palindrome.korec
+--   korec run /tmp/palindrome.korec --allow io
+-- ================================================================
+
+-- ————————————————————————————————————————
+-- check-error: helper to test if a value is an error
+-- ————————————————————————————————————————
+: check-error is-error swap drop ;
+
+-- ————————————————————————————————————————
+-- is-palindrome: (str -- bool)
+-- Returns true if the string is a palindrome, false otherwise.
+-- Handles: empty string (true), single char (true),
+--          type errors (false), index out of bounds (false).
+-- ————————————————————————————————————————
+: is-palindrome
+  ->input
+
+  -- Guard: ensure input is actually a string
+  input type-of swap drop "str" = not if
+    false ret
+  end
+
+  -- Get the length
+  input str-len swap drop ->slen
+
+  -- Empty string or single char is always a palindrome
+  slen 2 < if
+    true ret
+  end
+
+  -- Compare characters from both ends, walking inward
+  0 ->lo
+  slen 1 - ->hi
+  true ->result
+
+  while lo hi < do
+    -- Get char at left index (with error handling via try)
+    [ input lo str-get ] try ->lchar
+    lchar check-error if
+      false ret
+    end
+
+    -- Get char at right index (with error handling via try)
+    [ input hi str-get ] try ->rchar
+    rchar check-error if
+      false ret
+    end
+
+    -- Compare the two characters
+    lchar rchar = not if
+      false ->result
+    end
+
+    -- Advance pointers
+    lo 1 + ->lo
+    hi 1 - ->hi
+  end
+
+  result
+;
+
+-- ================================================================
+-- Test Suite
+-- ================================================================
+
+-- Test 1: Classic palindrome
+"racecar" is-palindrome true =
+
+-- Test 2: Even-length palindrome
+"abba" is-palindrome true = and
+
+-- Test 3: Not a palindrome
+"hello" is-palindrome false = and
+
+-- Test 4: Single character (trivially a palindrome)
+"a" is-palindrome true = and
+
+-- Test 5: Empty string (trivially a palindrome)
+"" is-palindrome true = and
+
+-- Test 6: Two same characters
+"aa" is-palindrome true = and
+
+-- Test 7: Two different characters
+"ab" is-palindrome false = and
+
+-- Test 8: Longer palindrome
+"abacaba" is-palindrome true = and
+
+-- Test 9: Almost a palindrome (off by one char)
+"abcba" is-palindrome true = and
+
+-- Test 10: Non-string input handled gracefully
+42 is-palindrome false = and
+
+-- Stack: true (all tests pass)
+
+-- ================================================================
+-- Interactive: ask the user for a string
+-- ================================================================
+"Self-tests passed." println
+
+"Enter a string: " readline ->user-input
+
+-- Guard: empty input (user just hit enter)
+user-input str-len swap drop 0 = if
+  "You entered an empty string — that's trivially a palindrome!" println
+else
+  user-input is-palindrome if
+    "\"" user-input str-concat "\" is a palindrome!" str-concat println
+  else
+    "\"" user-input str-concat "\" is NOT a palindrome." str-concat println
+  end
+end

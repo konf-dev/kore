@@ -1,0 +1,106 @@
+-- ================================================================
+-- Kore Standard Library: Geometry & Distance
+-- ================================================================
+--
+-- Pure Kore. No new opcodes (P3: composition = concatenation).
+--
+-- Provides Euclidean distance, circle operations, and boundary
+-- checks needed for circle packing and spatial problems.
+-- ================================================================
+
+-- ================================================================
+-- Distance
+-- ================================================================
+
+-- dist2d: (x1 y1 x2 y2 -- d)
+-- Euclidean distance between two 2D points.
+: dist2d
+  -> y2 -> x2 -> y1 -> x1
+  x2 x1 fsub dup fmul
+  y2 y1 fsub dup fmul
+  fadd fsqrt
+;
+
+-- dist2d-sq: (x1 y1 x2 y2 -- d²)
+-- Squared Euclidean distance (avoids sqrt).
+: dist2d-sq
+  -> y2 -> x2 -> y1 -> x1
+  x2 x1 fsub dup fmul
+  y2 y1 fsub dup fmul
+  fadd
+;
+
+-- ================================================================
+-- Circle Operations
+-- ================================================================
+
+-- A circle is Pair(Pair(x, y), r).
+-- This is P1: a circle IS a value.
+
+-- circle-new: (x y r -- circle)
+: circle-new -> r pair r pair ;
+
+-- circle-x: (circle -- x)
+: circle-x unpair drop unpair drop ;
+
+-- circle-y: (circle -- y)
+: circle-y unpair drop unpair swap drop ;
+
+-- circle-r: (circle -- r)
+: circle-r unpair swap drop ;
+
+-- circle-overlap: (x1 y1 r1 x2 y2 r2 -- overlap)
+-- Returns max(0, r1+r2-dist). Positive if circles overlap.
+: circle-overlap
+  -> r2 -> y2 -> x2 -> r1 -> y1 -> x1
+  x1 y1 x2 y2 dist2d -> d
+  r1 r2 fadd d fsub
+  dup 0.0 le if drop 0.0 end
+;
+
+-- ================================================================
+-- Boundary Checks
+-- ================================================================
+
+-- boundary-penalty: (x y r L -- penalty)
+-- Returns penalty for circle (x,y,r) outside box [0,L]×[0,L].
+-- penalty = sum of max(0, violation)² for all 4 edges.
+: boundary-penalty
+  -> L -> r -> y -> x
+  -- left edge: violation = r - x
+  r x fsub dup 0.0 le if drop 0.0 end dup fmul
+  -- right edge: violation = (x + r) - L
+  x r fadd L fsub dup 0.0 le if drop 0.0 end dup fmul fadd
+  -- bottom edge: violation = r - y
+  r y fsub dup 0.0 le if drop 0.0 end dup fmul fadd
+  -- top edge: violation = (y + r) - L
+  y r fadd L fsub dup 0.0 le if drop 0.0 end dup fmul fadd
+;
+
+-- ================================================================
+-- Vector Operations (2D convenience)
+-- ================================================================
+
+-- vec2-add: (x1 y1 x2 y2 -- x1+x2 y1+y2)
+: vec2-add
+  -> y2 -> x2 -> y1 -> x1
+  x1 x2 fadd y1 y2 fadd
+;
+
+-- vec2-sub: (x1 y1 x2 y2 -- x1-x2 y1-y2)
+: vec2-sub
+  -> y2 -> x2 -> y1 -> x1
+  x1 x2 fsub y1 y2 fsub
+;
+
+-- vec2-scale: (x y s -- x*s y*s)
+: vec2-scale
+  -> s -> y -> x
+  x s fmul y s fmul
+;
+
+-- vec2-len: (x y -- |v|)
+: vec2-len
+  -> y -> x
+  x x fmul y y fmul fadd fsqrt
+;

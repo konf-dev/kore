@@ -1,0 +1,52 @@
+-- ================================================================
+-- Kore Standard Library: Deterministic PRNG
+-- ================================================================
+--
+-- Pure Kore. No new opcodes. No IO capability required.
+-- All randomness is deterministic given a seed (P2 compliance).
+--
+-- Algorithm: Linear Congruential Generator (Knuth MMIX)
+--   seed' = (a * seed + c)    [using i64 wrapping arithmetic]
+--   a = 6364136223846793005
+--   c = 1442695040888963407
+--
+-- The LCG has period 2^64 and passes many statistical tests.
+-- For non-deterministic seeding, use `rand` (requires IO cap).
+-- ================================================================
+
+-- abs: (n -- |n|)
+-- Integer absolute value (helper used by prng-float/prng-range)
+: abs dup 0 < if neg end ;
+
+-- prng-next: (seed -- value seed')
+-- Advances the PRNG state and returns (value, new_seed)
+-- The value IS the new seed (standard LCG practice)
+: prng-next
+  6364136223846793005 * 1442695040888963407 +
+  dup
+;
+
+-- prng-float: (seed -- float seed')
+-- Returns a float in [0.0, 1.0) and the new seed
+-- Uses absolute value divided by max i64
+: prng-float
+  prng-next -> seed
+  abs i2f 9223372036854775807 i2f fdiv
+  seed
+;
+
+-- prng-range: (seed lo hi -- value seed')
+-- Returns an integer in [lo, hi] and the new seed.
+-- P1-safe: if hi < lo, the range is empty → returns Error.
+: prng-range
+  -> hi -> lo
+  hi lo < if
+    "prng-range: hi < lo (empty range)" error lo   -- push error and dummy seed
+  else
+    prng-next -> seed
+    abs
+    hi lo - 1 + mod
+    lo +
+    seed
+  end
+;

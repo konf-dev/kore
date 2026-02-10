@@ -1,0 +1,80 @@
+-- ================================================================
+-- Kore Standard Library: Spawn & Channels (Parallel Execution)
+-- ================================================================
+--
+-- spawn: Sandboxed parallel execution with capability attenuation.
+-- channels: Inter-fiber/spawn communication via buffered queues.
+-- exec: Shell command execution (capability-gated).
+--
+-- P1: Every operation is S→S — spawn returns a list, channels are values
+-- P2: Apply is fundamental — spawn applies a quote in a sandboxed context
+-- P3: Composition = concatenation — spawn results compose with the parent
+-- P4: Constraints attenuate — child caps ≤ parent caps, always
+-- ================================================================
+
+-- spawn-pure: (quote -- result-list)
+-- Spawn a quote with NO capabilities (pure sandbox).
+-- The child cannot perform any IO, file, network, or exec operations.
+: spawn-pure 0 spawn ;
+
+-- spawn-io: (quote -- result-list)
+-- Spawn a quote with IO capability only.
+: spawn-io 1 spawn ;
+
+-- spawn-all: (quote -- result-list)
+-- Spawn a quote with all parent capabilities (no attenuation).
+: spawn-all 255 spawn ;
+
+-- spawn-result: (quote caps -- value|error)
+-- Spawn and get the single top result.
+-- P1-safe: returns Error if spawn returned empty result.
+: spawn-result
+  spawn
+  dup len swap drop ->n
+  @n 0 = if
+    drop "spawn-result: empty result" error
+  else
+    @n 1 - get
+  end
+;
+
+-- spawn-map: (list quote -- results)
+-- Apply a quote to each element in parallel sandboxes.
+-- Each spawn gets one element pushed on its stack.
+-- Returns list of results (one per element).
+-- Note: uses 255 caps (P4 concern — inherits all parent caps).
+-- Prefer spawn-io or explicit cap values for production use.
+: spawn-map
+  -> q -> items
+  ( ) -> results
+  0 -> i
+  items len swap drop -> n
+  while i n < do
+    items i get -> item
+    [ item q apply ] 255 spawn
+    dup len swap drop -> rn
+    @rn 0 = if
+      drop "spawn-map: empty result" error
+    else
+      @rn 1 - get
+    end -> result
+    results result append -> results
+    i 1 + -> i
+  end
+  results
+;
+
+-- chan-empty?: (chan -- chan bool)
+-- Check if a channel has no pending messages.
+-- Note: this peeks — doesn't consume.
+-- Implementation: try recv would block = empty.
+-- For now, channels don't expose size, so this is a placeholder.
+-- : chan-empty? ... ;
+
+-- exec-stdout: (cmd -- str)
+-- Run a shell command and return just stdout (drop exit code).
+: exec-stdout exec unpair drop ;
+
+-- exec-ok?: (cmd -- bool)
+-- Run a shell command and check if it succeeded (exit code 0).
+: exec-ok? exec unpair swap drop 0 = ;

@@ -1,0 +1,158 @@
+-- ================================================================
+-- Strassen 4×4: Recursive block decomposition
+-- ================================================================
+--
+-- A 4×4 matrix is partitioned into four 2×2 blocks:
+--
+--   M = [ A11 A12 ]    where A11..A22 are each 2×2 sub-matrices
+--       [ A21 A22 ]
+--
+-- Strassen at the block level uses 7 block-multiplications.
+-- Each block-multiplication uses 7 scalar multiplications (Strassen 2×2).
+-- Total: 7 × 7 = 49 scalar multiplications (vs 64 naive).
+--
+-- Test: A = [[1,2,3,4],[5,6,7,8],[9,10,11,12],[13,14,15,16]]
+--        A² = [[90,100,110,120],[202,228,254,280],
+--              [314,356,398,440],[426,484,542,600]]
+-- ================================================================
+
+-- ---- 2×2 matrix arithmetic ----
+
+-- mat2_add: (A B -- A+B)  where A,B are lists of 4 scalars [a,b,c,d]
+: mat2_add
+  ->B2 ->A2
+  A2 0 get B2 0 get +
+  A2 1 get B2 1 get +
+  A2 2 get B2 2 get +
+  A2 3 get B2 3 get +
+  collect 4
+;
+
+-- mat2_sub: (A B -- A-B)
+: mat2_sub
+  ->B2 ->A2
+  A2 0 get B2 0 get -
+  A2 1 get B2 1 get -
+  A2 2 get B2 2 get -
+  A2 3 get B2 3 get -
+  collect 4
+;
+
+-- mat2_strassen: (A B -- A*B)
+-- A = [a,b,c,d]  B = [e,f,g,h]   (row-major flat lists)
+-- 7 multiplications
+: mat2_strassen
+  ->BB ->AA
+  AA 0 get ->a  AA 1 get ->b  AA 2 get ->c  AA 3 get ->d
+  BB 0 get ->e  BB 1 get ->f  BB 2 get ->g  BB 3 get ->h
+
+  a d + e h + * ->m1
+  c d + e     * ->m2
+  a     f h - * ->m3
+  d     g e - * ->m4
+  a b + h     * ->m5
+  c a - e f + * ->m6
+  b d - g h + * ->m7
+
+  m1 m4 + m5 - m7 +   -- C11
+  m3 m5 +              -- C12
+  m2 m4 +              -- C21
+  m1 m2 - m3 + m6 +   -- C22
+  collect 4
+;
+
+-- ---- Extract 2×2 blocks from 4×4 matrix ----
+-- 4×4 matrix stored as flat list of 16 values (row-major):
+-- [a00 a01 a02 a03 a10 a11 a12 a13 a20 a21 a22 a23 a30 a31 a32 a33]
+
+-- block_tl: top-left 2×2 = [a00 a01 a10 a11]
+: block_tl ->M
+  M 0 get M 1 get M 4 get M 5 get collect 4
+;
+
+-- block_tr: top-right 2×2 = [a02 a03 a12 a13]
+: block_tr ->M
+  M 2 get M 3 get M 6 get M 7 get collect 4
+;
+
+-- block_bl: bottom-left 2×2 = [a20 a21 a30 a31]
+: block_bl ->M
+  M 8 get M 9 get M 12 get M 13 get collect 4
+;
+
+-- block_br: bottom-right 2×2 = [a22 a23 a32 a33]
+: block_br ->M
+  M 10 get M 11 get M 14 get M 15 get collect 4
+;
+
+-- ---- Assemble 4 blocks back into 4×4 ----
+-- assemble4x4: (C11 C12 C21 C22 -- M) where each Cij is [a,b,c,d]
+: assemble4x4
+  ->c22 ->c21 ->c12 ->c11
+  c11 0 get c11 1 get c12 0 get c12 1 get
+  c11 2 get c11 3 get c12 2 get c12 3 get
+  c21 0 get c21 1 get c22 0 get c22 1 get
+  c21 2 get c21 3 get c22 2 get c22 3 get
+  collect 16
+;
+
+-- ================================================================
+-- MAIN: Compute A² where A = [[1..4],[5..8],[9..12],[13..16]]
+-- ================================================================
+
+-- A as flat 16-element list (row-major)
+( 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 ) ->A
+
+-- Extract 2×2 blocks of A
+A block_tl ->a11    -- [1,2,5,6]
+A block_tr ->a12    -- [3,4,7,8]
+A block_bl ->a21    -- [9,10,13,14]
+A block_br ->a22    -- [11,12,15,16]
+
+-- Since we compute A², B=A, so b_ij = a_ij
+
+-- Strassen at the block level:
+-- M1 = (A11+A22)*(B11+B22)
+a11 a22 mat2_add  a11 a22 mat2_add  mat2_strassen ->M1
+
+-- M2 = (A21+A22)*B11
+a21 a22 mat2_add  a11  mat2_strassen ->M2
+
+-- M3 = A11*(B12-B22)
+a11  a12 a22 mat2_sub  mat2_strassen ->M3
+
+-- M4 = A22*(B21-B11)
+a22  a21 a11 mat2_sub  mat2_strassen ->M4
+
+-- M5 = (A11+A12)*B22
+a11 a12 mat2_add  a22  mat2_strassen ->M5
+
+-- M6 = (A21-A11)*(B11+B12)
+a21 a11 mat2_sub  a11 a12 mat2_add  mat2_strassen ->M6
+
+-- M7 = (A12-A22)*(B21+B22)
+a12 a22 mat2_sub  a21 a22 mat2_add  mat2_strassen ->M7
+
+-- Compose result blocks:
+-- C11 = M1+M4-M5+M7
+M1 M4 mat2_add M5 mat2_sub M7 mat2_add ->C11
+
+-- C12 = M3+M5
+M3 M5 mat2_add ->C12
+
+-- C21 = M2+M4
+M2 M4 mat2_add ->C21
+
+-- C22 = M1-M2+M3+M6
+M1 M2 mat2_sub M3 mat2_add M6 mat2_add ->C22
+
+-- Assemble into 4×4
+C11 C12 C21 C22 assemble4x4
+
+-- Expected: [90,100,110,120,202,228,254,280,314,356,398,440,426,484,542,600]
+-- = A² = [[90,100,110,120],[202,228,254,280],[314,356,398,440],[426,484,542,600]]
+--
+-- Multiplication count:
+--   7 block-level Strassen multiplications
+--   × 7 scalar multiplications per block multiply (inner Strassen)
+--   = 49 total scalar multiplications (vs 64 naive)

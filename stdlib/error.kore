@@ -1,0 +1,64 @@
+-- error.kore — Error handling utilities
+-- P1: errors are first-class values (Value::Error is S→S, never S→⊥)
+
+-- try-or: (default quote -- result|default)
+-- Execute quote; if error, return default instead
+: try-or
+  swap ->default
+  try
+  is-error if
+    drop @default
+  end
+;
+
+-- try-map: (quote transform -- result|transformed-error)
+-- Execute quote; if error, apply transform to the error
+: try-map
+  swap ->transform
+  try
+  is-error if
+    to-str @transform apply
+  end
+;
+
+-- assert: (bool msg -- | error)
+-- P1-safe: if false, creates Error value using `error` (not fail).
+-- Use ? after assert to propagate if you want unwinding:
+--   condition "must be true" assert ?
+: assert
+  swap not if
+    "assertion failed: " swap str-concat
+    error  -- creates Error value on stack (P1: S→S)
+  else
+    drop
+  end
+;
+
+-- unwrap: (value|error -- value|!)
+-- P1 note: this IS intentionally partial — it propagates Error values
+-- using ? (which re-fails to nearest try). Callers should wrap in try.
+-- Equivalent to Rust's .unwrap() — explicit opt-in to propagation.
+: unwrap
+  dup is-error if
+    ?  -- re-fail: propagate the Error value upward
+  end
+;
+
+-- unwrap-or: (value|error default -- value|default)
+-- P1-safe version of unwrap — total function, never aborts
+: unwrap-or
+  ->default
+  is-error if
+    drop @default
+  else
+  end
+;
+
+-- map-error: (value|error quote -- value|transformed-error)
+-- P1: total — if error, apply quote to error msg; if ok, pass through
+: map-error
+  ->f
+  dup is-error if
+    drop to-str @f apply error
+  end
+;

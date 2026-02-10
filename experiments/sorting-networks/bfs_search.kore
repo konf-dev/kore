@@ -1,0 +1,119 @@
+-- ================================================================
+-- Sorting Network Search — BFS with State Deduplication
+-- ================================================================
+--
+-- Key insight: many comparator sequences reach the SAME state.
+-- DFS explores them all. BFS with deduplication explores each
+-- unique state only once.
+--
+-- Level 0: {state₀}
+-- Level k+1: { apply-comp(s,i,j) | s ∈ Level(k), (i,j) ∈ comps } \ seen
+--
+-- The number of UNIQUE states is much smaller than the DFS tree.
+-- For n=5: instead of ~10^6 DFS nodes, there are only ~1000
+-- unique reachable states.
+--
+-- This is O(|states| × |comps|) per level instead of O(b^d).
+-- ================================================================
+
+: getbit  ->b ->x  x 1 b shl band 0 != if 1 else 0 end ;
+: setbit  ->v ->b ->x
+  v 0 = if x 1 b shl bnot band else x 1 b shl bor end ;
+: cswap-bits  ->cj ->ci ->x
+  x ci getbit ->vi  x cj getbit ->vj
+  vi 1 = vj 0 = and if x ci 0 setbit cj 1 setbit else x end ;
+
+: is-sorted  ->n ->x
+  x 0 = if true else
+  1 n shl 1 - ->mask  mask x bxor ->flipped
+  flipped flipped 1 + band 0 = end ;
+
+: init-state  ->n
+  1 n shl ->total 0 ->state 0 ->k
+  while k total < do
+    k n is-sorted not if state 1 k shl bor ->state end
+    k 1 + ->k
+  end state ;
+
+: apply-comp  ->n ->cj ->ci ->state
+  1 n shl ->total 0 ->new-state 0 ->k
+  while k total < do
+    state 1 k shl band 0 != if
+      k ci cj cswap-bits ->k2
+      k2 n is-sorted not if new-state 1 k2 shl bor ->new-state end
+    end k 1 + ->k
+  end new-state ;
+
+-- ----------------------------------------------------------------
+-- BFS: expand one level, deduplicate against 'seen' list
+-- ----------------------------------------------------------------
+-- ( frontier seen n -- frontier' seen' found? )
+: bfs-step  ->n ->seen ->frontier
+  ( ) ->next
+  false ->found
+  0 ->fi
+  frontier len ->flen
+  while fi flen < found not and do
+    frontier fi get ->s
+    0 ->ci
+    while ci n 1 - < found not and do
+      ci 1 + ->cj
+      while cj n < found not and do
+        s ci cj n apply-comp ->ns
+        -- Check if solved
+        ns 0 = if
+          true ->found
+        else
+          -- Check if already seen
+          ns s != if
+            true ->is-new
+            0 ->si
+            seen len ->slen
+            while si slen < is-new and do
+              seen si get ns = if false ->is-new end
+              si 1 + ->si
+            end
+            is-new if
+              next ns append ->next
+              seen ns append ->seen
+            end
+          end
+        end
+        cj 1 + ->cj
+      end
+      ci 1 + ->ci
+    end
+    fi 1 + ->fi
+  end
+  next seen found ;
+
+-- ----------------------------------------------------------------
+-- Main BFS search
+-- ----------------------------------------------------------------
+-- ( state n -- depth )
+: bfs-search  ->n ->state
+  state 0 = if 0 else
+  -- frontier = [state], seen = [state]
+  ( ) state append ->frontier
+  ( ) state append ->seen
+  0 ->d
+  false ->found
+  while found not do
+    d 1 + ->d
+    frontier seen n bfs-step ->found ->seen ->frontier
+    -- If frontier empty and not found, increase (shouldn't happen)
+    frontier len 0 = found not and if
+      -- All states explored, no solution at this depth
+      -- This shouldn't happen for valid sorting network problems
+      true ->found  -- exit with d
+    end
+  end
+  d
+  end ;
+
+-- ================================================================
+-- MAIN
+-- ================================================================
+5 ->n
+n init-state ->state
+state n bfs-search

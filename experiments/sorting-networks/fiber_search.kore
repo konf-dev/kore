@@ -1,0 +1,176 @@
+-- ================================================================
+-- Sorting Network Optimal Search — Fiber-Interleaved (P1-P4)
+-- ================================================================
+--
+-- Uses Kore fibers for cooperative interleaving of search branches.
+-- At the top level of each IDS iteration, we create one fiber per
+-- comparator choice. Round-robin stepping ensures fair exploration:
+-- the FIRST branch to find a solution terminates the entire search.
+--
+-- This avoids the DFS trap: getting stuck deep in a dead subtree
+-- while the solution lives in a sibling branch.
+--
+-- P1: Total — all fibers terminate or yield.
+-- P2: Deterministic — round-robin order is fixed.
+-- P3: Composition — fiber-step is the fundamental unit.
+-- P4: Fiber isolation — each fiber has its own stack, no leakage.
+-- ================================================================
+
+-- ----------------------------------------------------------------
+-- Bit manipulation (same as non-fiber version)
+-- ----------------------------------------------------------------
+: getbit  ->b ->x  x 1 b shl band 0 != if 1 else 0 end ;
+: setbit  ->v ->b ->x  v 0 = if x 1 b shl bnot band else x 1 b shl bor end ;
+: cswap-bits  ->cj ->ci ->x
+  x ci getbit ->vi  x cj getbit ->vj
+  vi 1 = vj 0 = and if x ci 0 setbit cj 1 setbit else x end ;
+
+: is-sorted  ->n ->x
+  x 0 = if true else
+  1 n shl 1 - ->mask  mask x bxor ->flipped
+  flipped flipped 1 + band 0 = end ;
+
+: init-state  ->n
+  1 n shl ->total 0 ->state 0 ->k
+  while k total < do
+    k n is-sorted not if state 1 k shl bor ->state end
+    k 1 + ->k
+  end state ;
+
+: apply-comp  ->n ->cj ->ci ->state
+  1 n shl ->total 0 ->new-state 0 ->k
+  while k total < do
+    state 1 k shl band 0 != if
+      k ci cj cswap-bits ->k2
+      k2 n is-sorted not if new-state 1 k2 shl bor ->new-state end
+    end k 1 + ->k
+  end new-state ;
+
+: popcount  ->x 0 ->c
+  while x 0 != do x x 1 - band ->x c 1 + ->c end c ;
+
+-- ----------------------------------------------------------------
+-- Inner search: plain DFS from depth >= 1 (called inside fibers)
+-- This is the workhorse — no fibers inside, pure recursion.
+-- ----------------------------------------------------------------
+-- ( state budget d n -- found? )
+: inner-search  ->n ->d ->budget ->state
+  state 0 = if true else
+  d budget = if false else
+  state popcount ->remain
+  1 budget d - shl ->max-fixable
+  remain max-fixable > if false else
+  false ->found
+  0 ->ci
+  while ci n 1 - < found not and do
+    ci 1 + ->cj
+    while cj n < found not and do
+      state ci cj n apply-comp ->ns
+      ns state != if
+        ns budget d 1 + n inner-search ->found
+      end
+      cj 1 + ->cj
+    end
+    ci 1 + ->ci
+  end
+  found
+  end end end ;
+
+-- ----------------------------------------------------------------
+-- Fiber-interleaved top-level search
+-- ----------------------------------------------------------------
+-- For a given budget, create one fiber per first-level comparator.
+-- Each fiber tries: apply comparator (ci,cj), then inner-search
+-- the remaining budget-1 levels.
+-- Round-robin step all fibers. First one to finish with 'true' wins.
+--
+-- Quote for each fiber: expects stack = [state ci cj n budget]
+-- Runs: apply-comp then inner-search at depth 1
+-- ----------------------------------------------------------------
+
+-- ( state budget n -- found? )
+: fiber-search  ->n ->budget ->state
+  -- Build list of fibers, one per comparator pair
+  ( ) ->fibers
+  0 ->ci
+  while ci n 1 - < do
+    ci 1 + ->cj
+    while cj n < do
+      -- Create a fiber that will search this branch
+      -- The fiber's quote computes: apply (ci,cj), then inner-search
+      -- We push the args onto the fiber's stack
+      [ inner-search ] fiber-new
+        n fiber-push
+        1 fiber-push          -- d = 1 (we applied one comparator)
+        budget fiber-push     -- budget
+        state ci cj n apply-comp fiber-push  -- new state after (ci,cj)
+      ->f
+      -- Only bother if the comparator actually changed the state
+      state ci cj n apply-comp ->ns
+      ns state != if
+        fibers f append ->fibers
+      end
+      cj 1 + ->cj
+    end
+    ci 1 + ->ci
+  end
+
+  -- Round-robin step all fibers until one finishes with 'true'
+  fibers len ->nfibers
+  nfibers 0 = if false else
+  false ->found
+  while found not do
+    -- Step each fiber once; check if any finished
+    ( ) ->next-fibers
+    0 ->i
+    while i nfibers < found not and do
+      fibers i get ->f
+      f fiber-status ->done
+      done if
+        -- Fiber finished — check its result
+        f fiber-stack ->stk drop
+        stk len ->slen drop
+        slen 0 > if
+          stk slen 1 - get ->result
+          result if true ->found end
+        end
+      else
+        -- Still running — step it and keep
+        f fiber-step ->done2 ->f2
+        done2 if
+          f2 fiber-stack ->stk2 drop
+          stk2 len ->slen2 drop
+          slen2 0 > if
+            stk2 slen2 1 - get ->result2
+            result2 if true ->found end
+          end
+        else
+          next-fibers f2 append ->next-fibers
+        end
+      end
+      i 1 + ->i
+    end
+    next-fibers ->fibers
+    fibers len ->nfibers
+    -- All fibers done and none found → false
+    nfibers 0 = found not and if false else end
+  end
+  found
+  end ;
+
+-- ================================================================
+-- MAIN
+-- ================================================================
+5 ->n
+n init-state ->state
+
+-- Iterative deepening with fiber-interleaved top level
+1 ->budget  false ->done
+while done not do
+  -- Budget 0 check
+  state 0 = if true ->done else
+  state budget n fiber-search ->found
+  found if true ->done else budget 1 + ->budget end
+  end
+end
+budget

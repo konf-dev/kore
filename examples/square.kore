@@ -1,0 +1,4 @@
+-- Square function
+: square dup * ;
+
+5 square

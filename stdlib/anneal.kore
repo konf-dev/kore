@@ -1,0 +1,70 @@
+-- ================================================================
+-- Kore Standard Library: Simulated Annealing
+-- ================================================================
+--
+-- Pure Kore. No new opcodes (P3: composition = concatenation).
+-- Requires: random.kore (prng-next, prng-float)
+--
+-- Implements Metropolis-Hastings acceptance criterion and
+-- exponential cooling schedule for non-convex optimization.
+--
+-- Mathematical basis (Appendix B of PLAN.md):
+--   P(accept) = min(1, exp(-ΔE/T))
+--   T(k) = T_start · (T_end/T_start)^(k/steps)
+-- ================================================================
+
+-- ================================================================
+-- Helpers
+-- ================================================================
+
+-- fexp-approx: (x -- e^x)
+-- Uses the fexp opcode directly.
+-- (Available since Phase 1)
+
+-- ================================================================
+-- Metropolis Criterion
+-- ================================================================
+
+-- metropolis: (dE T seed -- accept? seed')
+-- Metropolis acceptance test.
+-- If dE < 0 (improvement): always accept.
+-- If dE >= 0: accept with probability exp(-dE/T).
+-- P1-safe: T=0 means infinite coldness → reject all uphill moves.
+: metropolis
+  -> seed -> T -> dE
+  dE 0.0 le if
+    true seed
+  else
+    T 0.0 = if
+      -- T=0: system is frozen, never accept uphill moves
+      false seed
+    else
+      dE fneg T fdiv fexp -> p
+      seed prng-float -> seed2
+      p le
+      seed2
+    end
+  end
+;
+
+-- ================================================================
+-- Cooling Schedule
+-- ================================================================
+
+-- cool: (T-start T-end k steps -- T)
+-- Exponential cooling: T = T_start * (T_end/T_start)^(k/steps)
+-- Equivalent to: T = T_start * exp(k/steps * ln(T_end/T_start))
+-- P1-safe: steps=0 returns T-start (no cooling applied).
+-- T-start=0 returns 0.0 (already frozen, flog now returns Error
+-- which propagates through the arithmetic).
+: cool
+  -> steps -> k -> T-end -> T-start
+  steps 0 = if
+    T-start
+  else
+    T-end T-start fdiv flog
+    k i2f steps i2f fdiv fmul
+    fexp
+    T-start fmul
+  end
+;

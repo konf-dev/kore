@@ -1,0 +1,189 @@
+-- ================================================================
+-- Kore Standard Library: Reverse-Mode Autodiff
+-- ================================================================
+--
+-- Pure Kore. Uses append + reverse (2 new list ops) + existing
+-- Pair/List infrastructure. No dedicated tape opcodes needed.
+--
+-- Design: A computation tape is a List of nodes.
+-- Each node: Pair(Pair(op:Int, value:Float), Pair(inputs:List<Int>, saved:List<Float>))
+--
+-- Forward pass builds the tape. Backward pass walks it in reverse.
+-- Op codes: 0=var, 1=const, 2=add, 3=mul, 4=sub, 5=relu, 6=neg
+--
+-- Thread pattern: (tape ... -- tape' ...)
+-- Each ad-* function takes the tape and arguments, returns updated tape + node index.
+--
+-- IMPORTANT: Return order is (tape' idx) — tape' is deeper, idx is on top.
+-- When binding results, use TOP-FIRST order:
+--   tape 3.0 ad-var ->x ->tape      (correct: ->idx then ->tape)
+--   tape 3.0 ad-var ->tape ->x      (WRONG: would swap tape and idx)
+-- ================================================================
+
+-- ================================================================
+-- Node Construction
+-- ================================================================
+
+-- ad-node-new: (op value inputs saved tape -- tape' idx)
+-- Creates a new node, appends to tape, returns tape and node index.
+: ad-node-new
+  -> tape -> saved -> inputs -> value -> op
+  op value pair inputs saved pair pair -> node
+  tape len swap drop -> idx
+  tape node append
+  idx
+;
+
+-- ================================================================
+-- Forward Pass: Create tracked values
+-- ================================================================
+
+-- ad-var: (tape x -- tape' idx)
+-- Create a variable node (will receive gradient).
+: ad-var
+  -> x -> tape
+  0 x ( ) ( ) tape ad-node-new
+;
+
+-- ad-const: (tape c -- tape' idx)
+-- Create a constant node (gradient = 0).
+: ad-const
+  -> c -> tape
+  1 c ( ) ( ) tape ad-node-new
+;
+
+-- ad-value: (tape idx -- value)
+-- Get the value of a node by index (does not consume tape).
+: ad-value
+  -> idx -> tape
+  tape idx get       -- node
+  unpair drop        -- Pair(op, value)
+  unpair swap drop   -- value
+  tape swap          -- restore tape on stack
+;
+
+-- ad-add: (tape idx_a idx_b -- tape' idx)
+-- Forward: value = a + b. Backward: da += dout, db += dout
+: ad-add
+  -> ib -> ia -> tape
+  tape ia get unpair drop unpair swap drop -> va
+  tape ib get unpair drop unpair swap drop -> vb
+  va vb fadd -> vc
+  2 vc ( ) ia append ib append ( ) tape ad-node-new
+;
+
+-- ad-sub: (tape idx_a idx_b -- tape' idx)
+-- Forward: value = a - b. Backward: da += dout, db -= dout
+: ad-sub
+  -> ib -> ia -> tape
+  tape ia get unpair drop unpair swap drop -> va
+  tape ib get unpair drop unpair swap drop -> vb
+  va vb fsub -> vc
+  4 vc ( ) ia append ib append ( ) tape ad-node-new
+;
+
+-- ad-mul: (tape idx_a idx_b -- tape' idx)
+-- Forward: value = a * b. Backward: da += b*dout, db += a*dout
+-- Saves (va, vb) for backward pass.
+: ad-mul
+  -> ib -> ia -> tape
+  tape ia get unpair drop unpair swap drop -> va
+  tape ib get unpair drop unpair swap drop -> vb
+  va vb fmul -> vc
+  3 vc ( ) ia append ib append ( ) va append vb append tape ad-node-new
+;
+
+-- ad-relu: (tape idx -- tape' idx)
+-- Forward: value = max(0, x). Backward: dx += (x>0 ? 1 : 0) * dout
+: ad-relu
+  -> ia -> tape
+  tape ia get unpair drop unpair swap drop -> va
+  va 0.0 gt if va else 0.0 end -> vc
+  5 vc ( ) ia append ( ) va append tape ad-node-new
+;
+
+-- ad-neg: (tape idx -- tape' idx)
+-- Forward: value = -x. Backward: dx -= dout
+: ad-neg
+  -> ia -> tape
+  tape ia get unpair drop unpair swap drop -> va
+  va fneg -> vc
+  6 vc ( ) ia append ( ) tape ad-node-new
+;
+
+-- ================================================================
+-- Backward Pass
+-- ================================================================
+
+-- ad-backward: (tape loss_idx -- grads)
+-- Returns a list of gradients (one per tape node).
+-- grads[i] = dLoss/d(node_i_value)
+: ad-backward
+  -> loss_idx -> tape
+  -- Initialize gradients to 0.0 for all nodes
+  tape len swap drop -> n
+  ( ) -> grads
+  0 -> i
+  while i n < do
+    grads 0.0 append -> grads
+    i 1 + -> i
+  end
+  -- Set gradient of loss node to 1.0
+  grads loss_idx 1.0 set -> grads
+  -- Walk tape in reverse
+  n 1 - -> i
+  while i 0 ge do
+    tape i get -> node
+    grads i get -> dout
+    node unpair drop unpair drop -> op    -- get op code
+    node unpair swap drop                 -- Pair(inputs, saved)
+    unpair -> saved -> inputs
+    -- Dispatch on op
+    op 2 = if
+      -- ADD: da += dout, db += dout
+      inputs 0 get -> ia
+      inputs 1 get -> ib
+      grads ia get dout fadd -> ga
+      grads ia ga set -> grads
+      grads ib get dout fadd -> gb
+      grads ib gb set -> grads
+    end
+    op 4 = if
+      -- SUB: da += dout, db -= dout
+      inputs 0 get -> ia
+      inputs 1 get -> ib
+      grads ia get dout fadd -> ga
+      grads ia ga set -> grads
+      grads ib get dout fsub -> gb
+      grads ib gb set -> grads
+    end
+    op 3 = if
+      -- MUL: da += vb*dout, db += va*dout
+      inputs 0 get -> ia
+      inputs 1 get -> ib
+      saved 0 get -> va
+      saved 1 get -> vb
+      grads ia get vb dout fmul fadd -> ga
+      grads ia ga set -> grads
+      grads ib get va dout fmul fadd -> gb
+      grads ib gb set -> grads
+    end
+    op 5 = if
+      -- RELU: dx += (x>0 ? 1 : 0) * dout
+      inputs 0 get -> ia
+      saved 0 get -> va
+      va 0.0 gt if
+        grads ia get dout fadd -> ga
+        grads ia ga set -> grads
+      end
+    end
+    op 6 = if
+      -- NEG: dx -= dout
+      inputs 0 get -> ia
+      grads ia get dout fsub -> ga
+      grads ia ga set -> grads
+    end
+    i 1 - -> i
+  end
+  grads
+;

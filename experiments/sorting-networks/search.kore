@@ -1,0 +1,184 @@
+-- ================================================================
+-- Sorting Network Search — Pure Kore
+-- ================================================================
+--
+-- Lattice-guided search for optimal sorting networks.
+-- Zero external dependencies. P1–P4 guarantee correctness.
+--
+-- Approach:
+--   1. Generate all 2^n binary inputs as lists of 0/1
+--   2. A network = list of comparator pairs (stored as pair(i,j))
+--   3. Apply network to every input, count how many end up sorted
+--   4. Search: greedily add comparators, verify, prune
+--
+-- The constraint lattice (P4) tracks:  how many inputs remain unsorted.
+-- It can only descend (each comparator fixes ≥0 inputs, breaks none).
+-- ================================================================
+
+-- ---- Utility ----
+
+-- (list -- n)  length of list, consuming it
+: list-len  len swap drop ;
+
+-- ---- Binary input generation ----
+
+-- Convert integer x to n-bit binary list [MSB ... LSB style: wire 0 = leftmost]
+-- (x n -- list)
+: to-bits
+  ->n ->x
+  ( ) ->acc
+  0 ->i
+  while i n < do
+    x 2 % acc swap append ->acc
+    x 2 / ->x
+    i 1 + ->i
+  end
+  acc reverse
+;
+
+-- Generate all 2^n binary inputs as a list of lists
+-- (n -- all-inputs)
+: gen-all-inputs
+  ->n
+  -- compute 2^n
+  1 ->total
+  0 ->i
+  while i n < do
+    total 2 * ->total
+    i 1 + ->i
+  end
+  -- generate each input
+  ( ) ->all
+  0 ->x
+  while x total < do
+    x n to-bits all swap append ->all
+    x 1 + ->x
+  end
+  all
+;
+
+-- ---- Compare-and-swap ----
+
+-- (list i j -- list')
+-- If list[i] > list[j], swap the values at positions i and j
+: cswap
+  ->j ->i ->lst
+  lst i get ->vi
+  lst j get ->vj
+  vi vj > if
+    lst i vj set j vi set
+  else
+    lst
+  end
+;
+
+-- ---- Check if a binary list is sorted (non-decreasing) ----
+
+-- (list -- bool)
+: is-sorted
+  ->lst
+  lst list-len ->n
+  true ->ok
+  1 ->i
+  while i n < do
+    lst i 1 - get lst i get > if
+      false ->ok
+    end
+    i 1 + ->i
+  end
+  ok
+;
+
+-- ---- Apply a full network to a single input ----
+
+-- Network is a list of pairs. Each pair = (i, j) comparator.
+-- (input network -- output)
+: apply-network
+  ->net ->inp
+  net list-len ->ncomps
+  0 ->k
+  while k ncomps < do
+    net k get ->comp
+    comp unpair ->j ->i
+    inp i j cswap ->inp
+    k 1 + ->k
+  end
+  inp
+;
+
+-- ---- Count how many inputs a network fails to sort ----
+
+-- (all-inputs network -- unsorted-count)
+: count-unsorted
+  ->net ->inputs
+  inputs list-len ->total
+  0 ->bad
+  0 ->i
+  while i total < do
+    inputs i get net apply-network is-sorted not if
+      bad 1 + ->bad
+    end
+    i 1 + ->i
+  end
+  bad
+;
+
+-- ---- Greedy search: find the best next comparator ----
+
+-- Given current network and all inputs, try every possible (i,j)
+-- and pick the one that fixes the most unsorted inputs.
+-- (all-inputs network n -- best-i best-j best-fixed)
+: best-comparator
+  ->n ->net ->inputs
+  0 ->best-i
+  1 ->best-j
+  0 ->best-fixed
+  0 ->i
+  while i n < do
+    i 1 + ->j
+    while j n < do
+      -- try adding (i,j) to network
+      net i j pair append ->trial
+      inputs trial count-unsorted ->remaining
+      inputs net count-unsorted remaining - ->fixed
+      fixed best-fixed > if
+        i ->best-i
+        j ->best-j
+        fixed ->best-fixed
+      end
+      j 1 + ->j
+    end
+    i 1 + ->i
+  end
+  best-i best-j best-fixed
+;
+
+-- ================================================================
+-- MAIN: Search for sorting network for n=4
+-- Known optimal: 5 comparators
+-- ================================================================
+
+4 ->n
+
+-- Generate all 2^4 = 16 binary inputs
+n gen-all-inputs ->inputs
+
+-- Start with empty network
+( ) ->network
+
+-- Initial unsorted count
+inputs network count-unsorted ->remaining
+
+-- Greedy search: keep adding the best comparator
+while remaining 0 > do
+  inputs network n best-comparator ->fixed ->j ->i
+
+  -- Add this comparator
+  network i j pair append ->network
+
+  -- Update count
+  inputs network count-unsorted ->remaining
+end
+
+-- Result: the network (list of pairs)
+network

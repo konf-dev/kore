@@ -1,0 +1,75 @@
+-- ================================================================
+-- Ramsey R(3,3) = 6: Constructive Proof in Kore
+-- ================================================================
+--
+-- Theorem: R(3,3) = 6
+--   (A) R(3,3) > 5: exhibit a 2-coloring of K₅ with no mono triangle
+--   (B) R(3,3) ≤ 6: pigeonhole argument (mathematical, not computational)
+--
+-- K₅ edge index (upper triangle, 0-based):
+--   edge(i,j) for i<j: flat index in row-major upper triangle
+--   (0,1)=0  (0,2)=1  (0,3)=2  (0,4)=3
+--   (1,2)=4  (1,3)=5  (1,4)=6
+--   (2,3)=7  (2,4)=8
+--   (3,4)=9
+-- ================================================================
+
+-- Stdlib
+: fst unpair drop ;
+: snd unpair swap drop ;
+: abs dup 0 < if neg end ;
+: sum 0 [ + ] fold ;
+
+-- ============================================================
+-- Part A: C₅ witness — verify no monochromatic triangle
+-- ============================================================
+-- C₅ cycle: 0→1→2→3→4→0 (red=0), diagonals (blue=1)
+-- Coloring indexed by edge:
+--   [0, 1, 1, 0, 0, 1, 1, 0, 1, 0]
+
+-- Verify: cycle edges sum to 0 (all red)
+-- Cycle edges: (0,1)=0, (1,2)=4, (2,3)=7, (3,4)=9, (0,4)=3
+( 0 1 1 0 0 1 1 0 1 0 )   -- coloring
+dup 0 get  over 4 get +  over 7 get +  over 9 get +  over 3 get +
+-- Stack: coloring cycle_sum
+-- cycle_sum should be 0 (all red)
+swap
+
+-- Verify: diagonal edges sum to 5 (all blue)
+-- Diagonal edges: (0,2)=1, (0,3)=2, (1,3)=5, (1,4)=6, (2,4)=8
+dup 1 get  over 2 get +  over 5 get +  over 6 get +  over 8 get +
+-- Stack: cycle_sum coloring diag_sum
+swap drop  -- drop coloring
+
+-- Stack: 0 5
+-- 0 = all cycle edges red ✓
+-- 5 = all diagonal edges blue ✓
+--
+-- Why this means no monochromatic triangle:
+-- Every triangle in K₅ contains either 1 or 2 cycle edges
+-- (never 0 or 3), because C₅ is triangle-free and its
+-- complement is also triangle-free (it's also C₅).
+-- Therefore every triangle has mixed colors. QED Part A.
+
+-- ============================================================
+-- Part B: R(3,3) ≤ 6 — pigeonhole (mathematical proof)
+-- ============================================================
+-- For any 2-coloring of K₆, pick any vertex v.
+-- v has 5 edges. By pigeonhole, ≥3 have the same color c.
+-- Let those 3 neighbors be {a,b,c}.
+-- 
+-- Case 1: Some edge in {a,b,c} has color c
+--   → That edge + v forms a monochromatic triangle of color c
+-- Case 2: No edge in {a,b,c} has color c
+--   → All 3 edges in {a,b,c} have color (1-c)
+--   → {a,b,c} is a monochromatic triangle of color (1-c)
+--
+-- In either case, a monochromatic triangle exists. QED Part B.
+-- Combined: R(3,3) = 6. ∎
+
+-- ============================================================
+-- Result: Stack contains [0, 5] proving the C₅ coloring is valid
+-- 0 = cycle edges are monochromatic (all red)
+-- 5 = diagonal edges are monochromatic (all blue)  
+-- Together: valid 2-coloring, and by C₅ structure, triangle-free
+-- ============================================================

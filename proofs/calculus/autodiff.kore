@@ -1,0 +1,80 @@
+-- ================================================================
+-- PROOF: Forward-mode autodiff via dual numbers
+-- ================================================================
+--
+-- Claim: dual number arithmetic d(a, a') ⊕ d(b, b') correctly
+-- computes both value and derivative for +, *, -, negate.
+--
+-- Dual number: d(v, v') where v = value, v' = derivative
+-- Representation: (v, v') as a pair
+--
+-- Rules:
+--   d(a,a') + d(b,b') = d(a+b, a'+b')       [dadd]
+--   d(a,a') * d(b,b') = d(a*b, a'*b + a*b')  [dmul]  (product rule!)
+--   -d(a,a')          = d(-a, -a')            [dneg]
+--   d(a,a') - d(b,b') = dadd(d(a,a'), dneg(d(b,b')))  [dsub]
+--
+-- Test: f(x) = x² at x = 3
+--   d(3,1) * d(3,1) = d(9, 1*3 + 3*1) = d(9, 6)
+--   So f(3) = 9, f'(3) = 6  ✓  (derivative of x² is 2x, 2·3=6)
+-- ================================================================
+
+-- ----------------------------------------------------------------
+-- Utility: pair projections
+-- ----------------------------------------------------------------
+: fst unpair drop ;
+: snd unpair swap drop ;
+
+-- ----------------------------------------------------------------
+-- Dual number constructors
+-- ----------------------------------------------------------------
+: dual pair ;
+: undual unpair ;
+
+-- Constant: derivative is 0
+: dconst 0.0 dual ;
+
+-- Variable: derivative is 1 (the thing we differentiate w.r.t.)
+: dvar 1.0 dual ;
+
+-- ----------------------------------------------------------------
+-- Dual addition: d(a,a') + d(b,b') = d(a+b, a'+b')
+-- ----------------------------------------------------------------
+: dadd
+  unpair rot unpair rot
+  fadd rot rot swap fadd swap pair
+;
+
+-- ----------------------------------------------------------------
+-- Dual multiplication (product rule!):
+-- d(a,a') * d(b,b') = d(a*b, a'*b + a*b')
+-- Uses fst/snd to extract without deep stack juggling.
+-- ----------------------------------------------------------------
+: dmul
+  over over
+  fst swap fst fmul rot rot
+  over over snd swap fst fmul rot rot
+  fst swap snd fmul fadd pair
+;
+
+-- ----------------------------------------------------------------
+-- Dual negation: -d(a,a') = d(-a, -a')
+-- ----------------------------------------------------------------
+: dneg unpair fneg swap fneg swap pair ;
+
+-- ----------------------------------------------------------------
+-- PROOF 1: f(x) = x² at x = 3
+-- x = d(3, 1), compute x * x
+-- Expected: d(9, 6) because d/dx[x²] = 2x = 6
+-- ----------------------------------------------------------------
+3.0 dvar dup dmul undual
+-- Stack: 9.0 6.0
+
+-- ----------------------------------------------------------------
+-- PROOF 2: f(x) = (x+1)*x at x = 3
+-- Expected: f(3) = 4*3 = 12, f'(3) = 2*3+1 = 7
+-- (derivative of x²+x is 2x+1)
+-- ----------------------------------------------------------------
+drop drop
+3.0 dvar 1.0 dconst dadd 3.0 dvar dmul undual
+-- Stack: 12.0 7.0

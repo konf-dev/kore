@@ -1,0 +1,48 @@
+-- http.kore — HTTP server helpers
+-- P1: HTTP handlers are tools (request → response)
+
+-- http-ok: (body -- status body)
+-- Create a 200 OK response
+: http-ok 200 swap ;
+
+-- http-not-found: (-- status body)
+-- Create a 404 response
+: http-not-found 404 "Not Found" ;
+
+-- http-bad-request: (-- status body)
+-- Create a 400 response
+: http-bad-request 400 "Bad Request" ;
+
+-- http-error: (msg -- status body)
+-- Create a 500 response with message
+: http-error 500 swap ;
+
+-- http-json-ok: (json-str -- status body)
+-- Respond with JSON (caller responsible for formatting)
+: http-json-ok 200 swap ;
+
+-- http-redirect: (url -- status body)
+-- Create a redirect response (body = url)
+: http-redirect 302 swap ;
+
+-- route-match?: (path expected -- bool)
+-- Check if request path matches expected
+: route-match? = ;
+
+-- simple-router: (method path body routes -- status response-body)
+-- Routes is a list of [path handler-quote] pairs
+-- Tries each route, returns 404 if none match
+: simple-router
+  ->routes ->body ->path ->method
+  404 "Not Found"  -- default response
+  @routes [
+    dup 0 nth ->route-path
+    1 nth ->route-handler
+    @path @route-path = if
+      -- matched! replace default response
+      drop drop
+      @method @path @body @route-handler apply
+    else
+    end
+  ] each
+;

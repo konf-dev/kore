@@ -1,0 +1,152 @@
+-- ================================================================
+-- Strassen 4×4 Verification: Naive vs Strassen, same result
+-- ================================================================
+--
+-- Proves both algorithms produce identical A² for:
+--   A = [[1,2,3,4],[5,6,7,8],[9,10,11,12],[13,14,15,16]]
+--
+-- Operation count:
+--   Naive:    64 multiplications + 48 additions = 112 ops
+--   Strassen: 49 multiplications + 132 additions = 181 ops
+--                                       ^^^ more adds, but fewer muls
+--   Multiplication reduction: (64-49)/64 = 23.4%
+--
+-- For large n: Strassen = O(n^2.807) vs Naive = O(n^3)
+-- ================================================================
+
+-- ---- 2×2 block operations ----
+
+: mat2_add  ->B2 ->A2
+  A2 0 get B2 0 get +  A2 1 get B2 1 get +
+  A2 2 get B2 2 get +  A2 3 get B2 3 get +
+  collect 4
+;
+
+: mat2_sub  ->B2 ->A2
+  A2 0 get B2 0 get -  A2 1 get B2 1 get -
+  A2 2 get B2 2 get -  A2 3 get B2 3 get -
+  collect 4
+;
+
+: mat2_strassen  ->BB ->AA
+  AA 0 get ->a  AA 1 get ->b  AA 2 get ->c  AA 3 get ->d
+  BB 0 get ->e  BB 1 get ->f  BB 2 get ->g  BB 3 get ->h
+  a d + e h + * ->m1   c d + e     * ->m2
+  a     f h - * ->m3   d     g e - * ->m4
+  a b + h     * ->m5   c a - e f + * ->m6
+  b d - g h + * ->m7
+  m1 m4 + m5 - m7 +  m3 m5 +  m2 m4 +  m1 m2 - m3 + m6 +
+  collect 4
+;
+
+-- ---- Block extraction ----
+: block_tl ->M  M 0 get M 1 get M 4 get M 5 get collect 4 ;
+: block_tr ->M  M 2 get M 3 get M 6 get M 7 get collect 4 ;
+: block_bl ->M  M 8 get M 9 get M 12 get M 13 get collect 4 ;
+: block_br ->M  M 10 get M 11 get M 14 get M 15 get collect 4 ;
+
+: assemble4x4  ->c22 ->c21 ->c12 ->c11
+  c11 0 get c11 1 get c12 0 get c12 1 get
+  c11 2 get c11 3 get c12 2 get c12 3 get
+  c21 0 get c21 1 get c22 0 get c22 1 get
+  c21 2 get c21 3 get c22 2 get c22 3 get
+  collect 16
+;
+
+-- ---- Naive 4×4 dot product ----
+: dot4  ->w ->z ->y ->x ->W ->Z ->Y ->X
+  X x * Y y * + Z z * + W w * +
+;
+
+-- ---- Naive 4×4 matmul ----
+: naive_4x4  ->B ->A
+  -- Extract all elements
+  A 0 get ->a00  A 1 get ->a01  A 2 get ->a02  A 3 get ->a03
+  A 4 get ->a10  A 5 get ->a11  A 6 get ->a12  A 7 get ->a13
+  A 8 get ->a20  A 9 get ->a21  A 10 get ->a22  A 11 get ->a23
+  A 12 get ->a30  A 13 get ->a31  A 14 get ->a32  A 15 get ->a33
+
+  B 0 get ->b00  B 1 get ->b01  B 2 get ->b02  B 3 get ->b03
+  B 4 get ->b10  B 5 get ->b11  B 6 get ->b12  B 7 get ->b13
+  B 8 get ->b20  B 9 get ->b21  B 10 get ->b22  B 11 get ->b23
+  B 12 get ->b30  B 13 get ->b31  B 14 get ->b32  B 15 get ->b33
+
+  a00 a01 a02 a03  b00 b10 b20 b30  dot4
+  a00 a01 a02 a03  b01 b11 b21 b31  dot4
+  a00 a01 a02 a03  b02 b12 b22 b32  dot4
+  a00 a01 a02 a03  b03 b13 b23 b33  dot4
+
+  a10 a11 a12 a13  b00 b10 b20 b30  dot4
+  a10 a11 a12 a13  b01 b11 b21 b31  dot4
+  a10 a11 a12 a13  b02 b12 b22 b32  dot4
+  a10 a11 a12 a13  b03 b13 b23 b33  dot4
+
+  a20 a21 a22 a23  b00 b10 b20 b30  dot4
+  a20 a21 a22 a23  b01 b11 b21 b31  dot4
+  a20 a21 a22 a23  b02 b12 b22 b32  dot4
+  a20 a21 a22 a23  b03 b13 b23 b33  dot4
+
+  a30 a31 a32 a33  b00 b10 b20 b30  dot4
+  a30 a31 a32 a33  b01 b11 b21 b31  dot4
+  a30 a31 a32 a33  b02 b12 b22 b32  dot4
+  a30 a31 a32 a33  b03 b13 b23 b33  dot4
+
+  collect 16
+;
+
+-- ---- Strassen 4×4 ----
+: strassen_4x4  ->B ->A
+  A block_tl ->a11  A block_tr ->a12  A block_bl ->a21  A block_br ->a22
+  B block_tl ->b11  B block_tr ->b12  B block_bl ->b21  B block_br ->b22
+
+  a11 a22 mat2_add  b11 b22 mat2_add  mat2_strassen ->M1
+  a21 a22 mat2_add  b11                mat2_strassen ->M2
+  a11                b12 b22 mat2_sub  mat2_strassen ->M3
+  a22                b21 b11 mat2_sub  mat2_strassen ->M4
+  a11 a12 mat2_add  b22                mat2_strassen ->M5
+  a21 a11 mat2_sub  b11 b12 mat2_add  mat2_strassen ->M6
+  a12 a22 mat2_sub  b21 b22 mat2_add  mat2_strassen ->M7
+
+  M1 M4 mat2_add M5 mat2_sub M7 mat2_add
+  M3 M5 mat2_add
+  M2 M4 mat2_add
+  M1 M2 mat2_sub M3 mat2_add M6 mat2_add
+  assemble4x4
+;
+
+-- ---- Compare element by element ----
+: lists_eq  ->l2 ->l1
+  l1 0 get l2 0 get =
+  l1 1 get l2 1 get = and
+  l1 2 get l2 2 get = and
+  l1 3 get l2 3 get = and
+  l1 4 get l2 4 get = and
+  l1 5 get l2 5 get = and
+  l1 6 get l2 6 get = and
+  l1 7 get l2 7 get = and
+  l1 8 get l2 8 get = and
+  l1 9 get l2 9 get = and
+  l1 10 get l2 10 get = and
+  l1 11 get l2 11 get = and
+  l1 12 get l2 12 get = and
+  l1 13 get l2 13 get = and
+  l1 14 get l2 14 get = and
+  l1 15 get l2 15 get = and
+;
+
+-- ================================================================
+-- MAIN
+-- ================================================================
+
+( 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 ) ->A
+
+-- Compute A² both ways
+A A naive_4x4 ->naive_result
+A A strassen_4x4 ->strassen_result
+
+-- Verify they match
+naive_result strassen_result lists_eq
+
+-- Should be: true
+-- Proving: Strassen(A,A) == Naive(A,A) for this test case
+-- with 49 multiplications instead of 64

@@ -1,0 +1,61 @@
+-- ================================================================
+-- Gradient Descent with While Loop
+-- ================================================================
+--
+-- Minimize f(x) = x² using forward-mode autodiff + while loop.
+--
+-- This is the REAL thing: no unrolling, pure iterative optimization.
+-- Same as training a neural network, but with a simpler objective.
+--
+-- Algorithm:
+--   x = 10.0, lr = 0.1, steps = 50
+--   while steps > 0 do
+--     x = x - lr * f'(x)
+--     steps = steps - 1
+--   end
+--
+-- P1: gd_step is a tool (S → S)
+-- P2: apply is the only operation  
+-- P3: the while body is composition of gd_step and decrement
+-- P4: types flow through the lattice (Float for x, Int for counter)
+-- ================================================================
+
+-- Dual number operations
+: fst unpair drop ;
+: snd unpair swap drop ;
+: dual pair ;
+: dvar 1.0 dual ;
+: dmul
+  over over
+  fst swap fst fmul rot rot
+  over over snd swap fst fmul rot rot
+  fst swap snd fmul fadd pair
+;
+
+-- f(x) = x²: dual version
+: f_dual dvar dup dmul ;
+
+-- One gradient step: x → x - 0.1 * f'(x)
+: gd_step
+  dup f_dual snd
+  0.1 fmul
+  swap over fsub
+  swap drop
+;
+
+-- Start: x=10.0 on stack, counter=50 on top
+10.0 50
+
+-- While loop: decrement counter, apply gd_step to x
+while dup 0 > do
+  swap gd_step swap
+  1 -
+end
+
+drop  -- remove counter, leave x
+
+-- Show x and f(x)
+dup dup fmul
+
+-- Stack: x_final  f(x_final)
+-- Expected: x ≈ 0.000143, f(x) ≈ 2e-8

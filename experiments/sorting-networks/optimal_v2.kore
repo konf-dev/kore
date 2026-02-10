@@ -1,0 +1,179 @@
+-- ================================================================
+-- Optimal Sorting Network Search v2 — Pure Kore
+-- ================================================================
+--
+-- Exhaustive DFS + iterative deepening + lattice pruning.
+--
+-- Key insight: we don't track the network of (i,j) pairs; instead
+-- we track the SET OF OUTPUTS.  Two networks that produce the same
+-- output set are equivalent (P3: composition is commutative up to
+-- result).  The "state" is the multiset of 2^n binary vectors.
+--
+-- Pruning: if count_unsorted > 2^(budget - depth), prune.
+--
+-- For n=4 this should find 5 comparators easily.
+-- ================================================================
+
+-- ---- Utility ----
+: list-len  len swap drop ;
+
+-- (x n -- list)
+: to-bits
+  ->n ->x
+  ( ) ->acc
+  0 ->i
+  while i n < do
+    x 2 % acc swap append ->acc
+    x 2 / ->x
+    i 1 + ->i
+  end
+  acc reverse
+;
+
+-- (n -- all-inputs)
+: gen-all-inputs
+  ->n
+  1 ->total
+  0 ->i
+  while i n < do total 2 * ->total i 1 + ->i end
+  ( ) ->all
+  0 ->x
+  while x total < do
+    x n to-bits all swap append ->all
+    x 1 + ->x
+  end
+  all
+;
+
+-- (list i j -- list')
+: cswap
+  ->j ->i ->lst
+  lst i get ->vi
+  lst j get ->vj
+  vi vj > if lst i vj set j vi set else lst end
+;
+
+-- (list -- bool)
+: is-sorted
+  ->lst lst list-len ->n true ->ok 1 ->i
+  while i n < do
+    lst i 1 - get lst i get > if false ->ok end
+    i 1 + ->i
+  end
+  ok
+;
+
+-- (inputs ci cj -- inputs')
+: apply-comp-to-all
+  ->cj ->ci ->inputs
+  inputs list-len ->total
+  ( ) ->result
+  0 ->k
+  while k total < do
+    inputs k get ci cj cswap result swap append ->result
+    k 1 + ->k
+  end
+  result
+;
+
+-- (inputs -- count)
+: count-unsorted
+  ->inputs inputs list-len ->total
+  0 ->bad 0 ->i
+  while i total < do
+    inputs i get is-sorted not if bad 1 + ->bad end
+    i 1 + ->i
+  end
+  bad
+;
+
+-- (k -- 2^k)
+: pow2
+  ->k 1 ->r 0 ->i
+  while i k < do r 2 * ->r i 1 + ->i end
+  r
+;
+
+-- ================================================================
+-- DFS search (no canonical ordering, just lattice pruning)
+--
+-- (inputs n depth budget -- network found?)
+-- depth = number of comparators already placed
+-- budget = max total comparators allowed
+-- ================================================================
+
+: search
+  ->budget ->depth ->n ->inputs
+
+  -- If all sorted, success
+  inputs count-unsorted ->u
+  u 0 = if
+    ( ) true
+  else
+    -- If we've used all our budget, fail
+    depth budget = if
+      ( ) false
+    else
+      -- Lattice pruning: if u > 2^(budget - depth), prune
+      u budget depth - pow2 > if
+        ( ) false
+      else
+        ( ) ->found-net
+        false ->found
+
+        -- Try all comparators (ci, cj) where ci < cj
+        0 ->ci
+        while ci n 1 - < do
+          found not if
+            ci 1 + ->cj
+            while cj n < do
+              found not if
+                inputs ci cj apply-comp-to-all ->new-inputs
+                new-inputs n depth 1 + budget search ->sub-found ->sub-net
+                sub-found if
+                  -- Build result: prepend (ci,cj) to sub-net
+                  ( ) ci cj pair append ->head
+                  sub-net list-len ->slen
+                  0 ->si
+                  while si slen < do
+                    sub-net si get head swap append ->head
+                    si 1 + ->si
+                  end
+                  head ->found-net
+                  true ->found
+                end
+              end
+              cj 1 + ->cj
+            end
+          end
+          ci 1 + ->ci
+        end
+        found-net found
+      end
+    end
+  end
+;
+
+-- ================================================================
+-- MAIN: Find optimal network for n=4
+-- ================================================================
+
+4 ->n
+n gen-all-inputs ->inputs
+
+-- Iterative deepening
+0 ->budget
+false ->done
+( ) ->result
+
+while done not do
+  inputs n 0 budget search ->found ->net
+  found if
+    net ->result
+    true ->done
+  else
+    budget 1 + ->budget
+  end
+end
+
+budget result

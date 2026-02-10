@@ -1,0 +1,132 @@
+-- ================================================================
+-- Kore Standard Library: Tensor Operations
+-- ================================================================
+--
+-- Pure Kore. No new opcodes (P3: composition = concatenation).
+--
+-- A tensor is Pair(data: List<Float>, shape: List<Int>).
+-- This is a P1 representation: a tensor IS a value (a tool S→S).
+-- All operations compose by concatenation (P3).
+--
+-- Element-wise operations require matching shapes.
+-- Shape validation is the caller's responsibility (P4).
+-- ================================================================
+
+-- ================================================================
+-- Construction / Accessors
+-- ================================================================
+
+-- tensor-new: (data shape -- tensor)
+-- Creates a tensor from flat data and shape.
+: tensor-new pair ;
+
+-- tensor-data: (tensor -- data)
+-- Extracts the flat data list.
+: tensor-data unpair drop ;
+
+-- tensor-shape: (tensor -- shape)
+-- Extracts the shape list.
+: tensor-shape unpair swap drop ;
+
+-- tensor-size: (tensor -- n)
+-- Number of elements (product of shape dimensions).
+: tensor-size tensor-data len swap drop ;
+
+-- ================================================================
+-- Element-wise Arithmetic
+-- ================================================================
+
+-- tensor-add: (t1 t2 -- t3)
+-- Element-wise float addition. Shapes must match.
+: tensor-add
+  unpair -> shape2
+  swap unpair -> shape1
+  zip [ unpair fadd ] map
+  shape1 tensor-new
+;
+
+-- tensor-sub: (t1 t2 -- t3)
+-- Element-wise float subtraction.
+: tensor-sub
+  unpair -> shape2
+  swap unpair -> shape1
+  swap zip [ unpair fsub ] map
+  shape1 tensor-new
+;
+
+-- tensor-mul: (t1 t2 -- t3)
+-- Element-wise float multiplication (Hadamard product).
+: tensor-mul
+  unpair -> shape2
+  swap unpair -> shape1
+  zip [ unpair fmul ] map
+  shape1 tensor-new
+;
+
+-- ================================================================
+-- Scalar Operations
+-- ================================================================
+
+-- tensor-scale: (tensor scalar -- tensor')
+-- Multiply every element by a scalar.
+: tensor-scale
+  -> s
+  unpair -> shape
+  [ s fmul ] map
+  shape tensor-new
+;
+
+-- tensor-add-scalar: (tensor scalar -- tensor')
+-- Add a scalar to every element.
+: tensor-add-scalar
+  -> s
+  unpair -> shape
+  [ s fadd ] map
+  shape tensor-new
+;
+
+-- ================================================================
+-- Reductions
+-- ================================================================
+
+-- tensor-sum: (tensor -- scalar)
+-- Sum all elements.
+: tensor-sum
+  tensor-data 0.0 [ fadd ] fold
+;
+
+-- tensor-dot: (t1 t2 -- scalar)
+-- Dot product: sum of element-wise products.
+: tensor-dot
+  tensor-data swap tensor-data
+  zip [ unpair fmul ] map
+  0.0 [ fadd ] fold
+;
+
+-- ================================================================
+-- Activation Functions (element-wise)
+-- ================================================================
+
+-- tensor-relu: (tensor -- tensor')
+-- ReLU: max(0, x) for each element.
+: tensor-relu
+  unpair -> shape
+  [ dup 0.0 le if drop 0.0 end ] map
+  shape tensor-new
+;
+
+-- tensor-neg: (tensor -- tensor')
+-- Negate every element.
+: tensor-neg
+  unpair -> shape
+  [ fneg ] map
+  shape tensor-new
+;
+
+-- tensor-abs: (tensor -- tensor')
+-- Absolute value of every element.
+: tensor-abs
+  unpair -> shape
+  [ fabs ] map
+  shape tensor-new
+;

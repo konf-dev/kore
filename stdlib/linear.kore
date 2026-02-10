@@ -1,0 +1,72 @@
+-- ================================================================
+-- Kore Standard Library: Linear Types
+-- ================================================================
+--
+-- Linear types enforce resource discipline at runtime.
+-- A linear value must be used exactly once: it cannot be
+-- duplicated (dup) or silently discarded (drop).
+-- An affine value can be used at most once: no dup, but drop OK.
+--
+-- P4: Constraints Attenuate — marking a value as linear makes it
+-- MORE constrained. The constraint can never be removed except by
+-- explicit consume.
+--
+-- Type lattice: Linear(T) ≤ Affine(T) ≤ T
+--   linear = most constrained (must use exactly once)
+--   affine = middle (must use at most once, can drop)
+--   normal = least constrained (unrestricted)
+-- ================================================================
+
+-- with-linear: (a quote -- result)
+-- Mark a value as linear, apply a quote that must consume it.
+-- The quote receives a linear value and must produce a result.
+: with-linear
+  -> q -> val
+  val linear q apply
+;
+
+-- with-affine: (a quote -- result)
+-- Mark a value as affine, apply a quote that uses it at most once.
+: with-affine
+  -> q -> val
+  val affine q apply
+;
+
+-- linear-map: (Linear(a) quote -- Linear(b))
+-- Apply a function to the inner value of a linear wrapper.
+-- Preserves linearity: the result is also linear.
+: linear-map
+  -> f -> lv
+  lv consume f apply linear
+;
+
+-- affine-map: (Affine(a) quote -- Affine(b))
+-- Apply a function to the inner value of an affine wrapper.
+-- Preserves affinity: the result is also affine.
+: affine-map
+  -> f -> av
+  av consume f apply affine
+;
+
+-- linear-bind: (Linear(a) (a -- Linear(b)) -- Linear(b))
+-- Monadic bind for linear values.
+: linear-bind
+  -> f -> lv
+  lv consume f apply
+;
+
+-- linear-pair: (Linear(a) Linear(b) -- Linear(Pair(a,b)))
+-- Combine two linear values into a single linear pair.
+-- Both inputs are consumed; the result is a single linear value.
+: linear-pair
+  -> lb -> la
+  la consume lb consume pair linear
+;
+
+-- linear-unpair: (Linear(Pair(a,b)) -- Linear(a) Linear(b))
+-- Split a linear pair into two linear values.
+: linear-unpair
+  consume unpair
+  -> b -> a
+  a linear b linear
+;
