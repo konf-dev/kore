@@ -4,7 +4,7 @@ A stack-based programming language with a bytecode compiler, interpreter, Cranel
 
 ## Why Kore exists
 
-Kore was built to explore a specific question: **what happens when you design a programming language where the compiler can verify program correctness before execution?**
+Kore was built to explore a specific question: **what happens when you design a programming language where the compiler can act as a reward function while training a llm on it?**
 
 Most AI code generation today works by generating Python, running it, and hoping it doesn't crash. The LLM has no feedback signal until runtime, and no guarantee that syntactically valid code is semantically correct.
 
