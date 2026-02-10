@@ -13,51 +13,58 @@ Kore takes a different approach. Its type system (the "proof checker") staticall
 - **The compiler is a free oracle.** It tells you whether a program is correct without executing it. For AI training, this is a reward function that runs at 50,000 verifications/second.
 - **Small action space.** ~140 tokens (vs. ~50,000 for Python). An RL agent or LLM generates programs by choosing from this vocabulary. The search space is orders of magnitude smaller.
 - **Deterministic, pure semantics.** Same program → same result, always. No imports, no side effects, no environment dependencies. Evaluation is clean.
-- **Capability levels as curriculum.** The vocabulary is organized into levels (literals → arithmetic → stack ops → control flow → data structures → ...). This provides a natural curriculum for progressive training.
+- **Capability-gated security.** Programs declare what they need (I/O, filesystem, exec). The proof checker verifies these at compile time and the runtime enforces them. Pure programs — no capabilities — are safe by construction.
 
 We tested this by fine-tuning DeepSeek-R1-14B to generate Kore programs. Result: **99.6% accuracy on 478 tasks** across 16 capability levels, with a **93.1%** success rate on held-out demo tasks phrased differently from training. See [experiments/llm-codegen/](experiments/llm-codegen/) for the full pipeline and results.
 
 ## The capability lattice
 
-Kore's type system is organized as a capability lattice — a hierarchy of what a program is allowed to do. This comes from four design principles:
+Kore's security model is built on four postulates. The fourth — **capabilities only attenuate** — is the core design constraint:
 
 1. **Everything is a stack operation** (P1). Every value, function, and data structure lives on a single stack. There's nothing else.
 2. **One composition operator** (P2). Programs compose by concatenation. `f g` means "do f, then do g." No application syntax, no parentheses, no variable binding required.
 3. **Composition is associative** (P3). `(f g) h = f (g h)`. Programs are just sequences of tokens.
-4. **Capabilities only attenuate** (P4). A subroutine can never gain capabilities its caller doesn't have. If you can't do I/O, nothing you call can do I/O either.
+4. **Capabilities only attenuate** (P4). A subroutine can never gain capabilities its caller doesn't have. If you can't do I/O, nothing you call can do I/O either. Constraints form a lattice — they can only narrow, never widen.
 
-P4 is enforced at compile time by the proof checker. Each operation has a declared stack effect (how many values it consumes and produces), and the checker verifies that every composition is balanced. Linear and affine types prevent resources from being duplicated or silently dropped.
+P4 means that when you `spawn` a sandboxed computation, the child's capabilities are `parent_caps & requested_caps` — it can never escalate. This is enforced twice: the proof checker verifies capability usage at compile time, and the runtime re-checks at execution time. A compiled `.korec` binary stores its required capabilities in the file header; you must explicitly grant them at runtime (`--allow io`, `--allow fs`, etc.) or the program won't run.
+
+### What the proof checker verifies
+
+The proof checker statically verifies:
+- **Stack effects** — every operation declares how many values it consumes and produces. The checker walks the entire program and verifies that every composition is balanced.
+- **Capability requirements** — `print` requires `io`, `file-read` requires `fs`, `exec` requires `exec`. If a program uses `print`, it's tagged `[caps: io]` at compile time and rejected at runtime without `--allow io`.
+- **Linear/affine types** — values marked `linear` must be consumed exactly once (no `dup`, no `drop`). Values marked `affine` can be dropped but not duplicated. This prevents resource leaks and double-use.
+- **Capability monotonicity** — a `spawn`'ed child computation inherits a subset of the parent's capabilities. The lattice goes one direction.
+
+```bash
+$ korec compile pure.kore         # → "compiled 42 bytes [pure]"
+$ korec compile hello.kore        # → "compiled 58 bytes [caps: io]"
+$ korec run hello.korec           # → Error: Capability denied: io
+$ korec run hello.korec --allow io  # → hello world
+```
 
 This is narrower than full dependent types (Lean, Coq) but broader than memory safety alone (Rust). It checks semantic properties — stack balance, type consistency, capability monotonicity — at zero runtime cost.
 
-### Capability levels
+### Capabilities
 
-The vocabulary is organized into 20 levels, each unlocking new operations:
+| Capability | Flag | Gated operations | Purpose |
+|------------|------|-------------------|---------|
+| `io` | 0x01 | `print`, `println`, `rand`, `time-now`, `env-get` | Console I/O, non-determinism |
+| `fs` | 0x02 | `file-read`, `file-write`, `file-exists` | Filesystem access |
+| `net` | 0x04 | *(future)* | Network access |
+| `exec` | 0x08 | `exec` | Shell command execution |
 
-| Level | Category | Tokens |
-|-------|----------|--------|
-| 0 | Literals | `0`–`10`, `true`, `false`, `nil` |
-| 1 | Arithmetic | `+`, `-`, `*`, `div`, `mod`, `neg` |
-| 2 | Stack ops | `dup`, `drop`, `swap`, `over`, `rot` |
-| 3 | Comparisons | `=`, `<`, `>`, `not`, `and`, `or` |
-| 4 | Variables | `->a`, `a`, `->b`, `b`, `->n`, `n` |
-| 5 | Control flow | `if`, `else`, `end`, `while`, `do`, `times` |
-| 6 | Quotations | `[`, `]`, `apply`, `cond`, `loop` |
-| 7 | Bitwise | `band`, `bor`, `bxor`, `shl`, `shr` |
-| 8 | Data structures | `pair`, `unpair`, `first`, `second` |
-| 9 | Lists | `map`, `fold`, `filter`, `head`, `tail`, `range` |
-| 10 | Error handling | `error`, `is-error`, `try`, `fail` |
-| 11 | Strings | `str-len`, `str-concat`, `str-slice`, `to-str` |
-| 12 | Type conversion | `i2f`, `f2i`, `type-of`, `depth` |
-| 13 | Float math | `fadd`, `fsub`, `fmul`, `fdiv`, `fsqrt`, ... |
-| 14 | Linear types | `linear`, `affine`, `consume` |
-| 15 | Fibers | `fiber-new`, `fiber-step`, `fiber-push` |
-| 16 | Concurrency | `spawn`, `chan-new`, `chan-send`, `chan-recv` |
-| 17 | Maps | `map-new`, `map-get`, `map-set`, `map-keys` |
-| 18 | Reflection | `fetch`, `size`, `ret`, `halt` |
-| 19 | Functions | `:`, `;` (define named functions) |
+Programs that use none of these are **pure** — they run anywhere (interpreter, JIT, GPU, WASM) with no permission flags, and their output is fully deterministic.
 
-Each level is a superset of the previous. A program at level 5 can only use tokens from levels 0–5. This makes capability restriction trivial — just limit the available vocabulary.
+### Why this matters for AI
+
+A pure Kore program is a closed-world computation: same input → same output, no side effects, no environmental dependencies. The compiler can verify correctness without executing it. For LLM code generation, this means:
+
+- **The compiler is a free reward function.** It accepts or rejects programs at ~50K/sec. No test harness needed.
+- **Small action space.** ~140 tokens vs. ~50K for Python. The LLM's search space is orders of magnitude smaller.
+- **Capability restriction as safety.** An AI agent writing Kore tools can be given a restricted capability set. The proof checker guarantees the tool can't do I/O, touch the filesystem, or exec shell commands — by construction, not by sandboxing.
+
+The LLM training experiment uses a 20-level curriculum that progressively introduces vocabulary (literals → arithmetic → control flow → data structures → ...), but this curriculum is a training artifact, not the capability lattice itself. See [experiments/llm-codegen/](experiments/llm-codegen/) for details.
 
 ## Quick start
 
