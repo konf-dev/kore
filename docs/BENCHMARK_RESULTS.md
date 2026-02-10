@@ -1,7 +1,7 @@
 # Kore Benchmark Results
 
 > **Living document** — re-run `./benchmark.sh` after every update.
-> Last updated: 2026-02-06 | Commit: `f0178ed` (dev) | Tests: 490 passing
+> Last updated: 2026-02-10 | Tests: 524 passing
 
 ---
 
@@ -296,7 +296,7 @@ Same program compiled via both JIT paths. Tests compilation path overhead. SSA p
 ## Test Coverage
 
 ```
-Total tests:     490
+Total tests:     524
   Parser:        305
   JIT backend:    96 (incl. 9 cross-backend + 4 P1-P4 verification)
   Benchmarks:     23 (stress + performance)
@@ -308,7 +308,6 @@ Total tests:     490
   gpu_runtime:     2
   wasm_backend:    2
   bytecode:        2
-  metacircular:    1
   All passing:   ✓
 ```
 
@@ -318,8 +317,7 @@ Total tests:     490
 
 | Date       | Commit    | Total Tests | JIT/Interp | JIT/Rust | Notes |
 |------------|-----------|:-----------:|:----------:|:--------:|-------|
-| 2026-02-06 | `f0178ed` | 490         | **30×**    | **78.8×** | Fix 1-5 applied, used-locals CALL/RET, SSA in module path |
-| 2026-02-06 | `7aa04c7` | 466         | **19×**    | **117×**  | Full benchmark suite, all backends tested, 14 JIT bugs fixed |
+| 2026-02-10 | release   | 524         | **30×**    | **78.8×** | Release build, cleaned codebase |
 
 ---
 
