@@ -127,19 +127,17 @@ See [docs/KORE_GUIDE.md](docs/KORE_GUIDE.md) for the full language reference.
 
 ## Performance
 
-The Cranelift JIT achieves significant speedups over the interpreter:
+The Cranelift JIT compiles Kore bytecode to native machine code. Measured times (lower is better):
 
-| Benchmark | JIT/Interpreter | JIT vs. Native Rust |
-|-----------|:-:|:-:|
-| Sum of squares (10K) | **250×** | 5.8× slower |
-| Fibonacci iterative (78) | **56×** | 769× slower |
-| Bitwise ops (10K) | **44×** | — |
-| Float sqrt sum (1K) | **33×** | — |
-| Collatz (1..10K) | **12×** | 17× slower |
-| Fibonacci recursive (25) | **36×** | 502× slower |
-| **Geometric mean** | **30×** | **79× slower** |
+| Benchmark | Interpreter | JIT | Native Rust | JIT speedup |
+|-----------|-------------|-----|-------------|-------------|
+| Sum of squares (10K) | 2,659 µs | 55 µs | 9.5 µs | 48× faster |
+| Fibonacci iterative (78) | 24 µs | 0.6 µs | 0.8 ns | 39× faster |
+| Collatz (1..10K) | 245 ms | 19 ms | 1.1 ms | 13× faster |
+| Fibonacci recursive (25) | 49 ms | 1.4 ms | 2.7 µs | 36× faster |
+| **Geometric mean** | | | | **31× faster** |
 
-The JIT is 30× faster than the interpreter on average, and about 79× slower than hand-written Rust — reasonable for a bytecode VM with no LLVM backend. The `korec serve` JSON eval server sustains ~50,000 program evaluations/second for the LLM training pipeline.
+The JIT is ~31× faster than the interpreter on average, and ~79× slower than hand-written Rust — reasonable for a bytecode VM using Cranelift (no LLVM). The `korec serve` JSON eval server sustains ~50,000 program evaluations/second for the LLM training pipeline.
 
 See [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) for full benchmark details, GPU benchmarks, backend capability matrix, and stress test results.
 
