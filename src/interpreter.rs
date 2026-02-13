@@ -224,6 +224,9 @@ pub struct Interpreter<'a> {
 
     /// Maximum steps before execution is halted (0 = unlimited)
     max_steps: usize,
+
+    /// Peak stack depth observed during execution (for training reward)
+    max_stack_depth: usize,
 }
 
 impl<'a> Interpreter<'a> {
@@ -242,6 +245,7 @@ impl<'a> Interpreter<'a> {
             trace: false,
             steps: 0,
             max_steps: 0,
+            max_stack_depth: 0,
         }
     }
     
@@ -261,6 +265,7 @@ impl<'a> Interpreter<'a> {
             trace: false,
             steps: 0,
             max_steps: 0,
+            max_stack_depth: 0,
         }
     }
     
@@ -280,6 +285,7 @@ impl<'a> Interpreter<'a> {
             trace: false,
             steps: 0,
             max_steps: 0,
+            max_stack_depth: 0,
         }
     }
 
@@ -295,6 +301,11 @@ impl<'a> Interpreter<'a> {
     /// Get total steps executed so far.
     pub fn steps_executed(&self) -> usize {
         self.steps
+    }
+
+    /// Get the peak stack depth observed during execution.
+    pub fn max_stack_depth(&self) -> usize {
+        self.max_stack_depth
     }
     
     /// Get captured output (from print/println)
@@ -317,6 +328,12 @@ impl<'a> Interpreter<'a> {
             self.steps += 1;
             
             self.execute_op(op)?;
+
+            // Track peak stack depth (near-zero overhead: one comparison per step)
+            let depth = self.stack.data.len();
+            if depth > self.max_stack_depth {
+                self.max_stack_depth = depth;
+            }
             
             if op == 0xFF {
                 // HALT
@@ -355,8 +372,11 @@ impl<'a> Interpreter<'a> {
                         break;
                     }
                     Some(addr) => {
-                        // Nested call returned
+                        // Nested call returned — restore locals frame too
                         self.pc = addr;
+                        if let Some(saved) = self.local_frames.pop() {
+                            self.locals = saved;
+                        }
                     }
                     None => {
                         self.pc = saved_pc;
@@ -567,6 +587,11 @@ impl<'a> Interpreter<'a> {
                     Value::Quote { offset, len: _ } => {
                         // Save return address
                         self.call_stack.push(self.pc);
+                        // Save locals frame so the quote body can use its own
+                        // locals (or read copies of the caller's) without
+                        // clobbering the caller's slots.  RET already restores
+                        // from local_frames, mirroring CALL semantics.
+                        self.local_frames.push(self.locals.clone());
                         // Jump to quoted code
                         self.pc = offset as usize;
                     }
@@ -1042,13 +1067,13 @@ impl<'a> Interpreter<'a> {
             
             // JMP: unconditional jump
             0x70 => {
-                let offset = self.read_i16()?;
+                let offset = self.read_i32()?;
                 self.pc = (self.pc as i64 + offset as i64) as usize;
             }
             
             // JZ: jump if zero/false
             0x71 => {
-                let offset = self.read_i16()?;
+                let offset = self.read_i32()?;
                 let cond = self.pop_bool()?;
                 if !cond {
                     self.pc = (self.pc as i64 + offset as i64) as usize;
@@ -1057,7 +1082,7 @@ impl<'a> Interpreter<'a> {
             
             // JNZ: jump if non-zero/true
             0x72 => {
-                let offset = self.read_i16()?;
+                let offset = self.read_i32()?;
                 let cond = self.pop_bool()?;
                 if cond {
                     self.pc = (self.pc as i64 + offset as i64) as usize;
@@ -1606,8 +1631,11 @@ impl<'a> Interpreter<'a> {
             
             // STORE: (value --) Store to local slot N
             0xA8 => {
-                let slot = self.code[self.pc] as usize;
-                self.pc += 1;
+                let slot = u32::from_le_bytes([
+                    self.code[self.pc], self.code[self.pc+1],
+                    self.code[self.pc+2], self.code[self.pc+3],
+                ]) as usize;
+                self.pc += 4;
                 let val = self.stack.pop()?;
                 // Grow locals vec if needed
                 while self.locals.len() <= slot {
@@ -1618,8 +1646,11 @@ impl<'a> Interpreter<'a> {
             
             // LOAD: (-- value) Load from local slot N
             0xA9 => {
-                let slot = self.code[self.pc] as usize;
-                self.pc += 1;
+                let slot = u32::from_le_bytes([
+                    self.code[self.pc], self.code[self.pc+1],
+                    self.code[self.pc+2], self.code[self.pc+3],
+                ]) as usize;
+                self.pc += 4;
                 if slot >= self.locals.len() {
                     return Err(format!("load: local slot {} not initialized", slot));
                 }
@@ -2285,6 +2316,39 @@ impl<'a> Interpreter<'a> {
                 }
             }
 
+            // PARSE_FLOAT: (str -- float) parse string as float
+            0xEB => {
+                match self.stack.pop()? {
+                    Value::Str(s) => {
+                        match s.trim().parse::<f64>() {
+                            Ok(f) => self.stack.push(Value::Float(f)),
+                            Err(_) => return Err(format!("parse-float: cannot parse '{}' as float", s)),
+                        }
+                    }
+                    v => return Err(format!("parse-float expects string, got {}", v.type_name())),
+                }
+            }
+
+            // PARSE_INT: (str -- int) parse string as integer
+            0xEC => {
+                match self.stack.pop()? {
+                    Value::Str(s) => {
+                        let trimmed = s.trim();
+                        // Try decimal first, then hex (0x prefix)
+                        let result = if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+                            i64::from_str_radix(&trimmed[2..], 16)
+                        } else {
+                            trimmed.parse::<i64>()
+                        };
+                        match result {
+                            Ok(i) => self.stack.push(Value::Int(i)),
+                            Err(_) => return Err(format!("parse-int: cannot parse '{}' as integer", s)),
+                        }
+                    }
+                    v => return Err(format!("parse-int expects string, got {}", v.type_name())),
+                }
+            }
+
             // ================================================================
             // ARRAY OPERATIONS (0x8A-0x8F) — P1: contiguous i64 storage
             // Arrays are tools (S → S). GPU-friendly, cache-friendly.
@@ -2816,6 +2880,9 @@ fn describe_word(name: &str) -> String {
         "str-upper" => "(str -- str)".into(),
         "str-lower" => "(str -- str)".into(),
         "str-trim" => "(str -- str)".into(),
+        // Parsing
+        "parse-float" => "(str -- float)".into(),
+        "parse-int" => "(str -- int)".into(),
         // Error handling
         "try" => "(quote -- result|error)".into(),
         "fail" => "(str -- !)".into(),
