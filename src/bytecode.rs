@@ -205,6 +205,10 @@ pub enum Op {
     StrLower = 0xE9,   // (str -- str) convert to lowercase
     StrTrim = 0xEA,    // (str -- str) trim whitespace from both ends
 
+    // Parsing operations (0xEB-0xEC) — convert strings to numbers
+    ParseFloat = 0xEB, // (str -- float) parse string as float
+    ParseInt = 0xEC,   // (str -- int)   parse string as integer
+
     // Extension (0xF0)
     Ext = 0xF0,
 
@@ -268,6 +272,8 @@ impl Op {
             // String ops
             Op::StrLen, Op::StrGet, Op::StrConcat, Op::StrSlice, Op::ToStr, Op::StrFind,
             Op::StrSplit, Op::StrReplace, Op::StrUpper, Op::StrLower, Op::StrTrim,
+            // Parsing
+            Op::ParseFloat, Op::ParseInt,
             // Extension
             Op::Ext,
             // Halt
@@ -451,6 +457,8 @@ impl Op {
             0xE8 => Some(Op::StrUpper),
             0xE9 => Some(Op::StrLower),
             0xEA => Some(Op::StrTrim),
+            0xEB => Some(Op::ParseFloat),
+            0xEC => Some(Op::ParseInt),
             0xF0 => Some(Op::Ext),
             0xFF => Some(Op::Halt),
             _ => None,
@@ -600,6 +608,8 @@ impl Op {
             Op::StrUpper => "str-upper",
             Op::StrLower => "str-lower",
             Op::StrTrim => "str-trim",
+            Op::ParseFloat => "parse-float",
+            Op::ParseInt => "parse-int",
             Op::Ext => "ext",
             Op::Halt => "halt",
         }
@@ -809,14 +819,14 @@ impl Assembler {
         self.module.code.extend_from_slice(bytes);
     }
 
-    pub fn emit_store(&mut self, slot: u8) {
+    pub fn emit_store(&mut self, slot: u32) {
         self.emit(Op::Store);
-        self.module.code.push(slot);
+        self.module.code.extend_from_slice(&slot.to_le_bytes());
     }
 
-    pub fn emit_load(&mut self, slot: u8) {
+    pub fn emit_load(&mut self, slot: u32) {
         self.emit(Op::Load);
-        self.module.code.push(slot);
+        self.module.code.extend_from_slice(&slot.to_le_bytes());
     }
 
     pub fn emit_call(&mut self, symbol_idx: u16) {
@@ -847,7 +857,7 @@ impl Assembler {
     }
     
     /// Emit a direct jump (returns offset of the target field for patching)
-    pub fn emit_jmp_direct(&mut self, target: i16) -> usize {
+    pub fn emit_jmp_direct(&mut self, target: i32) -> usize {
         self.emit(Op::Jmp);
         let offset = self.module.code.len();
         self.module.code.extend_from_slice(&target.to_le_bytes());
@@ -857,12 +867,14 @@ impl Assembler {
     /// Patch a jump target (offset is from emit_jmp_direct)
     pub fn patch_jmp(&mut self, offset: usize, target: i32) {
         // Jump target is relative to the position after the jump instruction
-        // jmp instruction: opcode (1 byte) + offset (2 bytes)
-        // So target is relative to offset + 2
-        let rel = (target as i64 - (offset as i64 + 2)) as i16;
+        // jmp instruction: opcode (1 byte) + offset (4 bytes)
+        // So target is relative to offset + 4
+        let rel = (target as i64 - (offset as i64 + 4)) as i32;
         let bytes = rel.to_le_bytes();
         self.module.code[offset] = bytes[0];
         self.module.code[offset + 1] = bytes[1];
+        self.module.code[offset + 2] = bytes[2];
+        self.module.code[offset + 3] = bytes[3];
     }
 
     /// Emit a raw u16 value (for Quote length prefix, etc.)
@@ -880,6 +892,23 @@ impl Assembler {
         self.module.code[offset + 1] = bytes[1];
     }
 
+    /// Emit a raw i32 value (for jump offset placeholders)
+    /// Returns the offset where the i32 was written (for patching).
+    pub fn emit_raw_i32(&mut self, val: i32) -> usize {
+        let offset = self.module.code.len();
+        self.module.code.extend_from_slice(&val.to_le_bytes());
+        offset
+    }
+
+    /// Patch an i32 value at a given offset (for jump targets).
+    pub fn patch_i32(&mut self, offset: usize, val: i32) {
+        let bytes = val.to_le_bytes();
+        self.module.code[offset] = bytes[0];
+        self.module.code[offset + 1] = bytes[1];
+        self.module.code[offset + 2] = bytes[2];
+        self.module.code[offset + 3] = bytes[3];
+    }
+
     pub fn label(&mut self, name: &str) {
         self.labels.insert(name.to_string(), self.module.code.len());
     }
@@ -888,20 +917,20 @@ impl Assembler {
     pub fn emit_jmp(&mut self, label: &str) {
         self.emit(Op::Jmp);
         self.fixups.push((self.module.code.len(), label.to_string()));
-        self.module.code.extend_from_slice(&0i16.to_le_bytes()); // placeholder
+        self.module.code.extend_from_slice(&0i32.to_le_bytes()); // placeholder
     }
 
     pub fn emit_jz(&mut self, label: &str) {
         self.emit(Op::Jz);
         self.fixups.push((self.module.code.len(), label.to_string()));
-        self.module.code.extend_from_slice(&0i16.to_le_bytes());
+        self.module.code.extend_from_slice(&0i32.to_le_bytes());
     }
 
     #[allow(dead_code)]
     pub fn emit_jnz(&mut self, label: &str) {
         self.emit(Op::Jnz);
         self.fixups.push((self.module.code.len(), label.to_string()));
-        self.module.code.extend_from_slice(&0i16.to_le_bytes());
+        self.module.code.extend_from_slice(&0i32.to_le_bytes());
     }
 
     pub fn finalize(mut self) -> Result<BytecodeModule, String> {
@@ -909,10 +938,12 @@ impl Assembler {
         for (offset, label) in &self.fixups {
             let target = self.labels.get(label)
                 .ok_or_else(|| format!("Unknown label: {}", label))?;
-            let rel = (*target as i64 - *offset as i64 - 2) as i16;
+            let rel = (*target as i64 - *offset as i64 - 4) as i32;
             let bytes = rel.to_le_bytes();
             self.module.code[*offset] = bytes[0];
             self.module.code[*offset + 1] = bytes[1];
+            self.module.code[*offset + 2] = bytes[2];
+            self.module.code[*offset + 3] = bytes[3];
         }
         
         // Resolve symbol fixups (calls)
@@ -985,11 +1016,11 @@ pub fn disassemble(code: &[u8]) -> String {
                 out.push_str(&format!(" @{}", idx));
                 i += 3;
             }
-            Op::Jmp | Op::Jz | Op::Jnz if i + 2 < code.len() => {
-                let rel = i16::from_le_bytes([code[i + 1], code[i + 2]]);
-                let target = (i as i64 + 3 + rel as i64) as usize;
+            Op::Jmp | Op::Jz | Op::Jnz if i + 4 < code.len() => {
+                let rel = i32::from_le_bytes([code[i + 1], code[i + 2], code[i + 3], code[i + 4]]);
+                let target = (i as i64 + 5 + rel as i64) as usize;
                 out.push_str(&format!(" {:04X}", target));
-                i += 3;
+                i += 5;
             }
             Op::Str if i + 2 < code.len() => {
                 let len = u16::from_le_bytes([code[i + 1], code[i + 2]]) as usize;
@@ -1007,13 +1038,15 @@ pub fn disassemble(code: &[u8]) -> String {
             Op::Print | Op::Println | Op::Rand => {
                 i += 1;
             }
-            Op::Store if i + 1 < code.len() => {
-                out.push_str(&format!(" {}", code[i + 1]));
-                i += 2;
+            Op::Store if i + 4 < code.len() => {
+                let slot = u32::from_le_bytes([code[i+1], code[i+2], code[i+3], code[i+4]]);
+                out.push_str(&format!(" {}", slot));
+                i += 5;
             }
-            Op::Load if i + 1 < code.len() => {
-                out.push_str(&format!(" {}", code[i + 1]));
-                i += 2;
+            Op::Load if i + 4 < code.len() => {
+                let slot = u32::from_le_bytes([code[i+1], code[i+2], code[i+3], code[i+4]]);
+                out.push_str(&format!(" {}", slot));
+                i += 5;
             }
             Op::List if i + 2 < code.len() => {
                 let count = u16::from_le_bytes([code[i + 1], code[i + 2]]);

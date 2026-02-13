@@ -819,7 +819,7 @@ impl ProofChecker {
             // attenuate, so if the body type-checks once, it type-checks
             // on every iteration.
             0x70 => {
-                let offset = self.read_i16(code, pc)?;
+                let offset = self.read_i32(code, pc)?;
                 let target = (*pc as i64 + offset as i64) as usize;
                 if target < *pc {
                     // Backward jump = loop back edge. Don't follow.
@@ -834,7 +834,7 @@ impl ProofChecker {
             
             // JZ, JNZ
             0x71 | 0x72 => {
-                let _offset = self.read_i16(code, pc)?;
+                let _offset = self.read_i32(code, pc)?;
                 self.expect(Type::Bool)?;
                 Ok(())
             }
@@ -1373,6 +1373,20 @@ impl ProofChecker {
                 Ok(())
             }
             
+            // PARSE_FLOAT: (Str -- Float)
+            0xEB => {
+                self.pop()?;
+                self.stack.push(Type::Float);
+                Ok(())
+            }
+            
+            // PARSE_INT: (Str -- Int)
+            0xEC => {
+                self.pop()?;
+                self.stack.push(Type::Int);
+                Ok(())
+            }
+            
             // TRY: (Quote -- Top) execute quote, catch errors
             0xA3 => {
                 let t = self.pop()?;
@@ -1443,8 +1457,13 @@ impl ProofChecker {
             
             // STORE: (value --) Store to local slot
             0xA8 => {
-                let slot = *code.get(*pc).ok_or("Unexpected end of code")? as usize;
-                *pc += 1;
+                let slot = u32::from_le_bytes([
+                    *code.get(*pc).ok_or("Unexpected end of code")?,
+                    *code.get(*pc+1).ok_or("Unexpected end of code")?,
+                    *code.get(*pc+2).ok_or("Unexpected end of code")?,
+                    *code.get(*pc+3).ok_or("Unexpected end of code")?,
+                ]) as usize;
+                *pc += 4;
                 let t = self.pop()?;
                 while self.locals.len() <= slot {
                     self.locals.push(None);
@@ -1455,8 +1474,13 @@ impl ProofChecker {
             
             // LOAD: (-- value) Load from local slot
             0xA9 => {
-                let slot = *code.get(*pc).ok_or("Unexpected end of code")? as usize;
-                *pc += 1;
+                let slot = u32::from_le_bytes([
+                    *code.get(*pc).ok_or("Unexpected end of code")?,
+                    *code.get(*pc+1).ok_or("Unexpected end of code")?,
+                    *code.get(*pc+2).ok_or("Unexpected end of code")?,
+                    *code.get(*pc+3).ok_or("Unexpected end of code")?,
+                ]) as usize;
+                *pc += 4;
                 if slot < self.locals.len() {
                     if let Some(t) = &self.locals[slot] {
                         self.stack.push(t.clone());
@@ -1653,6 +1677,19 @@ impl ProofChecker {
     
     fn read_i16(&self, code: &[u8], pc: &mut usize) -> Result<i16, String> {
         Ok(self.read_u16(code, pc)? as i16)
+    }
+
+    fn read_u32(&self, code: &[u8], pc: &mut usize) -> Result<u32, String> {
+        if *pc + 4 > code.len() {
+            return Err("Unexpected end of code".into());
+        }
+        let v = u32::from_le_bytes([code[*pc], code[*pc + 1], code[*pc + 2], code[*pc + 3]]);
+        *pc += 4;
+        Ok(v)
+    }
+
+    fn read_i32(&self, code: &[u8], pc: &mut usize) -> Result<i32, String> {
+        Ok(self.read_u32(code, pc)? as i32)
     }
     
     /// Get final stack types

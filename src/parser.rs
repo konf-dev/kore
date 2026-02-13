@@ -276,6 +276,29 @@ impl<'a> Lexer<'a> {
         }
         
         if has_dot {
+            // Check for scientific notation: e/E followed by optional +/- and digits
+            if let Some(c) = self.peek_char() {
+                if c == 'e' || c == 'E' {
+                    s.push(c);
+                    self.next_char();
+                    // optional sign
+                    if let Some(sign) = self.peek_char() {
+                        if sign == '+' || sign == '-' {
+                            s.push(sign);
+                            self.next_char();
+                        }
+                    }
+                    // exponent digits
+                    while let Some(d) = self.peek_char() {
+                        if d.is_ascii_digit() {
+                            s.push(d);
+                            self.next_char();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
             s.parse::<f64>()
                 .map(Token::Float)
                 .map_err(|e| format!("Invalid float: {}", e))
@@ -348,8 +371,8 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current: Token,
     functions: HashMap<String, usize>, // name -> label offset
-    locals: HashMap<String, u8>,       // local name -> slot index
-    next_local: u8,                    // next local slot to assign
+    locals: HashMap<String, u32>,      // local name -> slot index
+    next_local: u32,                   // next local slot to assign
     cap_flags: u8,                     // capability flags (P4: declared caps)
     asm: Assembler,
 }
@@ -849,6 +872,10 @@ impl<'a> Parser<'a> {
             "str-lower" => self.asm.emit(Op::StrLower),
             "str-trim" => self.asm.emit(Op::StrTrim),
             
+            // Parsing operations
+            "parse-float" => self.asm.emit(Op::ParseFloat),
+            "parse-int" => self.asm.emit(Op::ParseInt),
+            
             // Reflection (self-hosting)
             "fetch" => self.asm.emit(Op::Fetch),
             "size" => self.asm.emit(Op::Size),
@@ -957,7 +984,7 @@ impl<'a> Parser<'a> {
     fn parse_if(&mut self) -> Result<(), String> {
         // Emit JZ with placeholder offset (jump over then-body if false)
         self.asm.emit(Op::Jz);
-        let jz_offset = self.asm.emit_raw_u16(0); // placeholder
+        let jz_offset = self.asm.emit_raw_i32(0); // placeholder
         
         // Parse then-body until "else" or "end"
         loop {
@@ -968,7 +995,7 @@ impl<'a> Parser<'a> {
                     
                     // Emit JMP to skip else-body (then-body falls through to here)
                     self.asm.emit(Op::Jmp);
-                    let jmp_offset = self.asm.emit_raw_u16(0); // placeholder
+                    let jmp_offset = self.asm.emit_raw_i32(0); // placeholder
                     
                     // Patch JZ to jump here (start of else-body)
                     let else_start = self.asm.current_offset();
@@ -1027,7 +1054,7 @@ impl<'a> Parser<'a> {
         
         // Emit JZ to exit loop (placeholder)
         self.asm.emit(Op::Jz);
-        let jz_offset = self.asm.emit_raw_u16(0);
+        let jz_offset = self.asm.emit_raw_i32(0);
         
         // Parse body until "end"
         loop {
@@ -1043,7 +1070,7 @@ impl<'a> Parser<'a> {
         
         // JMP back to loop_start
         self.asm.emit(Op::Jmp);
-        let jmp_offset = self.asm.emit_raw_u16(0);
+        let jmp_offset = self.asm.emit_raw_i32(0);
         self.asm.patch_jmp(jmp_offset, loop_start as i32);
         
         // Patch JZ to jump here (after loop)
@@ -6027,5 +6054,169 @@ mod tests {
         let mut interp = Interpreter::from_module(&module);
         interp.run().unwrap();
         assert_eq!(interp.result(), Some(&V::Int(3))); // 0+1+2
+    }
+
+    // ================================================================
+    // parse-float / parse-int tests
+    // ================================================================
+
+    #[test]
+    fn test_parse_float_basic() {
+        let module = compile(r#""3.14" parse-float"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(3.14)));
+    }
+
+    #[test]
+    fn test_parse_float_negative() {
+        let module = compile(r#""-0.5" parse-float"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(-0.5)));
+    }
+
+    #[test]
+    fn test_parse_float_integer_string() {
+        // "42" should parse as 42.0 float
+        let module = compile(r#""42" parse-float"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(42.0)));
+    }
+
+    #[test]
+    fn test_parse_float_scientific() {
+        let module = compile(r#""1.5e2" parse-float"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(150.0)));
+    }
+
+    #[test]
+    fn test_parse_float_whitespace() {
+        // Leading/trailing whitespace should be trimmed
+        let module = compile(r#""  3.14  " parse-float"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(3.14)));
+    }
+
+    #[test]
+    fn test_parse_float_invalid() {
+        let module = compile(r#""abc" parse-float"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        let result = interp.run();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("parse-float"));
+    }
+
+    #[test]
+    fn test_parse_int_basic() {
+        let module = compile(r#""123" parse-int"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(123)));
+    }
+
+    #[test]
+    fn test_parse_int_negative() {
+        let module = compile(r#""-7" parse-int"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(-7)));
+    }
+
+    #[test]
+    fn test_parse_int_hex() {
+        let module = compile(r#""0xFF" parse-int"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(255)));
+    }
+
+    #[test]
+    fn test_parse_int_whitespace() {
+        let module = compile(r#""  42  " parse-int"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(42)));
+    }
+
+    #[test]
+    fn test_parse_int_zero() {
+        let module = compile(r#""0" parse-int"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(0)));
+    }
+
+    #[test]
+    fn test_parse_int_invalid() {
+        let module = compile(r#""hello" parse-int"#).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        let result = interp.run();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("parse-int"));
+    }
+
+    #[test]
+    fn test_parse_float_pipeline() {
+        // Split a string of floats, parse each, sum them
+        let src = r#""1.5 2.5 3.0" " " str-split [ parse-float ] map 0.0 [ fadd ] fold"#;
+        let module = compile(src).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(7.0)));
+    }
+
+    #[test]
+    fn test_parse_int_pipeline() {
+        // Split a string of ints, parse each, sum them
+        let src = r#""10 20 30" " " str-split [ parse-int ] map 0 [ + ] fold"#;
+        let module = compile(src).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(60)));
+    }
+
+    #[test]
+    fn test_parse_float_then_arithmetic() {
+        // Parse two floats and multiply them
+        let src = r#""2.5" parse-float "4.0" parse-float fmul"#;
+        let module = compile(src).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(10.0)));
+    }
+
+    #[test]
+    fn test_parse_int_then_arithmetic() {
+        // Parse two ints and add
+        let src = r#""100" parse-int "200" parse-int +"#;
+        let module = compile(src).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(300)));
+    }
+
+    #[test]
+    fn test_parse_roundtrip_float() {
+        // float → to-str → parse-float should roundtrip
+        let src = "3.14 to-str parse-float";
+        let module = compile(src).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Float(3.14)));
+    }
+
+    #[test]
+    fn test_parse_roundtrip_int() {
+        // int → to-str → parse-int should roundtrip
+        let src = "42 to-str parse-int";
+        let module = compile(src).unwrap();
+        let mut interp = Interpreter::from_module(&module);
+        interp.run().unwrap();
+        assert_eq!(interp.result(), Some(&V::Int(42)));
     }
 }

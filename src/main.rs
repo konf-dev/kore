@@ -20,6 +20,7 @@ mod interpreter;
 mod optimizer;
 mod parser;
 mod proof_checker;
+mod pruner;
 mod spirv_backend;
 mod wasm_backend;
 
@@ -198,6 +199,118 @@ fn main() {
         "test" => {
             run_tests();
         }
+        "prune" => {
+            if args.len() < 3 {
+                eprintln!("Usage: korec prune <file.kore> --batch <batch.txt> --labels <labels.txt> [--eps 0.1] [--max-steps 0] [-o output.kore]");
+                return;
+            }
+            let source_file = args[2].clone();
+
+            let batch_file = if let Some(idx) = args.iter().position(|a| a == "--batch") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { eprintln!("--batch requires a file path"); return; }
+            } else {
+                eprintln!("--batch is required"); return;
+            };
+
+            let labels_file = if let Some(idx) = args.iter().position(|a| a == "--labels") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { eprintln!("--labels requires a file path"); return; }
+            } else {
+                eprintln!("--labels is required"); return;
+            };
+
+            let eps: f64 = if let Some(idx) = args.iter().position(|a| a == "--eps") {
+                if idx + 1 < args.len() { args[idx + 1].parse().unwrap_or(0.1) }
+                else { 0.1 }
+            } else { 0.1 };
+
+            let max_steps: usize = if let Some(idx) = args.iter().position(|a| a == "--max-steps") {
+                if idx + 1 < args.len() { args[idx + 1].parse().unwrap_or(0) }
+                else { 0 }
+            } else { 0 };
+
+            let output_file = if let Some(idx) = args.iter().position(|a| a == "-o") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { source_file.replace(".kore", "_pruned.kore") }
+            } else {
+                source_file.replace(".kore", "_pruned.kore")
+            };
+
+            let config = pruner::PruneConfig {
+                eps,
+                max_steps,
+                batch_file,
+                labels_file,
+                output_file,
+                source_file,
+            };
+
+            if let Err(e) = pruner::run_prune(config) {
+                eprintln!("Prune error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        "eval" => {
+            if args.len() < 3 {
+                eprintln!("Usage: korec eval <file.kore> --batch <batch.txt> --labels <labels.txt> [--korec <pruned.korec>] [--max-steps 0] [--label name] [-o output.json]");
+                return;
+            }
+            let source_file = args[2].clone();
+
+            let batch_file = if let Some(idx) = args.iter().position(|a| a == "--batch") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { eprintln!("--batch requires a file path"); return; }
+            } else {
+                eprintln!("--batch is required"); return;
+            };
+
+            let labels_file = if let Some(idx) = args.iter().position(|a| a == "--labels") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { eprintln!("--labels requires a file path"); return; }
+            } else {
+                eprintln!("--labels is required"); return;
+            };
+
+            let korec_file = if let Some(idx) = args.iter().position(|a| a == "--korec") {
+                if idx + 1 < args.len() { Some(args[idx + 1].clone()) }
+                else { None }
+            } else { None };
+
+            let max_steps: usize = if let Some(idx) = args.iter().position(|a| a == "--max-steps") {
+                if idx + 1 < args.len() { args[idx + 1].parse().unwrap_or(0) }
+                else { 0 }
+            } else { 0 };
+
+            let label = if let Some(idx) = args.iter().position(|a| a == "--label") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { "default".to_string() }
+            } else {
+                if korec_file.is_some() { "pruned".to_string() } else { "original".to_string() }
+            };
+
+            let output_json = if let Some(idx) = args.iter().position(|a| a == "-o") {
+                if idx + 1 < args.len() { args[idx + 1].clone() }
+                else { format!("/tmp/eval_{}.json", label) }
+            } else {
+                format!("/tmp/eval_{}.json", label)
+            };
+
+            let config = pruner::EvalConfig {
+                source_file,
+                korec_file,
+                batch_file,
+                labels_file,
+                max_steps,
+                output_json,
+                label,
+            };
+
+            if let Err(e) = pruner::run_eval(config) {
+                eprintln!("Eval error: {}", e);
+                std::process::exit(1);
+            }
+        }
         "help" | "--help" | "-h" => {
             print_usage();
         }
@@ -228,6 +341,7 @@ fn print_usage() {
     }
     eprintln!("  korec repl [--allow io]              Interactive REPL");
     eprintln!("  korec serve                         Persistent eval server (stdin/stdout)");
+    eprintln!("  korec prune <file.kore> --batch <b> --labels <l> [--eps 0.1]   Bytecode pruner");
     eprintln!("  korec example                       Run factorial example");
     eprintln!("  korec test                          Run test suite");
     eprintln!("  korec help                          Show this help");
@@ -872,6 +986,9 @@ fn run_serve(prelude_source: Option<String>) {
             continue;
         }
 
+        // Capture bytecode length after optimization (before execution)
+        let bytecode_len = module.code.len();
+
         // Stage 3: Run (in-process, no OS process creation)
         let mut interp = Interpreter::from_module_with_caps(&module, 0); // pure — no caps
         if max_steps > 0 {
@@ -880,6 +997,7 @@ fn run_serve(prelude_source: Option<String>) {
         match interp.run() {
             Ok(()) => {
                 let steps = interp.steps_executed();
+                let max_stack_depth = interp.max_stack_depth();
                 let stack: Vec<String> = interp.stack().iter()
                     .map(|v| format!("{:?}", v))
                     .collect();
@@ -892,12 +1010,13 @@ fn run_serve(prelude_source: Option<String>) {
                 let stack_json: Vec<String> = stack.iter()
                     .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
                     .collect();
-                let _ = writeln!(out, "{{\"ok\":true,\"stage\":\"run\",\"result\":\"{}\",\"stack\":[{}],\"steps\":{},\"compile_ok\":true,\"typecheck_ok\":true}}",
-                    result_escaped, stack_json.join(","), steps);
+                let _ = writeln!(out, "{{\"ok\":true,\"stage\":\"run\",\"result\":\"{}\",\"stack\":[{}],\"steps\":{},\"bytecode_len\":{},\"max_stack_depth\":{},\"compile_ok\":true,\"typecheck_ok\":true}}",
+                    result_escaped, stack_json.join(","), steps, bytecode_len, max_stack_depth);
                 let _ = out.flush();
             }
             Err(e) => {
                 let steps = interp.steps_executed();
+                let max_stack_depth = interp.max_stack_depth();
                 let escaped = e.replace('\\', "\\\\").replace('"', "\\\"");
                 // Include partial stack for debugging
                 let stack: Vec<String> = interp.stack().iter()
@@ -906,8 +1025,8 @@ fn run_serve(prelude_source: Option<String>) {
                 let stack_json: Vec<String> = stack.iter()
                     .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
                     .collect();
-                let _ = writeln!(out, "{{\"ok\":false,\"stage\":\"run\",\"error\":\"{}\",\"partial_stack\":[{}],\"steps\":{},\"compile_ok\":true,\"typecheck_ok\":true}}",
-                    escaped, stack_json.join(","), steps);
+                let _ = writeln!(out, "{{\"ok\":false,\"stage\":\"run\",\"error\":\"{}\",\"partial_stack\":[{}],\"steps\":{},\"bytecode_len\":{},\"max_stack_depth\":{},\"compile_ok\":true,\"typecheck_ok\":true}}",
+                    escaped, stack_json.join(","), steps, bytecode_len, max_stack_depth);
                 let _ = out.flush();
             }
         }

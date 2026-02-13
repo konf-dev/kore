@@ -116,16 +116,16 @@ fn compact_nops(code: &[u8]) -> (Vec<u8>, HashMap<usize, usize>) {
         }
         
         match code[i] {
-            // JMP: opcode(1) + relative_i16(2)
+            // JMP: opcode(1) + relative_i32(4)
             // The offset is relative to the position AFTER the instruction
-            // (i.e., after opcode + 2 bytes = position i+3)
+            // (i.e., after opcode + 4 bytes = position i+5)
             0x70 => {
                 let old_operand_pos = i + 1;
-                let old_rel = i16::from_le_bytes([code[old_operand_pos], code[old_operand_pos + 1]]);
-                let old_target = (i + 3) as i64 + old_rel as i64;
+                let old_rel = i32::from_le_bytes([code[old_operand_pos], code[old_operand_pos + 1], code[old_operand_pos + 2], code[old_operand_pos + 3]]);
+                let old_target = (i + 5) as i64 + old_rel as i64;
                 let new_target = *offset_map.get(&(old_target as usize)).unwrap_or(&(old_target as usize));
-                let new_instr_end = offset_map[&i] + 3;
-                let new_rel = (new_target as i64 - new_instr_end as i64) as i16;
+                let new_instr_end = offset_map[&i] + 5;
+                let new_rel = (new_target as i64 - new_instr_end as i64) as i32;
                 result.push(code[i]);
                 result.extend_from_slice(&new_rel.to_le_bytes());
             }
@@ -133,11 +133,11 @@ fn compact_nops(code: &[u8]) -> (Vec<u8>, HashMap<usize, usize>) {
             // JZ, JNZ: same layout as JMP
             0x71 | 0x72 => {
                 let old_operand_pos = i + 1;
-                let old_rel = i16::from_le_bytes([code[old_operand_pos], code[old_operand_pos + 1]]);
-                let old_target = (i + 3) as i64 + old_rel as i64;
+                let old_rel = i32::from_le_bytes([code[old_operand_pos], code[old_operand_pos + 1], code[old_operand_pos + 2], code[old_operand_pos + 3]]);
+                let old_target = (i + 5) as i64 + old_rel as i64;
                 let new_target = *offset_map.get(&(old_target as usize)).unwrap_or(&(old_target as usize));
-                let new_instr_end = offset_map[&i] + 3;
-                let new_rel = (new_target as i64 - new_instr_end as i64) as i16;
+                let new_instr_end = offset_map[&i] + 5;
+                let new_rel = (new_target as i64 - new_instr_end as i64) as i32;
                 result.push(code[i]);
                 result.extend_from_slice(&new_rel.to_le_bytes());
             }
@@ -201,7 +201,6 @@ fn instruction_size(code: &[u8], pos: usize) -> usize {
         
         // 2-byte instructions (1-byte operand)
         0x30 |         // INT8: opcode + i8
-        0xA8 | 0xA9 |  // STORE, LOAD: opcode + slot_u8
         0xAF           // SYSCALL: opcode + call_id_u8
         => 2,
         
@@ -209,7 +208,6 @@ fn instruction_size(code: &[u8], pos: usize) -> usize {
         0x20 |         // QUOTE: opcode + body_len_u16 (body follows but is separate)
         0x22 |         // CALL: opcode + symbol_idx_u16
         0x31 |         // INT16: opcode + i16
-        0x70..=0x72 |  // JMP, JZ, JNZ: opcode + relative_i16
         0x80           // LIST: opcode + count_u16
         => 3,
         
@@ -218,6 +216,8 @@ fn instruction_size(code: &[u8], pos: usize) -> usize {
         
         // 5-byte instructions
         0x32 => 5,     // INT32: opcode + i32
+        0x70..=0x72 => 5,  // JMP, JZ, JNZ: opcode + relative_i32
+        0xA8 | 0xA9 => 5,  // STORE, LOAD: opcode + slot_u32
         
         // 9-byte instructions
         0x33 => 9,     // INT64: opcode + i64
@@ -368,89 +368,570 @@ fn eliminate_identity_arithmetic(code: &[u8]) -> Vec<u8> {
     result
 }
 
-/// Constant folding: evaluate operations on known constants at compile time
-/// INT8 a; INT8 b; ADD → NOP NOP NOP INT8 (a+b)  (NOP-padded to same size)
-/// Replaces with NOPs to preserve bytecode length.
+/// Constant folding: evaluate operations on known constants at compile time.
+///
+/// Uses abstract interpretation with a virtual stack to fold arbitrary-length
+/// chains of pure operations. For example:
+///   INT8 1; DUP; ADD; DUP; ADD; DUP; ADD; I2F; INT8 1; DUP; ADD; ...
+///   ... DUP; ADD; INT8 1; ADD; DUP; ADD; INT8 1; ADD; I2F; FDIV; FNEG
+/// All collapse to a single F64 literal.
+///
+/// This is fully general — works on any Kore program, not just ML models.
+/// The pass identifies maximal chains of "pure" instructions (those that only
+/// push/pop known constants, with no loads, stores, jumps, or side effects)
+/// and replaces each chain with the minimal push instruction for its result.
 fn fold_constants(code: &[u8]) -> Vec<u8> {
+    #[derive(Clone, Debug)]
+    enum KVal {
+        Int(i64),
+        Float(f64),
+    }
+    
+    #[derive(Clone, Debug)]
+    struct StackEntry {
+        val: KVal,
+        /// Byte offset in `result` where this value's computation chain begins.
+        chain_start: usize,
+    }
+    
+    /// Calculate how many bytes a push instruction needs for this value.
+    fn emit_size(val: &KVal) -> usize {
+        match val {
+            KVal::Int(v) => {
+                if *v >= -128 && *v <= 127 { 2 }       // INT8
+                else if *v >= -32768 && *v <= 32767 { 3 } // INT16
+                else if *v >= i32::MIN as i64 && *v <= i32::MAX as i64 { 5 } // INT32
+                else { 9 }                               // INT64
+            }
+            KVal::Float(_) => 9, // F64
+        }
+    }
+    
+    /// Emit the optimal push instruction for a value into result at write_pos.
+    fn emit_value(val: &KVal, result: &mut Vec<u8>, pos: usize) -> usize {
+        match val {
+            KVal::Int(v) => {
+                if *v >= -128 && *v <= 127 {
+                    result[pos] = Op::Int8 as u8;
+                    result[pos + 1] = *v as u8;
+                    pos + 2
+                } else if *v >= -32768 && *v <= 32767 {
+                    result[pos] = Op::Int16 as u8;
+                    let bytes = (*v as i16).to_le_bytes();
+                    result[pos + 1] = bytes[0];
+                    result[pos + 2] = bytes[1];
+                    pos + 3
+                } else if *v >= i32::MIN as i64 && *v <= i32::MAX as i64 {
+                    result[pos] = Op::Int32 as u8;
+                    let bytes = (*v as i32).to_le_bytes();
+                    for j in 0..4 { result[pos + 1 + j] = bytes[j]; }
+                    pos + 5
+                } else {
+                    result[pos] = Op::Int64 as u8;
+                    let bytes = v.to_le_bytes();
+                    for j in 0..8 { result[pos + 1 + j] = bytes[j]; }
+                    pos + 9
+                }
+            }
+            KVal::Float(v) => {
+                result[pos] = Op::F64 as u8;
+                let bytes = v.to_le_bytes();
+                for j in 0..8 { result[pos + 1 + j] = bytes[j]; }
+                pos + 9
+            }
+        }
+    }
+    
+    /// Flush virtual stack entries: replace their instruction chains with
+    /// NOPs + optimal push instructions.
+    fn fold_stack_entries(
+        result: &mut Vec<u8>,
+        stack: &mut Vec<StackEntry>,
+        fence: usize,
+    ) -> bool {
+        if stack.is_empty() {
+            return false;
+        }
+        
+        let earliest = stack.iter().map(|e| e.chain_start).min().unwrap();
+        let chain_len = fence - earliest;
+        let push_bytes: usize = stack.iter().map(|e| emit_size(&e.val)).sum();
+        
+        if push_bytes >= chain_len {
+            return false;
+        }
+        
+        // NOP out the entire chain
+        for j in earliest..fence {
+            result[j] = Op::Nop as u8;
+        }
+        
+        // Write push instructions at the end of the NOP region
+        let mut write_pos = fence - push_bytes;
+        for entry in stack.iter() {
+            write_pos = emit_value(&entry.val, result, write_pos);
+        }
+        
+        true
+    }
+    
     let mut result = code.to_vec();
+    let mut stack: Vec<StackEntry> = Vec::new();
     let mut i = 0;
     
     while i < result.len() {
-        // Pattern: INT8 a; INT8 b; <arith-op> = 5 bytes total
-        if i + 4 < result.len()
-            && result[i] == Op::Int8 as u8
-            && result[i + 2] == Op::Int8 as u8
-        {
-            let a = result[i + 1] as i8 as i64;
-            let b = result[i + 3] as i8 as i64;
-            let op = Op::from_byte(result[i + 4]);
-            
-            let folded = match op {
-                Some(Op::Add) => Some(a.wrapping_add(b)),
-                Some(Op::Sub) => Some(a.wrapping_sub(b)),
-                Some(Op::Mul) => Some(a.wrapping_mul(b)),
-                _ => None,
-            };
-            
-            if let Some(val) = folded {
-                if val >= -128 && val <= 127 {
-                    // 5 bytes → NOP NOP NOP INT8 val (still 5 bytes)
-                    result[i] = Op::Nop as u8;
-                    result[i + 1] = Op::Nop as u8;
-                    result[i + 2] = Op::Nop as u8;
-                    result[i + 3] = Op::Int8 as u8;
-                    result[i + 4] = val as u8;
-                    i += 5;
-                    continue;
-                }
-                // Doesn't fit in i8 — can't fold in-place without
-                // changing size, so skip this one.
+        let op_byte = result[i];
+        let isize_val = instruction_size(&result, i);
+        let next_i = i + isize_val;
+        
+        let op = Op::from_byte(op_byte);
+        
+        // Try to process this instruction on the virtual stack
+        let handled = match op {
+            // --- Push literal constants ---
+            Some(Op::Int8) if i + 1 < result.len() => {
+                let v = result[i + 1] as i8 as i64;
+                stack.push(StackEntry { val: KVal::Int(v), chain_start: i });
+                true
             }
+            Some(Op::Int16) if i + 2 < result.len() => {
+                let v = i16::from_le_bytes([result[i+1], result[i+2]]) as i64;
+                stack.push(StackEntry { val: KVal::Int(v), chain_start: i });
+                true
+            }
+            Some(Op::Int32) if i + 4 < result.len() => {
+                let v = i32::from_le_bytes([result[i+1], result[i+2], result[i+3], result[i+4]]) as i64;
+                stack.push(StackEntry { val: KVal::Int(v), chain_start: i });
+                true
+            }
+            Some(Op::Int64) if i + 8 < result.len() => {
+                let v = i64::from_le_bytes([
+                    result[i+1], result[i+2], result[i+3], result[i+4],
+                    result[i+5], result[i+6], result[i+7], result[i+8],
+                ]);
+                stack.push(StackEntry { val: KVal::Int(v), chain_start: i });
+                true
+            }
+            Some(Op::F32) if i + 4 < result.len() => {
+                let v = f32::from_le_bytes([result[i+1], result[i+2], result[i+3], result[i+4]]) as f64;
+                stack.push(StackEntry { val: KVal::Float(v), chain_start: i });
+                true
+            }
+            Some(Op::F64) if i + 8 < result.len() => {
+                let v = f64::from_le_bytes([
+                    result[i+1], result[i+2], result[i+3], result[i+4],
+                    result[i+5], result[i+6], result[i+7], result[i+8],
+                ]);
+                stack.push(StackEntry { val: KVal::Float(v), chain_start: i });
+                true
+            }
+            
+            // --- Stack manipulation ---
+            Some(Op::Dup) if !stack.is_empty() => {
+                let top = stack.last().unwrap().clone();
+                stack.push(top);
+                true
+            }
+            Some(Op::Swap) if stack.len() >= 2 => {
+                let len = stack.len();
+                stack.swap(len - 1, len - 2);
+                true
+            }
+            Some(Op::Over) if stack.len() >= 2 => {
+                let second = stack[stack.len() - 2].clone();
+                stack.push(second);
+                true
+            }
+            Some(Op::Rot) if stack.len() >= 3 => {
+                let len = stack.len();
+                let c = stack.remove(len - 3);
+                stack.push(c);
+                true
+            }
+            Some(Op::Drop) if !stack.is_empty() => {
+                // Dropping a known constant — don't emit anything for it
+                // but we need to be careful: if the dropped value was pushed
+                // by real instructions, those instructions still ran.
+                // For constant folding, we only fold when the FINAL result matters.
+                // DROP breaks the chain — we can't fold across it unless
+                // we track the full stack effect.
+                // Conservative: just drop from virtual stack, don't fold.
+                stack.pop();
+                true
+            }
+            
+            // --- Integer arithmetic (binary) ---
+            Some(Op::Add) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_add(*y)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Sub) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_sub(*y)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Mul) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_mul(*y)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Div) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) if *y != 0 => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_div(*y)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Mod) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) if *y != 0 => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_rem(*y)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Neg) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Int(x) => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_neg()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            
+            // --- Conversion ---
+            Some(Op::I2f) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Int(x) => {
+                        stack.push(StackEntry { val: KVal::Float(*x as f64), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::F2i) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Int(*x as i64), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            
+            // --- Float arithmetic ---
+            Some(Op::Fadd) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Float(x), KVal::Float(y)) => {
+                        stack.push(StackEntry { val: KVal::Float(x + y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Fsub) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Float(x), KVal::Float(y)) => {
+                        stack.push(StackEntry { val: KVal::Float(x - y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Fmul) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Float(x), KVal::Float(y)) => {
+                        stack.push(StackEntry { val: KVal::Float(x * y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Fdiv) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Float(x), KVal::Float(y)) if *y != 0.0 => {
+                        stack.push(StackEntry { val: KVal::Float(x / y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Fneg) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(-x), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fabs) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.abs()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fsqrt) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) if *x >= 0.0 => {
+                        stack.push(StackEntry { val: KVal::Float(x.sqrt()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fexp) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.exp()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Flog) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) if *x > 0.0 => {
+                        stack.push(StackEntry { val: KVal::Float(x.ln()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fsin) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.sin()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fcos) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.cos()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fpow) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Float(x), KVal::Float(y)) => {
+                        stack.push(StackEntry { val: KVal::Float(x.powf(*y)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Fatan2) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Float(y), KVal::Float(x)) => {
+                        stack.push(StackEntry { val: KVal::Float(y.atan2(*x)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Ffloor) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.floor()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fceil) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.ceil()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Fround) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Float(x) => {
+                        stack.push(StackEntry { val: KVal::Float(x.round()), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            
+            // --- Bitwise ops ---
+            Some(Op::Band) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) => {
+                        stack.push(StackEntry { val: KVal::Int(x & y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Bor) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) => {
+                        stack.push(StackEntry { val: KVal::Int(x | y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Bxor) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) => {
+                        stack.push(StackEntry { val: KVal::Int(x ^ y), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Bnot) if !stack.is_empty() => {
+                let a = stack.pop().unwrap();
+                match &a.val {
+                    KVal::Int(x) => {
+                        stack.push(StackEntry { val: KVal::Int(!x), chain_start: a.chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); false }
+                }
+            }
+            Some(Op::Shl) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) if *y >= 0 && *y < 64 => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_shl(*y as u32)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            Some(Op::Shr) if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                let chain_start = a.chain_start.min(b.chain_start);
+                match (&a.val, &b.val) {
+                    (KVal::Int(x), KVal::Int(y)) if *y >= 0 && *y < 64 => {
+                        stack.push(StackEntry { val: KVal::Int(x.wrapping_shr(*y as u32)), chain_start });
+                        true
+                    }
+                    _ => { stack.push(a); stack.push(b); false }
+                }
+            }
+            
+            // --- Any non-pure instruction: flush the virtual stack ---
+            _ => false,
+        };
+        
+        if !handled {
+            // This instruction is not foldable. Flush any pending constants
+            // on the virtual stack — emit them as optimal push instructions.
+            // But only emit (fold) entries whose chain_start < i, meaning they
+            // were computed from earlier instructions that we can now replace.
+            fold_stack_entries(&mut result, &mut stack, i);
+            stack.clear();
         }
         
-        // Pattern: F64 a; F64 b; FADD/FSUB/FMUL/FDIV = 19 bytes
-        if i + 18 < result.len()
-            && result[i] == Op::F64 as u8
-            && result[i + 9] == Op::F64 as u8
-        {
-            let a = f64::from_le_bytes([
-                result[i+1], result[i+2], result[i+3], result[i+4],
-                result[i+5], result[i+6], result[i+7], result[i+8],
-            ]);
-            let b = f64::from_le_bytes([
-                result[i+10], result[i+11], result[i+12], result[i+13],
-                result[i+14], result[i+15], result[i+16], result[i+17],
-            ]);
-            let op = Op::from_byte(result[i + 18]);
-            
-            let folded = match op {
-                Some(Op::Fadd) => Some(a + b),
-                Some(Op::Fsub) => Some(a - b),
-                Some(Op::Fmul) => Some(a * b),
-                Some(Op::Fdiv) if b != 0.0 => Some(a / b),
-                _ => None,
-            };
-            
-            if let Some(val) = folded {
-                // 19 bytes → 10 NOPs + F64 val (still 19 bytes)
-                for j in 0..10 {
-                    result[i + j] = Op::Nop as u8;
-                }
-                result[i + 10] = Op::F64 as u8;
-                let bytes = val.to_le_bytes();
-                for j in 0..8 {
-                    result[i + 11 + j] = bytes[j];
-                }
-                i += 19;
-                continue;
-            }
-        }
-        
-        i += instruction_size(&result, i);
+        i = next_i;
     }
     
+    // Flush any remaining entries at end of code
+    let end = result.len();
+    fold_stack_entries(&mut result, &mut stack, end);
+    
+    // If we folded anything, we need another pass (the fixed-point loop will
+    // call us again). The existing fold_constants behavior is subsumed by this.
     result
 }
+
+
+
+
+
+
+
+
 
 /// Count the number of optimization passes applied
 pub fn optimization_stats(original: &[u8], optimized: &[u8]) -> (usize, usize) {

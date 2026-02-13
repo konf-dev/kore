@@ -26,7 +26,7 @@ pub struct NativeCompiler {
 }
 
 const MAX_STACK: usize = 64;
-const MAX_LOCALS: usize = 64;
+const MAX_LOCALS: usize = 262144;
 
 impl NativeCompiler {
     /// Create a new native compiler for the current platform
@@ -690,27 +690,27 @@ impl NativeCompiler {
                     
                     // JMP: unconditional jump (relative)
                     x if x == Op::Jmp as u8 => {
-                        if pc + 1 < bytecode.len() {
-                            let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                            let target = ((pc + 2) as i64 + rel as i64) as usize;
-                            pc += 2;
+                        if pc + 3 < bytecode.len() {
+                            let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                            let target = ((pc + 4) as i64 + rel as i64) as usize;
+                            pc += 4;
                             
                             if let Some(&target_block) = blocks.get(&target) {
                                 builder.ins().jump(target_block, &[]);
                                 block_terminated = true;
                             }
                         } else {
-                            pc += 2;
+                            pc += 4;
                         }
                     }
                     
                     // JZ: jump if zero (relative)
                     x if x == Op::Jz as u8 => {
-                        if pc + 1 < bytecode.len() && sp >= 1 {
-                            let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                            let target = ((pc + 2) as i64 + rel as i64) as usize;
-                            let fall_through = pc + 2;
-                            pc += 2;
+                        if pc + 3 < bytecode.len() && sp >= 1 {
+                            let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                            let target = ((pc + 4) as i64 + rel as i64) as usize;
+                            let fall_through = pc + 4;
+                            pc += 4;
                             
                             // Pop condition (sp decreases by 1)
                             let cond = builder.use_var(stack_vars[sp - 1]);
@@ -745,17 +745,17 @@ impl NativeCompiler {
                                 block_terminated = true;
                             }
                         } else {
-                            pc += 2;
+                            pc += 4;
                         }
                     }
                     
                     // JNZ: jump if non-zero (relative)
                     x if x == Op::Jnz as u8 => {
-                        if pc + 1 < bytecode.len() && sp >= 1 {
-                            let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                            let target = ((pc + 2) as i64 + rel as i64) as usize;
-                            let fall_through = pc + 2;
-                            pc += 2;
+                        if pc + 3 < bytecode.len() && sp >= 1 {
+                            let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                            let target = ((pc + 4) as i64 + rel as i64) as usize;
+                            let fall_through = pc + 4;
+                            pc += 4;
                             
                             // Pop condition
                             let cond = builder.use_var(stack_vars[sp - 1]);
@@ -790,7 +790,7 @@ impl NativeCompiler {
                                 block_terminated = true;
                             }
                         } else {
-                            pc += 2;
+                            pc += 4;
                         }
                     }
                     
@@ -843,15 +843,17 @@ impl NativeCompiler {
                     
                     // STORE n: (val --) store top of stack into local slot n
                     x if x == Op::Store as u8 => {
-                        if pc < bytecode.len() {
-                            let slot = bytecode[pc] as usize;
-                            pc += 1;
+                        if pc + 3 < bytecode.len() {
+                            let slot = u32::from_le_bytes([
+                                bytecode[pc], bytecode[pc+1], bytecode[pc+2], bytecode[pc+3]
+                            ]) as usize;
+                            pc += 4;
                             if sp > 0 && slot < MAX_LOCALS {
                                 let val = builder.use_var(stack_vars[sp - 1]);
                                 sp -= 1;
                                 builder.def_var(local_vars[slot], val);
                             } else if sp == 0 {
-                                return Err(format!("STORE: stack underflow at offset {}", pc - 2));
+                                return Err(format!("STORE: stack underflow at offset {}", pc - 5));
                             } else {
                                 return Err(format!("STORE: local slot {} exceeds MAX_LOCALS {}", slot, MAX_LOCALS));
                             }
@@ -860,9 +862,11 @@ impl NativeCompiler {
                     
                     // LOAD n: (-- val) push local slot n onto stack
                     x if x == Op::Load as u8 => {
-                        if pc < bytecode.len() {
-                            let slot = bytecode[pc] as usize;
-                            pc += 1;
+                        if pc + 3 < bytecode.len() {
+                            let slot = u32::from_le_bytes([
+                                bytecode[pc], bytecode[pc+1], bytecode[pc+2], bytecode[pc+3]
+                            ]) as usize;
+                            pc += 4;
                             if slot < MAX_LOCALS && sp < MAX_STACK {
                                 let val = builder.use_var(local_vars[slot]);
                                 builder.def_var(stack_vars[sp], val);
@@ -870,7 +874,7 @@ impl NativeCompiler {
                             } else if slot >= MAX_LOCALS {
                                 return Err(format!("LOAD: local slot {} exceeds MAX_LOCALS {}", slot, MAX_LOCALS));
                             } else {
-                                return Err(format!("LOAD: stack overflow at offset {}", pc - 2));
+                                return Err(format!("LOAD: stack overflow at offset {}", pc - 5));
                             }
                         }
                     }
@@ -992,8 +996,9 @@ impl NativeCompiler {
                 // Advance pc (same logic as find_jump_targets)
                 pc += 1;
                 match op {
-                    x if x == Op::Jmp as u8 || x == Op::Jz as u8 || x == Op::Jnz as u8 => pc += 2,
-                    x if x == Op::Int8 as u8 || x == Op::Store as u8 || x == Op::Load as u8 || x == Op::Syscall as u8 => pc += 1,
+                    x if x == Op::Jmp as u8 || x == Op::Jz as u8 || x == Op::Jnz as u8 => pc += 4,
+                    x if x == Op::Int8 as u8 || x == Op::Syscall as u8 => pc += 1,
+                    x if x == Op::Store as u8 || x == Op::Load as u8 => pc += 4,
                     x if x == Op::Call as u8 || x == Op::Int16 as u8 || x == Op::List as u8 => pc += 2,
                     x if x == Op::Quote as u8 => {
                         if pc + 1 < bytecode.len() {
@@ -1024,11 +1029,12 @@ impl NativeCompiler {
             // ============================================================
             const STACK_SIZE: usize = 1024;      // data stack entries
             const CALL_STACK_SIZE: usize = 256;   // max call depth
-            const LOCAL_FRAME_SIZE: usize = 64;   // locals per frame (addressable space)
             const MAX_FRAMES: usize = 256;        // max nested call frames
             
+            // Size locals to actual usage (not a fixed max) to avoid stack overflow
+            let local_frame_size = if num_used_locals > 0 { num_used_locals } else { 1 };
             // Frame save area sized to ONLY used locals (Fix 1)
-            let frame_save_size = if num_used_locals > 0 { num_used_locals } else { 1 };
+            let frame_save_size = local_frame_size;
             
             let data_stack = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
@@ -1051,7 +1057,7 @@ impl NativeCompiler {
             // Current locals (fast access, saved/restored on CALL/RET)
             let locals_slot = builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
-                (LOCAL_FRAME_SIZE * 8) as u32,
+                (local_frame_size * 8) as u32,
                 3,
             ));
             
@@ -1946,11 +1952,11 @@ impl NativeCompiler {
                     // CONTROL FLOW — flush SSA before any branch
                     // ====================================================
                     
-                    // JMP rel16
+                    // JMP rel32
                     x if x == Op::Jmp as u8 => {
-                        if pc + 1 < bytecode.len() {
-                            let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                            pc += 2;
+                        if pc + 3 < bytecode.len() {
+                            let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                            pc += 4;
                             let target = ((pc as i64) + (rel as i64)) as usize;
                             // Flush SSA to memory before branch
                             flush_ssa_to_memory!(builder, sp_var, ssa_sp, ssa_stack_vars, data_stack, memflags);
@@ -1961,11 +1967,11 @@ impl NativeCompiler {
                         }
                     }
                     
-                    // JZ rel16: pop, if zero jump
+                    // JZ rel32: pop, if zero jump
                     x if x == Op::Jz as u8 => {
-                        if pc + 1 < bytecode.len() {
-                            let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                            pc += 2;
+                        if pc + 3 < bytecode.len() {
+                            let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                            pc += 4;
                             let target = ((pc as i64) + (rel as i64)) as usize;
                             let fall_through = pc;
                             
@@ -2014,11 +2020,11 @@ impl NativeCompiler {
                         }
                     }
                     
-                    // JNZ rel16: pop, if non-zero jump
+                    // JNZ rel32: pop, if non-zero jump
                     x if x == Op::Jnz as u8 => {
-                        if pc + 1 < bytecode.len() {
-                            let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                            pc += 2;
+                        if pc + 3 < bytecode.len() {
+                            let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                            pc += 4;
                             let target = ((pc as i64) + (rel as i64)) as usize;
                             let fall_through = pc;
                             
@@ -2190,9 +2196,11 @@ impl NativeCompiler {
                     
                     // STORE n: pop -> locals[n]
                     x if x == Op::Store as u8 => {
-                        if pc < bytecode.len() {
-                            let slot = bytecode[pc] as usize;
-                            pc += 1;
+                        if pc + 3 < bytecode.len() {
+                            let slot = u32::from_le_bytes([
+                                bytecode[pc], bytecode[pc+1], bytecode[pc+2], bytecode[pc+3]
+                            ]) as usize;
+                            pc += 4;
                             
                             if let Some(ref mut sp) = ssa_sp {
                                 if *sp >= 1 {
@@ -2220,9 +2228,11 @@ impl NativeCompiler {
                     
                     // LOAD n: locals[n] -> push
                     x if x == Op::Load as u8 => {
-                        if pc < bytecode.len() {
-                            let slot = bytecode[pc] as usize;
-                            pc += 1;
+                        if pc + 3 < bytecode.len() {
+                            let slot = u32::from_le_bytes([
+                                bytecode[pc], bytecode[pc+1], bytecode[pc+2], bytecode[pc+3]
+                            ]) as usize;
+                            pc += 4;
                             
                             // Load from locals slot
                             let val = builder.ins().stack_load(types::I64, locals_slot, (slot * 8) as i32);
@@ -2427,15 +2437,18 @@ fn scan_used_locals(bytecode: &[u8], symbol_table: &HashMap<u16, usize>) -> Vec<
         pc += 1;
         match op {
             x if x == Op::Store as u8 || x == Op::Load as u8 => {
-                if pc < bytecode.len() {
-                    used.insert(bytecode[pc] as usize);
-                    pc += 1;
+                if pc + 3 < bytecode.len() {
+                    let slot = u32::from_le_bytes([
+                        bytecode[pc], bytecode[pc+1], bytecode[pc+2], bytecode[pc+3]
+                    ]) as usize;
+                    used.insert(slot);
+                    pc += 4;
                 }
             }
             // Skip operands for multi-byte instructions
             x if x == Op::Int8 as u8 || x == Op::Syscall as u8 => pc += 1,
             x if x == Op::Call as u8 || x == Op::Int16 as u8 || x == Op::List as u8 => pc += 2,
-            x if x == Op::Jmp as u8 || x == Op::Jz as u8 || x == Op::Jnz as u8 => pc += 2,
+            x if x == Op::Jmp as u8 || x == Op::Jz as u8 || x == Op::Jnz as u8 => pc += 4,
             x if x == Op::Quote as u8 => {
                 if pc + 1 < bytecode.len() {
                     let body_len = u16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]) as usize;
@@ -2473,17 +2486,19 @@ fn find_jump_targets(bytecode: &[u8]) -> Vec<usize> {
         match op {
             // JMP, JZ, JNZ: extract target
             x if x == Op::Jmp as u8 || x == Op::Jz as u8 || x == Op::Jnz as u8 => {
-                if pc + 1 < bytecode.len() {
-                    let rel = i16::from_le_bytes([bytecode[pc], bytecode[pc + 1]]);
-                    let target = ((pc + 2) as i64 + rel as i64) as usize;
+                if pc + 3 < bytecode.len() {
+                    let rel = i32::from_le_bytes([bytecode[pc], bytecode[pc + 1], bytecode[pc + 2], bytecode[pc + 3]]);
+                    let target = ((pc + 4) as i64 + rel as i64) as usize;
                     target_set.insert(target);
                     // Fall-through is also a target for conditional jumps
-                    target_set.insert(pc + 2);
+                    target_set.insert(pc + 4);
                 }
-                pc += 2;
+                pc += 4;
             }
-            // 1-byte operand: INT8, STORE, LOAD, SYSCALL
-            x if x == Op::Int8 as u8 || x == Op::Store as u8 || x == Op::Load as u8 || x == Op::Syscall as u8 => pc += 1,
+            // 1-byte operand: INT8, SYSCALL
+            x if x == Op::Int8 as u8 || x == Op::Syscall as u8 => pc += 1,
+            // 4-byte operand: STORE, LOAD (u32 slot)
+            x if x == Op::Store as u8 || x == Op::Load as u8 => pc += 4,
             
             // 2-byte operand: CALL, INT16, LIST
             x if x == Op::Call as u8 || x == Op::Int16 as u8 || x == Op::List as u8 => pc += 2,
@@ -2681,35 +2696,23 @@ mod tests {
         // JZ with balanced branches: both paths push one value then merge
         // if (cond == 0) push 10 else push 20; halt
         // 
-        // Bytecode layout:
+        // Bytecode layout (i32 jump offsets):
         // 0-1:   push 0       (sp: 0 -> 1)
-        // 2-4:   jz +5        (sp: 1 -> 0, if zero jump to 10)
-        // 5-6:   push 20      (sp: 0 -> 1, not-taken path)
-        // 7-9:   jmp +3       (jump to 13, skip push 10)
-        // 10-11: push 10      (sp: 0 -> 1, taken path)
-        // 12:    halt
+        // 2-6:   jz +7        (sp: 1 -> 0, if zero jump to 14)
+        // 7-8:   push 20      (sp: 0 -> 1, not-taken path)
+        // 9-13:  jmp +2       (jump to 16)
+        // 14-15: push 10      (sp: 0 -> 1, taken path)
+        // 16:    halt
         //
-        // Offset calculation:
-        // jz at pc=2, after reading offset pc=5, target = 5 + 5 = 10 ✓
-        // jmp at pc=7, after reading offset pc=10, target = 10 + 3 = 13... but halt is at 12!
-        //
-        // Let me recalculate:
-        // 0: 0x30  1: 0      (push 0)
-        // 2: 0x71  3: 0x05  4: 0x00  (jz, offset read at 3-4, pc after = 5)
-        // 5: 0x30  6: 20    (push 20)
-        // 7: 0x70  8: 0x02  9: 0x00  (jmp, offset read at 8-9, pc after = 10)
-        // 10: 0x30  11: 10  (push 10)
-        // 12: 0xFF (halt)
-        //
-        // jz target: 5 + 5 = 10 ✓ (push 10)
-        // jmp target: 10 + 2 = 12 ✓ (halt)
+        // jz at pc=2, operand bytes 3-6, pc after = 7, target = 7 + 7 = 14 ✓
+        // jmp at pc=9, operand bytes 10-13, pc after = 14, target = 14 + 2 = 16 ✓
         let bytecode = vec![
-            0x30, 0,          // 0-1: push 0 (condition)
-            0x71, 0x05, 0x00, // 2-4: jz +5 -> jump to 10 if zero
-            0x30, 20,         // 5-6: push 20 (else branch)
-            0x70, 0x02, 0x00, // 7-9: jmp +2 -> jump to 12
-            0x30, 10,         // 10-11: push 10 (then branch)
-            0xFF,             // 12: halt
+            0x30, 0,                      // 0-1: push 0 (condition)
+            0x71, 0x07, 0x00, 0x00, 0x00, // 2-6: jz +7 -> jump to 14 if zero
+            0x30, 20,                     // 7-8: push 20 (else branch)
+            0x70, 0x02, 0x00, 0x00, 0x00, // 9-13: jmp +2 -> jump to 16
+            0x30, 10,                     // 14-15: push 10 (then branch)
+            0xFF,                         // 16: halt
         ];
         // Condition is 0, so JZ is taken -> push 10
         assert_eq!(run_native(&bytecode).unwrap(), 10);
@@ -2720,10 +2723,10 @@ mod tests {
         // JZ with unbalanced branches should fail
         // Taken path has sp=0, not-taken has sp=1 at merge point
         let bytecode = vec![
-            0x30, 0,          // push 0
-            0x71, 0x02, 0x00, // jz +2 (skip next push)
-            0x30, 99,         // push 99 (only in not-taken path)
-            0x30, 42,         // push 42 (merge point, but sp differs!)
+            0x30, 0,                      // push 0
+            0x71, 0x02, 0x00, 0x00, 0x00, // jz +2 (skip next push)
+            0x30, 99,                     // push 99 (only in not-taken path)
+            0x30, 42,                     // push 42 (merge point, but sp differs!)
             0xFF,
         ];
         let result = run_native(&bytecode);
@@ -2736,12 +2739,12 @@ mod tests {
         // JNZ: push 1, if non-zero jump to push 10
         // Same bytecode structure as JZ but condition is 1 (non-zero)
         let bytecode = vec![
-            0x30, 1,          // 0-1: push 1 (condition, non-zero)
-            0x72, 0x05, 0x00, // 2-4: jnz +5 -> jump to 10 if non-zero
-            0x30, 20,         // 5-6: push 20 (else branch)
-            0x70, 0x02, 0x00, // 7-9: jmp +2 -> jump to 12
-            0x30, 10,         // 10-11: push 10 (then branch)
-            0xFF,             // 12: halt
+            0x30, 1,                      // 0-1: push 1 (condition, non-zero)
+            0x72, 0x07, 0x00, 0x00, 0x00, // 2-6: jnz +7 -> jump to 14 if non-zero
+            0x30, 20,                     // 7-8: push 20 (else branch)
+            0x70, 0x02, 0x00, 0x00, 0x00, // 9-13: jmp +2 -> jump to 16
+            0x30, 10,                     // 14-15: push 10 (then branch)
+            0xFF,                         // 16: halt
         ];
         // Condition is 1 (non-zero), so JNZ is taken -> push 10
         assert_eq!(run_native(&bytecode).unwrap(), 10);
@@ -2791,9 +2794,9 @@ mod tests {
     fn test_store_load_basic() {
         // STORE 0, LOAD 0: push 42, store in local 0, load it back
         let bytecode = vec![
-            0x30, 42,   // push 42
-            0xA8, 0,    // store 0  (stack: empty, local[0] = 42)
-            0xA9, 0,    // load 0   (stack: 42)
+            0x30, 42,               // push 42
+            0xA8, 0, 0, 0, 0,      // store 0  (stack: empty, local[0] = 42)
+            0xA9, 0, 0, 0, 0,      // load 0   (stack: 42)
             0xFF,
         ];
         assert_eq!(run_native(&bytecode).unwrap(), 42);
@@ -2803,13 +2806,13 @@ mod tests {
     fn test_store_load_multiple_slots() {
         // Use multiple local slots: store 10 in slot 0, 20 in slot 1, load both, add
         let bytecode = vec![
-            0x30, 10,   // push 10
-            0xA8, 0,    // store 0
-            0x30, 20,   // push 20
-            0xA8, 1,    // store 1
-            0xA9, 0,    // load 0 (push 10)
-            0xA9, 1,    // load 1 (push 20)
-            0x40,       // add -> 30
+            0x30, 10,               // push 10
+            0xA8, 0, 0, 0, 0,      // store 0
+            0x30, 20,               // push 20
+            0xA8, 1, 0, 0, 0,      // store 1
+            0xA9, 0, 0, 0, 0,      // load 0 (push 10)
+            0xA9, 1, 0, 0, 0,      // load 1 (push 20)
+            0x40,                   // add -> 30
             0xFF,
         ];
         assert_eq!(run_native(&bytecode).unwrap(), 30);
@@ -2819,11 +2822,11 @@ mod tests {
     fn test_store_load_overwrite() {
         // Store, then overwrite: local 0 = 5, then local 0 = 99
         let bytecode = vec![
-            0x30, 5,    // push 5
-            0xA8, 0,    // store 0
-            0x30, 99,   // push 99
-            0xA8, 0,    // store 0 (overwrite)
-            0xA9, 0,    // load 0 -> 99
+            0x30, 5,                // push 5
+            0xA8, 0, 0, 0, 0,      // store 0
+            0x30, 99,               // push 99
+            0xA8, 0, 0, 0, 0,      // store 0 (overwrite)
+            0xA9, 0, 0, 0, 0,      // load 0 -> 99
             0xFF,
         ];
         assert_eq!(run_native(&bytecode).unwrap(), 99);
@@ -2846,13 +2849,13 @@ mod tests {
     fn test_cross_backend_store_load() {
         // STORE/LOAD must produce identical results in JIT and interpreter
         let bytecode = vec![
-            0x30, 7,    // push 7
-            0xA8, 0,    // store 0
-            0x30, 3,    // push 3
-            0xA8, 1,    // store 1
-            0xA9, 0,    // load 0
-            0xA9, 1,    // load 1
-            0x42,       // mul -> 21
+            0x30, 7,                // push 7
+            0xA8, 0, 0, 0, 0,      // store 0
+            0x30, 3,                // push 3
+            0xA8, 1, 0, 0, 0,      // store 1
+            0xA9, 0, 0, 0, 0,      // load 0
+            0xA9, 1, 0, 0, 0,      // load 1
+            0x42,                   // mul -> 21
             0xFF,
         ];
         let native = run_native(&bytecode).unwrap();
@@ -3222,34 +3225,25 @@ mod tests {
         // Loop: count from N down to 0
         // push N; loop: dup, jz done, 1 sub, jmp loop; done: halt
         //
-        // Layout:
-        // 0-1:   INT8 100 (push counter)
-        // 2:     DUP
-        // 3-5:   JZ +6 (jump to HALT at 12 if zero)
-        // 6:     INT8 1
-        // 7:     SUB
-        // 8-10:  JMP -8 (back to DUP at 2)
-        // 11:    HALT (unreachable, JZ target is this or next)
-        //
-        // Wait, let me recalc:
+        // Layout (i32 jump offsets, 5-byte jump instructions):
         // pc=0: 0x30 N   (2 bytes, pc after = 2)
         // pc=2: 0x02 DUP (1 byte, pc after = 3)
-        // pc=3: 0x71 offset_lo offset_hi (3 bytes, JZ, pc after read = 6)
-        //       target = 6 + offset; we want target = 12 (HALT), so offset = 6
-        // pc=6: 0x30 1   (2 bytes, pc after = 8)
-        // pc=8: 0x41 SUB (1 byte, pc after = 9)
-        // pc=9: 0x70 offset_lo offset_hi (3 bytes, JMP, pc after read = 12)
-        //       target = 12 + offset; we want target = 2 (DUP), so offset = -10
-        // pc=12: 0xFF HALT
+        // pc=3: 0x71 i32  (5 bytes, JZ, pc after = 8)
+        //       target = 8 + offset; we want target = 16 (HALT), so offset = 8
+        // pc=8: 0x30 1   (2 bytes, pc after = 10)
+        // pc=10: 0x41 SUB (1 byte, pc after = 11)
+        // pc=11: 0x70 i32  (5 bytes, JMP, pc after = 16)
+        //       target = 16 + offset; we want target = 2 (DUP), so offset = -14
+        // pc=16: 0xFF HALT
         
         let bytecode = vec![
-            0x30, 100,        // 0-1: push 100
-            0x02,             // 2: DUP
-            0x71, 0x06, 0x00, // 3-5: JZ +6 -> target 12 (HALT)
-            0x30, 1,          // 6-7: push 1
-            0x41,             // 8: SUB
-            0x70, 0xF6, 0xFF, // 9-11: JMP -10 -> target 2 (DUP) [0xF6FF = -10 as i16 LE]
-            0xFF,             // 12: HALT
+            0x30, 100,                    // 0-1: push 100
+            0x02,                         // 2: DUP
+            0x71, 0x08, 0x00, 0x00, 0x00, // 3-7: JZ +8 -> target 16 (HALT)
+            0x30, 1,                      // 8-9: push 1
+            0x41,                         // 10: SUB
+            0x70, 0xF2, 0xFF, 0xFF, 0xFF, // 11-15: JMP -14 -> target 2 (DUP)
+            0xFF,                         // 16: HALT
         ];
         
         // Run it
@@ -3660,18 +3654,18 @@ mod tests {
             Op::Not => vec![Op::Int8 as u8, 1, Op::Not as u8, Op::Halt as u8],
             Op::Bnot => vec![Op::Int8 as u8, 1, Op::Bnot as u8, Op::Halt as u8],
 
-            // Jumps — need careful layout
-            Op::Jmp => vec![Op::Int8 as u8, 42, Op::Jmp as u8, 0x00, 0x00, Op::Halt as u8], // jmp +0 (fallthrough)
-            Op::Jz => vec![Op::Int8 as u8, 42, Op::Int8 as u8, 0, Op::Jz as u8, 0x00, 0x00, Op::Halt as u8],
-            Op::Jnz => vec![Op::Int8 as u8, 42, Op::Int8 as u8, 1, Op::Jnz as u8, 0x00, 0x00, Op::Halt as u8],
+            // Jumps — need careful layout (i32 offsets = 4 bytes)
+            Op::Jmp => vec![Op::Int8 as u8, 42, Op::Jmp as u8, 0x00, 0x00, 0x00, 0x00, Op::Halt as u8], // jmp +0 (fallthrough)
+            Op::Jz => vec![Op::Int8 as u8, 42, Op::Int8 as u8, 0, Op::Jz as u8, 0x00, 0x00, 0x00, 0x00, Op::Halt as u8],
+            Op::Jnz => vec![Op::Int8 as u8, 42, Op::Int8 as u8, 1, Op::Jnz as u8, 0x00, 0x00, 0x00, 0x00, Op::Halt as u8],
 
             // CALL/RET: these need a module context, just test they don't crash
             Op::Call => vec![Op::Int8 as u8, 42, Op::Halt as u8], // skip actual CALL
             Op::Ret => vec![Op::Int8 as u8, 42, Op::Halt as u8],  // skip actual RET
 
             // Locals
-            Op::Store => vec![Op::Int8 as u8, 42, Op::Store as u8, 0, Op::Int8 as u8, 0, Op::Halt as u8],
-            Op::Load => vec![Op::Int8 as u8, 42, Op::Store as u8, 0, Op::Load as u8, 0, Op::Halt as u8],
+            Op::Store => vec![Op::Int8 as u8, 42, Op::Store as u8, 0, 0, 0, 0, Op::Int8 as u8, 0, Op::Halt as u8],
+            Op::Load => vec![Op::Int8 as u8, 42, Op::Store as u8, 0, 0, 0, 0, Op::Load as u8, 0, 0, 0, 0, Op::Halt as u8],
 
             // Reflection
             Op::Fetch => vec![Op::Int8 as u8, 0, Op::Fetch as u8, Op::Halt as u8],
@@ -3840,14 +3834,16 @@ mod tests {
 
     #[test]
     fn test_security_max_locals() {
-        // Use all 64 local slots — should not crash
+        // Use 64 local slots — should not crash
         let mut bytecode = Vec::new();
-        for slot in 0..64u8 {
-            bytecode.extend_from_slice(&[0x30, slot + 1]); // push slot+1
-            bytecode.extend_from_slice(&[0xA8, slot]);     // store slot
+        for slot in 0..64u32 {
+            bytecode.extend_from_slice(&[0x30, (slot + 1) as u8]); // push slot+1
+            bytecode.push(0xA8);                                    // store
+            bytecode.extend_from_slice(&slot.to_le_bytes());        // slot (u32 LE)
         }
-        // Load the last one
-        bytecode.extend_from_slice(&[0xA9, 63]); // load 63
+        // Load the last one (slot 63)
+        bytecode.push(0xA9);
+        bytecode.extend_from_slice(&63u32.to_le_bytes());
         bytecode.push(0xFF);
         assert_eq!(run_native(&bytecode).unwrap(), 64);
     }

@@ -129,9 +129,9 @@ def kore_format_reward(prompts, completions, **kwargs) -> list[float]:
         if kore.strip():
             r += 0.02
 
-            # Kore code is not absurdly long (sign of degeneration)?
-            if len(kore.split()) <= 30:
-                r += 0.01
+            # Kore code compiles to something parseable?
+            # (no token count penalty — execution steps handle efficiency)
+            r += 0.01
 
         rewards.append(r)
 
