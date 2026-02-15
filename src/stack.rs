@@ -7,10 +7,15 @@ use crate::value::Value;
 const DEFAULT_MAX_DEPTH: usize = 10_000;
 
 /// The stack - a LIFO collection of Values
+///
+/// Also holds 8 local variable slots (store0–store7 / load0–load7)
+/// for scratch storage without complex stack juggling.
 #[derive(Debug, Clone)]
 pub struct Stack {
     values: Vec<Value>,
     max_depth: usize,
+    /// 8 local variable slots, indexed 0–7. None = unset (reads as Null).
+    locals: [Option<Value>; 8],
 }
 
 impl Stack {
@@ -19,6 +24,7 @@ impl Stack {
         Self {
             values: Vec::new(),
             max_depth: DEFAULT_MAX_DEPTH,
+            locals: Default::default(),
         }
     }
 
@@ -27,6 +33,7 @@ impl Stack {
         Self {
             values: Vec::new(),
             max_depth,
+            locals: Default::default(),
         }
     }
 
@@ -35,6 +42,7 @@ impl Stack {
         Self {
             values,
             max_depth: DEFAULT_MAX_DEPTH,
+            locals: Default::default(),
         }
     }
 
@@ -95,9 +103,10 @@ impl Stack {
         self.clone()
     }
 
-    /// Restore from checkpoint
+    /// Restore from checkpoint (values + locals)
     pub fn restore(&mut self, checkpoint: Stack) {
         self.values = checkpoint.values;
+        self.locals = checkpoint.locals;
     }
 
     /// Clear the stack
@@ -142,6 +151,27 @@ impl Stack {
         let v = self.pop()?;
         v.into_quote()
     }
+
+    // === Local variable slots (0–7) ===
+
+    /// Store a value in a local slot (0–7).
+    /// Overwrites any previous value in that slot.
+    pub fn store_local(&mut self, slot: usize, value: Value) -> Result<()> {
+        if slot >= 8 {
+            return Err(Error::Runtime(format!("local slot {} out of range (0-7)", slot)));
+        }
+        self.locals[slot] = Some(value);
+        Ok(())
+    }
+
+    /// Load a value from a local slot (0–7).
+    /// Returns Null if the slot has never been written.
+    pub fn load_local(&self, slot: usize) -> Result<Value> {
+        if slot >= 8 {
+            return Err(Error::Runtime(format!("local slot {} out of range (0-7)", slot)));
+        }
+        Ok(self.locals[slot].clone().unwrap_or(Value::Null))
+    }
 }
 
 impl Default for Stack {
@@ -156,6 +186,7 @@ impl FromIterator<Value> for Stack {
         Self {
             values: iter.into_iter().collect(),
             max_depth: DEFAULT_MAX_DEPTH,
+            locals: Default::default(),
         }
     }
 }

@@ -335,6 +335,7 @@ impl Analyzer {
             
             // Map
             "map-new" => (0, 1),
+            "emptylist" => (0, 1),
             "map-get" | "map-has" => (2, 1),
             "map-set" => (3, 1),
             "map-del" => (2, 1),
@@ -380,6 +381,7 @@ impl Analyzer {
             // Definition
             "def" => (2, 0),
             "words" => (0, 1),
+            "describe" => (1, 1),
             "meta" => (1, 1),
             "meta!" => (3, 0),
             "defined?" => (1, 1),
@@ -418,6 +420,15 @@ impl Analyzer {
             // Combinators
             "map" | "filter" | "each" => (2, 1),
             "fold" => (3, 1),
+            
+            // Compose
+            "compose" => (2, 1),
+            
+            // Locals
+            "store0" | "store1" | "store2" | "store3"
+            | "store4" | "store5" | "store6" | "store7" => (1, 0),
+            "load0" | "load1" | "load2" | "load3"
+            | "load4" | "load5" | "load6" | "load7" => (0, 1),
             
             // Linear types
             "linear-new" | "linear-unwrap" | "affine-new" | "affine-unwrap" => (1, 1),

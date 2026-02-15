@@ -1,8 +1,9 @@
-//! Data primitives (3)
+//! Data primitives (4)
 //!
 //! - list: (n -- [items]) collect n items from stack into list
 //! - unlist: ([items] -- ...items) spread list onto stack
 //! - map-new: ( -- {}) create empty map
+//! - emptylist: ( -- []) create empty list
 
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
@@ -57,6 +58,20 @@ pub fn register(dict: &mut Dictionary) {
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
                 stack.push(Value::Map(indexmap::IndexMap::new()))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // emptylist: ( -- [])
+    // Bracket-free way to create an empty list.
+    // Model can build lists incrementally: emptylist 1 list-push 2 list-push
+    dict.register(Tool::native(
+        "emptylist",
+        "( -- l:List)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                stack.push(Value::List(vec![]))?;
                 Ok((stack, ctx))
             })
         },
@@ -124,6 +139,29 @@ mod tests {
         assert_eq!(result.depth(), 1);
         let map = result.values()[0].as_map().unwrap();
         assert!(map.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_emptylist() {
+        let ctx = setup().await;
+        let ops = vec![Op::call("emptylist")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert_eq!(result.depth(), 1);
+        let list = result.values()[0].as_list().unwrap();
+        assert!(list.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_emptylist_then_push() {
+        let ctx = setup().await;
+        // emptylist 42 list-push -> [42]
+        // Need list module for list-push, so just verify we can unlist an emptylist
+        let ops = vec![
+            Op::call("emptylist"),
+            Op::call("unlist"),
+        ];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert_eq!(result.depth(), 0); // empty list produces nothing
     }
 
     #[tokio::test]

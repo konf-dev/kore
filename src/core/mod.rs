@@ -8,7 +8,7 @@
 //! Every primitive is a Tool (P1), transforms Stack → Stack (P2),
 //! and composes by concatenation (P3).
 //!
-//! ## Categories (72 total)
+//! ## Categories (99 total)
 //!
 //! ### Control (4)
 //! - `call`: Execute a quote
@@ -16,9 +16,10 @@
 //! - `if`: Conditional execution
 //! - `loop`: Iterate while condition true
 //!
-//! ### Definition (2)
+//! ### Definition (3)
 //! - `def`: Define a new tool
 //! - `words`: List all tool names
+//! - `describe`: Get tool signature
 //!
 //! ### Error (3)
 //! - `try`: Execute with error capture
@@ -37,10 +38,18 @@
 //! ### Logic (3)
 //! - `and`, `or`, `not`
 //!
-//! ### Data (3)
+//! ### Data (4)
 //! - `list`: Collect n items into list
 //! - `unlist`: Spread list onto stack
 //! - `map-new`: Create empty map
+//! - `emptylist`: Create empty list
+//!
+//! ### Compose (1)
+//! - `compose`: Concatenate two quotes
+//!
+//! ### Locals (16)
+//! - `store0`..`store7`: Pop TOS into local slot
+//! - `load0`..`load7`: Push local slot onto stack
 //!
 //! ### String (10)
 //! - `str-len`, `str-get`, `str-slice`, `str-concat`, `str-split`
@@ -67,11 +76,13 @@
 mod arithmetic;
 mod combinators;
 mod comparison;
+mod compose;
 mod data;
 mod definition;
 mod error;
 mod execution;
 mod list;
+mod locals;
 mod logic;
 mod map;
 mod stack;
@@ -91,7 +102,7 @@ pub async fn register_core(ctx: &mut Context) {
     // Control flow (4)
     execution::register(&mut dict);
     
-    // Definition (2)
+    // Definition (3)
     definition::register(&mut dict);
     
     // Error handling (3)
@@ -109,8 +120,14 @@ pub async fn register_core(ctx: &mut Context) {
     // Logic (3)
     logic::register(&mut dict);
     
-    // Data construction (3)
+    // Data construction (4)
     data::register(&mut dict);
+    
+    // Composition (1)
+    compose::register(&mut dict);
+    
+    // Local variables (16)
+    locals::register(&mut dict);
     
     // String operations (10)
     string::register(&mut dict);
@@ -132,14 +149,14 @@ pub async fn register_core(ctx: &mut Context) {
 }
 
 /// Total count of core primitives
-pub const CORE_COUNT: usize = 80;
+pub const CORE_COUNT: usize = 99;
 
 /// All primitive names for introspection
-pub const CORE_PRIMITIVES: [&str; 80] = [
+pub const CORE_PRIMITIVES: [&str; 99] = [
     // Execution (4)
     "call", "spawn", "if", "loop",
-    // Definition (2)
-    "def", "words",
+    // Definition (3)
+    "def", "words", "describe",
     // Error (3)
     "try", "fail", "is-error",
     // Stack (7)
@@ -150,8 +167,15 @@ pub const CORE_PRIMITIVES: [&str; 80] = [
     "eq", "lt",
     // Logic (3)
     "and", "or", "not",
-    // Data (3)
-    "list", "unlist", "map-new",
+    // Data (4)
+    "list", "unlist", "map-new", "emptylist",
+    // Compose (1)
+    "compose",
+    // Locals (16)
+    "store0", "store1", "store2", "store3",
+    "store4", "store5", "store6", "store7",
+    "load0", "load1", "load2", "load3",
+    "load4", "load5", "load6", "load7",
     // String (13)
     "str-len", "str-get", "str-slice", "str-concat", "str-split",
     "str-join", "str-find", "str-starts", "str-ends", "str-replace",
