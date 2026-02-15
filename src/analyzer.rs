@@ -334,8 +334,8 @@ impl Analyzer {
             "list-slice" => (3, 1),
             
             // Map
-            "map-new" => (0, 1),
-            "emptylist" => (0, 1),
+            "map-new" | "map-empty" => (0, 1),
+            "emptylist" | "list-empty" => (0, 1),
             "map-get" | "map-has" => (2, 1),
             "map-set" => (3, 1),
             "map-del" => (2, 1),

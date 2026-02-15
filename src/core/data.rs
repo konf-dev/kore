@@ -76,6 +76,30 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ));
+
+    // list-empty: alias for emptylist (kebab-case consistency)
+    dict.register(Tool::native(
+        "list-empty",
+        "( -- l:List)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                stack.push(Value::List(vec![]))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // map-empty: alias for map-new (kebab-case consistency)
+    dict.register(Tool::native(
+        "map-empty",
+        "( -- m:Map)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                stack.push(Value::Map(indexmap::IndexMap::new()))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
 }
 
 #[cfg(test)]

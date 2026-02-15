@@ -412,12 +412,13 @@ mod postulates {
         // only contains tools with this signature.
         use kore::core::CORE_PRIMITIVES;
         
-        // All 99 primitives are tools (expanded with verification primitives + Phase 0 additions)
-        // 4 execution + 3 definition + 3 error + 7 stack + 6 arithmetic + 2 comparison + 3 logic
-        // + 4 data + 1 compose + 16 locals + 13 string + 8 list + 6 map + 14 type + 4 combinators
+        // All 105 primitives are tools (expanded with verification primitives + Phase 0 additions
+        // + Phase 1 additions: gt, le, ge, neq, list-empty, map-empty)
+        // 4 execution + 3 definition + 3 error + 7 stack + 6 arithmetic + 6 comparison + 3 logic
+        // + 6 data + 1 compose + 16 locals + 13 string + 8 list + 6 map + 14 type + 4 combinators
         // + 5 verification
-        assert_eq!(CORE_PRIMITIVES.len(), 99, 
-            "We have exactly 99 core primitives");
+        assert_eq!(CORE_PRIMITIVES.len(), 105, 
+            "We have exactly 105 core primitives");
         
         // Each one is documented with a stack effect signature
         // (verified in FORMAL_ARCHITECTURE.md)

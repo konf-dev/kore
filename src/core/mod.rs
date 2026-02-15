@@ -32,8 +32,8 @@
 //! ### Arithmetic (6)
 //! - `add`, `sub`, `mul`, `div`, `mod`, `neg`
 //!
-//! ### Comparison (2)
-//! - `eq`, `lt` (gt, le, ge, ne compose from these)
+//! ### Comparison (6)
+//! - `eq`, `neq`, `lt`, `gt`, `le`, `ge`
 //!
 //! ### Logic (3)
 //! - `and`, `or`, `not`
@@ -114,7 +114,7 @@ pub async fn register_core(ctx: &mut Context) {
     // Arithmetic (6)
     arithmetic::register(&mut dict);
     
-    // Comparison (2)
+    // Comparison (6)
     comparison::register(&mut dict);
     
     // Logic (3)
@@ -149,10 +149,10 @@ pub async fn register_core(ctx: &mut Context) {
 }
 
 /// Total count of core primitives
-pub const CORE_COUNT: usize = 99;
+pub const CORE_COUNT: usize = 105;
 
 /// All primitive names for introspection
-pub const CORE_PRIMITIVES: [&str; 99] = [
+pub const CORE_PRIMITIVES: [&str; 105] = [
     // Execution (4)
     "call", "spawn", "if", "loop",
     // Definition (3)
@@ -163,12 +163,12 @@ pub const CORE_PRIMITIVES: [&str; 99] = [
     "dup", "drop", "swap", "rot", "over", "dip", "depth",
     // Arithmetic (6)
     "add", "sub", "mul", "div", "mod", "neg",
-    // Comparison (2)
-    "eq", "lt",
+    // Comparison (6)
+    "eq", "neq", "lt", "gt", "le", "ge",
     // Logic (3)
     "and", "or", "not",
-    // Data (4)
-    "list", "unlist", "map-new", "emptylist",
+    // Data (6) — includes aliases list-empty, map-empty
+    "list", "unlist", "map-new", "emptylist", "list-empty", "map-empty",
     // Compose (1)
     "compose",
     // Locals (16)

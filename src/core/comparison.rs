@@ -1,14 +1,12 @@
-//! Comparison primitives (2)
+//! Comparison primitives (6)
 //!
-//! Only the irreducible:
-//! - eq: (a b -- bool) structural equality
-//! - lt: (a b -- bool) less than
-//!
-//! The rest compose from these:
-//! - gt  = swap lt
-//! - le  = gt not
-//! - ge  = lt not
-//! - neq = eq not
+//! All six standard comparison operators:
+//! - eq:  (a b -- bool) structural equality
+//! - neq: (a b -- bool) not equal
+//! - lt:  (a b -- bool) less than
+//! - gt:  (a b -- bool) greater than
+//! - le:  (a b -- bool) less than or equal
+//! - ge:  (a b -- bool) greater than or equal
 
 use crate::context::{Context, Dictionary};
 use crate::error::Error;
@@ -48,6 +46,86 @@ pub fn register(dict: &mut Dictionary) {
                     _ => return Err(Error::type_error("Num|Text", &a)),
                 };
                 stack.push(Value::Bool(result))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // gt: (a b -- bool)
+    dict.register(Tool::native(
+        "gt",
+        "(a:Num b:Num -- result:Bool)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let b = stack.pop()?;
+                let a = stack.pop()?;
+                let result = match (&a, &b) {
+                    (Value::Int(x), Value::Int(y)) => x > y,
+                    (Value::Float(x), Value::Float(y)) => x > y,
+                    (Value::Int(x), Value::Float(y)) => (*x as f64) > *y,
+                    (Value::Float(x), Value::Int(y)) => *x > (*y as f64),
+                    (Value::Text(x), Value::Text(y)) => x > y,
+                    _ => return Err(Error::type_error("Num|Text", &a)),
+                };
+                stack.push(Value::Bool(result))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // le: (a b -- bool)
+    dict.register(Tool::native(
+        "le",
+        "(a:Num b:Num -- result:Bool)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let b = stack.pop()?;
+                let a = stack.pop()?;
+                let result = match (&a, &b) {
+                    (Value::Int(x), Value::Int(y)) => x <= y,
+                    (Value::Float(x), Value::Float(y)) => x <= y,
+                    (Value::Int(x), Value::Float(y)) => (*x as f64) <= *y,
+                    (Value::Float(x), Value::Int(y)) => *x <= (*y as f64),
+                    (Value::Text(x), Value::Text(y)) => x <= y,
+                    _ => return Err(Error::type_error("Num|Text", &a)),
+                };
+                stack.push(Value::Bool(result))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // ge: (a b -- bool)
+    dict.register(Tool::native(
+        "ge",
+        "(a:Num b:Num -- result:Bool)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let b = stack.pop()?;
+                let a = stack.pop()?;
+                let result = match (&a, &b) {
+                    (Value::Int(x), Value::Int(y)) => x >= y,
+                    (Value::Float(x), Value::Float(y)) => x >= y,
+                    (Value::Int(x), Value::Float(y)) => (*x as f64) >= *y,
+                    (Value::Float(x), Value::Int(y)) => *x >= (*y as f64),
+                    (Value::Text(x), Value::Text(y)) => x >= y,
+                    _ => return Err(Error::type_error("Num|Text", &a)),
+                };
+                stack.push(Value::Bool(result))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
+
+    // neq: (a b -- bool)
+    dict.register(Tool::native(
+        "neq",
+        "(a:Any b:Any -- result:Bool)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                let b = stack.pop()?;
+                let a = stack.pop()?;
+                stack.push(Value::Bool(a != b))?;
                 Ok((stack, ctx))
             })
         },
@@ -105,6 +183,69 @@ mod tests {
         let ctx = setup().await;
         let ops = vec![Op::push(5), Op::push(5), Op::call("lt")];
         let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(!result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_gt_true() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(7), Op::push(3), Op::call("gt")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_gt_false() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(3), Op::push(7), Op::call("gt")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(!result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_le_true() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(3), Op::push(5), Op::call("le")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_le_equal() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(5), Op::push(5), Op::call("le")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_ge_true() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(7), Op::push(3), Op::call("ge")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_ge_equal() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(5), Op::push(5), Op::call("ge")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_neq_true() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(42), Op::push(43), Op::call("neq")];
+        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
+        assert!(result.values()[0].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_neq_false() {
+        let ctx = setup().await;
+        let ops = vec![Op::push(42), Op::push(42), Op::call("neq")];        let (result, _) = execute(&ops, Stack::new(), ctx).await.unwrap();
         assert!(!result.values()[0].as_bool().unwrap());
     }
 }

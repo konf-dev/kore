@@ -96,4 +96,15 @@ pub fn register(dict: &mut Dictionary) {
             })
         },
     ));
+
+    dict.register(Tool::native(
+        "version",
+        "( -- text)",
+        |mut stack: Stack, ctx: Context| {
+            Box::pin(async move {
+                stack.push(Value::Text("0.1.0".into()))?;
+                Ok((stack, ctx))
+            })
+        },
+    ));
 }

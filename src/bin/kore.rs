@@ -278,6 +278,11 @@ struct ServeState {
     next_session_id: u64,
 }
 
+/// Maximum number of sessions before rejecting new ones
+const MAX_SESSIONS: usize = 1000;
+/// Maximum number of snapshots before rejecting new ones
+const MAX_SNAPSHOTS: usize = 10000;
+
 impl ServeState {
     fn auto_id(&mut self) -> String {
         let id = format!("s{}", self.next_session_id);
@@ -409,6 +414,10 @@ async fn serve_session(state: &mut ServeState, cmd: &serde_json::Value) -> serde
 
     if state.sessions.contains_key(&id) {
         return json!({"error": format!("session '{}' already exists", id)});
+    }
+
+    if state.sessions.len() >= MAX_SESSIONS {
+        return json!({"error": format!("session limit reached ({})", MAX_SESSIONS)});
     }
 
     let code = cmd.get("code").and_then(|c| c.as_str()).unwrap_or("");
@@ -567,6 +576,10 @@ fn serve_snap(state: &mut ServeState, cmd: &serde_json::Value) -> serde_json::Va
         None => return json!({"error": format!("session '{}' not found", id)}),
     };
 
+    if state.snapshots.len() >= MAX_SNAPSHOTS {
+        return json!({"error": format!("snapshot limit reached ({})", MAX_SNAPSHOTS)});
+    }
+
     let snap = session.snapshot();
     state.snapshots.insert(snap_id.clone(), snap);
 
@@ -619,6 +632,10 @@ fn serve_fork(state: &mut ServeState, cmd: &serde_json::Value) -> serde_json::Va
 
     if state.sessions.contains_key(&new_id) {
         return json!({"error": format!("session '{}' already exists", new_id)});
+    }
+
+    if state.sessions.len() >= MAX_SESSIONS {
+        return json!({"error": format!("session limit reached ({})", MAX_SESSIONS)});
     }
 
     let forked = match state.sessions.get(id) {

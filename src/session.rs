@@ -162,21 +162,21 @@ impl Session {
     }
 
     /// Execute up to n ops. Returns (number executed, status).
+    ///
+    /// A step that errors does NOT count as executed (the op didn't complete
+    /// and `steps` was not incremented). Only successful steps count.
     pub async fn step_n(&mut self, n: usize) -> (usize, &SessionStatus) {
         let mut executed = 0;
         for _ in 0..n {
             if !self.status.is_running() {
                 break;
             }
+            let prev_steps = self.steps;
             self.step().await;
-            if self.status.is_running() || self.status.is_halted() {
-                // Only count if the step actually executed (not if it was already stopped)
-                if self.status.is_error() {
-                    executed += 1; // The error happened during execution
-                    break;
-                }
+            if self.steps > prev_steps {
                 executed += 1;
             }
+            // Stop if we halted, errored, or hit max_steps
             if !self.status.is_running() {
                 break;
             }
@@ -310,7 +310,19 @@ pub fn value_to_json(v: &Value) -> serde_json::Value {
         Value::Null => serde_json::Value::Null,
         Value::Bool(b) => json!(*b),
         Value::Int(n) => json!(*n),
-        Value::Float(f) => json!(*f),
+        Value::Float(f) => {
+            if f.is_nan() {
+                json!({"__float": "NaN"})
+            } else if f.is_infinite() {
+                if f.is_sign_positive() {
+                    json!({"__float": "Infinity"})
+                } else {
+                    json!({"__float": "-Infinity"})
+                }
+            } else {
+                json!(*f)
+            }
+        }
         Value::Text(s) => json!(s),
         Value::List(items) => {
             let arr: Vec<serde_json::Value> = items.iter().map(value_to_json).collect();
@@ -367,7 +379,15 @@ pub fn json_to_value(j: &serde_json::Value) -> Result<Value> {
         }
         serde_json::Value::Object(obj) => {
             // Check for tagged types
-            if let Some(inner) = obj.get("__map") {
+            if let Some(inner) = obj.get("__float") {
+                // Special float values (NaN, Infinity)
+                match inner.as_str() {
+                    Some("NaN") => Ok(Value::Float(f64::NAN)),
+                    Some("Infinity") => Ok(Value::Float(f64::INFINITY)),
+                    Some("-Infinity") => Ok(Value::Float(f64::NEG_INFINITY)),
+                    _ => Err(Error::Runtime(format!("invalid __float value: {}", inner))),
+                }
+            } else if let Some(inner) = obj.get("__map") {
                 // Map value
                 if let serde_json::Value::Object(map_obj) = inner {
                     let mut map = indexmap::IndexMap::new();
@@ -884,5 +904,57 @@ mod tests {
         let j = value_to_json(&v);
         let back = json_to_value(&j).unwrap();
         assert_eq!(back, v);
+    }
+
+    #[test]
+    fn test_json_float_nan() {
+        let v = Value::Float(f64::NAN);
+        let j = value_to_json(&v);
+        // NaN should be tagged, not null
+        assert!(j.get("__float").is_some());
+        assert_eq!(j["__float"], serde_json::json!("NaN"));
+        let back = json_to_value(&j).unwrap();
+        match back {
+            Value::Float(f) => assert!(f.is_nan()),
+            _ => panic!("Expected Float(NaN)"),
+        }
+    }
+
+    #[test]
+    fn test_json_float_infinity() {
+        let v = Value::Float(f64::INFINITY);
+        let j = value_to_json(&v);
+        assert_eq!(j["__float"], serde_json::json!("Infinity"));
+        let back = json_to_value(&j).unwrap();
+        assert_eq!(back, Value::Float(f64::INFINITY));
+    }
+
+    #[test]
+    fn test_json_float_neg_infinity() {
+        let v = Value::Float(f64::NEG_INFINITY);
+        let j = value_to_json(&v);
+        assert_eq!(j["__float"], serde_json::json!("-Infinity"));
+        let back = json_to_value(&j).unwrap();
+        assert_eq!(back, Value::Float(f64::NEG_INFINITY));
+    }
+
+    #[tokio::test]
+    async fn test_step_n_with_error() {
+        let ctx = setup().await;
+        // 3 pushes then an add on empty-ish stack that should work,
+        // then force an error
+        let ops = vec![
+            Op::push(1),
+            Op::push(2),
+            Op::call("add"), // 1 + 2 = 3
+            Op::call("add"), // underflow: only 1 value on stack
+        ];
+        let mut session = Session::new(ops, Stack::new(), ctx);
+
+        let (executed, status) = session.step_n(10).await;
+        assert!(status.is_error());
+        // 3 ops succeeded, the 4th errored and doesn't count
+        assert_eq!(executed, 3);
+        assert_eq!(session.steps(), 3);
     }
 }

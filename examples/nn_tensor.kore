@@ -147,10 +147,10 @@
 # ==========================================
 
 # XOR truth table
-[ 0.0 0.0 ] tensor-from-list "xor-00" def
-[ 0.0 1.0 ] tensor-from-list "xor-01" def
-[ 1.0 0.0 ] tensor-from-list "xor-10" def
-[ 1.0 1.0 ] tensor-from-list "xor-11" def
+"xor-00" [ 0.0 0.0 2 list tensor-from-list ] def
+"xor-01" [ 0.0 1.0 2 list tensor-from-list ] def
+"xor-10" [ 1.0 0.0 2 list tensor-from-list ] def
+"xor-11" [ 1.0 1.0 2 list tensor-from-list ] def
 
 # Expected outputs
 0.0 "target-00" def
@@ -162,9 +162,9 @@
 # Hidden: 2 neurons, Output: 1 neuron
 
 # Hand-tuned weights that solve XOR
-[ 1.0 1.0 ] tensor-from-list "w1-and" def   # AND-like neuron
-[ 1.0 1.0 ] tensor-from-list "w1-or" def    # OR-like neuron
-[ -2.0 1.0 ] tensor-from-list "w2" def      # XOR combination
+"w1-and" [ 1.0 1.0 2 list tensor-from-list ] def   # AND-like neuron
+"w1-or"  [ 1.0 1.0 2 list tensor-from-list ] def   # OR-like neuron
+"w2"     [ -2.0 1.0 2 list tensor-from-list ] def   # XOR combination
 
 -1.5 "b1-and" def
 -0.5 "b1-or" def  
@@ -249,14 +249,14 @@ xor-11 xor-net to-text println
 
 # Verify tensor operations work
 "Tensor operation tests:" println
-[ 1.0 2.0 3.0 ] tensor-from-list "t1" def
-[ 4.0 5.0 6.0 ] tensor-from-list "t2" def
+"t1" [ 1.0 2.0 3.0 3 list tensor-from-list ] def
+"t2" [ 4.0 5.0 6.0 3 list tensor-from-list ] def
 
-"t1 = " print t1 println
-"t2 = " print t2 println
-"t1 + t2 = " print t1 t2 tensor-add println
-"t1 * t2 = " print t1 t2 tensor-mul println
-"sum(t1) = " print t1 tensor-sum println
-"mean(t2) = " print t2 tensor-mean println
+"t1 = " print t1 to-text println
+"t2 = " print t2 to-text println
+"t1 + t2 = " print t1 t2 tensor-add to-text println
+"t1 * t2 = " print t1 t2 tensor-mul to-text println
+"sum(t1) = " print t1 tensor-sum to-text println
+"mean(t2) = " print t2 tensor-mean to-text println
 "" println
 "Done!" println

@@ -10,15 +10,34 @@ use crate::tool::Tool;
 use crate::value::Value;
 
 pub fn register(dict: &mut Dictionary) {
-    // def: (quote name -- )
-    // Usage: [ body ] "name" def
+    // def: define a new tool
+    // Accepts multiple patterns:
+    //   "name" [body] def   -- idiomatic (prelude style)
+    //   [body] "name" def   -- stack style
+    //   value "name" def    -- constant (wraps value in a quote that pushes it)
     dict.register(Tool::native(
         "def",
-        "(body:Quote name:Text -- )",
+        "(name:Text body -- )",
         |mut stack: Stack, ctx: Context| {
             Box::pin(async move {
-                let name = stack.pop()?.into_text()?;
-                let body = stack.pop()?.into_quote()?;
+                let a = stack.pop()?;
+                let b = stack.pop()?;
+                let (name, body) = match (a, b) {
+                    // "name" [body] def → top=Quote, second=Text
+                    (Value::Quote(q), Value::Text(n)) => (n, q),
+                    // [body] "name" def → top=Text, second=Quote
+                    (Value::Text(n), Value::Quote(q)) => (n, q),
+                    // value "name" def → constant: wrap value in a push
+                    (Value::Text(n), val) => {
+                        (n, vec![crate::op::Op::Push(val)])
+                    }
+                    _ => {
+                        return Err(crate::error::Error::TypeError {
+                            expected: "Text name and body (Quote or value)".into(),
+                            got: "incompatible types".into(),
+                        });
+                    }
+                };
                 let tool = Tool::composed(&name, None, body);
                 {
                     let mut dict = ctx.dict.write().await;

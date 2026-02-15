@@ -15,29 +15,26 @@
 # ==========================================
 
 # Vector dot product: [a1..an] [b1..bn] -> sum(ai*bi)
+# Uses locals to store vectors, while loop for accumulation
 [ # ( v1 v2 -- dot )
-  0         # accumulator
-  rot rot   # ( acc v1 v2 )
-  [ # ( acc a b -- acc' )
-    mul     # ( acc prod )
-    rot     # ( prod acc )
-    add     # ( sum )
-  ] "add-product" def
-  # zip and fold
-  swap      # ( acc v2 v1 )
-  [ # for each element in v1
-    swap    # ( v2 acc elem1 )
-    rot     # ( acc elem1 v2 )
-    0 list-get  # get first of v2
-    swap    # ( acc v2[0] elem1 )
-    mul     # ( acc prod )
-    rot     # ( prod acc )
-    add     # ( acc' )
-    swap    # ( acc' v2 )
-    1 list-len swap list-slice  # tail of v2
-    swap    # ( v2' acc' )
-  ] swap list-len times
-  drop      # drop empty v2
+  store0       # v2 -> local 0
+  store1       # v1 -> local 1
+  0            # idx
+  0.0          # acc
+  # while idx < len(v1)
+  [over load1 list-len lt]
+  [
+    # stack: idx acc
+    swap dup       # acc idx idx
+    load1 swap list-get   # acc idx v1[idx]
+    over           # acc idx v1[idx] idx
+    load0 swap list-get   # acc idx v1[idx] v2[idx]
+    mul            # acc idx product
+    rot add        # idx acc'
+    swap 1 add     # acc' idx+1
+    swap           # idx+1 acc'
+  ] while
+  swap drop      # acc (drop idx)
 ] "vec-dot" def
 
 # Vector addition: [a1..an] [b1..bn] -> [a1+b1..an+bn]
@@ -384,31 +381,31 @@
   
   # Hidden neuron 1
   h1-weights vec-dot
-  h1-bias 0 list-get add
+  h1-bias add
   relu
   
   # Hidden neuron 2  
   swap      # h1 input
   h2-weights vec-dot
-  h2-bias 0 list-get add
+  h2-bias add
   relu
   
   # Output neuron
   2 list    # [h1 h2]
   out-weights vec-dot
-  out-bias 0 list-get add
+  out-bias add
   sigmoid
 ] "xor-forward" def
 
 # Test XOR network
-[ 0.0 0.0 2 list ] xor-forward  # Should be ~0
-[ 0.0 1.0 2 list ] xor-forward  # Should be ~1
-[ 1.0 0.0 2 list ] xor-forward  # Should be ~1
-[ 1.0 1.0 2 list ] xor-forward  # Should be ~0
+0.0 0.0 2 list xor-forward  # Should be ~0
+0.0 1.0 2 list xor-forward  # Should be ~1
+1.0 0.0 2 list xor-forward  # Should be ~1
+1.0 1.0 2 list xor-forward  # Should be ~0
 
 # Print results
 "XOR Network Test:" println
-"[0,0] -> " print [ 0.0 0.0 2 list ] xor-forward to-text println
-"[0,1] -> " print [ 0.0 1.0 2 list ] xor-forward to-text println
-"[1,0] -> " print [ 1.0 0.0 2 list ] xor-forward to-text println
-"[1,1] -> " print [ 1.0 1.0 2 list ] xor-forward to-text println
+"[0,0] -> " print 0.0 0.0 2 list xor-forward to-text println
+"[0,1] -> " print 0.0 1.0 2 list xor-forward to-text println
+"[1,0] -> " print 1.0 0.0 2 list xor-forward to-text println
+"[1,1] -> " print 1.0 1.0 2 list xor-forward to-text println
