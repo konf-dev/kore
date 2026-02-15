@@ -38,7 +38,7 @@ pub fn execute(ops: &[Op], mut stack: Stack, ctx: Context) -> ExecFuture<'_> {
 /// Execute a single operation.
 /// 
 /// This is the irreducible core - two cases only.
-async fn execute_op(op: &Op, mut stack: Stack, ctx: Context) -> Result<(Stack, Context)> {
+pub async fn execute_op(op: &Op, mut stack: Stack, ctx: Context) -> Result<(Stack, Context)> {
     match op {
         // Push a literal value onto the stack
         Op::Push(value) => {

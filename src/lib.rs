@@ -87,6 +87,9 @@ pub mod optimizer;
 pub mod lookahead;
 pub mod stdlib;
 
+// Session: stateful execution for external search/training
+pub mod session;
+
 // Re-export effect types
 pub use types::{Effect, Type};
 pub use effects::EffectSet;
@@ -106,6 +109,9 @@ pub use stack::Stack;
 pub use storage::Storage;
 pub use tool::Tool;
 pub use value::{ErrorValue, Handle, HandleKind, Value};
+
+// Session types
+pub use session::{Session, SessionStatus, Snapshot};
 
 // Registration functions
 pub use core::register_core;

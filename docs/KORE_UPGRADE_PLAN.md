@@ -1,4 +1,4 @@
-# Kore Upgrade Plan v3: Phase 0 — Language Uniformity
+# Kore Upgrade Plan v3
 
 > **Goal:** Make Kore a uniform execution substrate that ANY search/training
 > algorithm (MCTS, RL, LLM, genetic, beam search) can drive to teach AI to
@@ -319,3 +319,301 @@ Each new tool gets:
 3. **Error paths** — wrong types, underflow
 4. **Composition** — works with existing tools
 5. **Integration** — existing 68 tests still pass
+
+---
+---
+
+# Phase 1: Simulation Infrastructure
+
+> **Goal:** Make Kore drivable by external search/training algorithms (MCTS, RL,
+> beam search, LLM token generation). Add snapshot/restore, step execution,
+> JSON serialization, and a session protocol over stdin/stdout.
+
+> **Constraint:** All new code is host-side infrastructure. No changes to Kore
+> semantics, no new tools, no new Value variants. The executor and tool system
+> remain untouched.
+
+---
+
+## Architecture Analysis
+
+The current executor is **functional**: `execute(&[Op], Stack, Context) -> (Stack, Context)`.
+There is no mutable `Interpreter` struct, no program counter. Each call iterates
+`for op in ops`. This is clean but doesn't support:
+
+1. **Step execution** — can't pause mid-program  
+2. **Snapshot/restore** — no single state object to capture  
+3. **Incremental action append** — ops list is borrowed `&[Op]`  
+
+**Solution:** Create a `Session` struct that owns `Vec<Op>`, tracks a program
+counter, and provides step/snapshot/restore/fork methods. The session calls
+`execute_op()` one op at a time instead of looping through all ops.
+
+Key insight: `execute_op()` already exists and handles a single op. We just need
+to manage the iteration externally instead of internally.
+
+---
+
+## Phase 1 Changes
+
+### Implementation Checklist
+
+#### 1. Session — Stateful Execution Engine
+- [x] Create `src/session.rs` with `Session` struct
+- [x] Fields: `ops: Vec<Op>`, `pc: usize`, `stack: Stack`, `ctx: Context`, `status: SessionStatus`
+- [x] `Session::new(ops, stack, ctx)` constructor
+- [x] `Session::step()` — execute one op, advance pc
+- [x] `Session::step_n(n)` — execute up to n ops  
+- [x] `Session::run()` — execute until halt or error
+- [x] `Session::append_ops(ops)` — append ops (for incremental generation)
+- [x] `Session::stack()` — observe current stack
+- [x] `Session::status()` — check if running/halted/error
+- [x] Tests: step, step_n, run, append, status transitions (7 tests)
+- [x] Wire into `src/lib.rs` (pub mod + re-export)
+
+#### 2. Snapshot/Restore/Fork
+- [x] `Session::snapshot()` -> `Snapshot` (owned clone of pc + ops_len + stack + locals)
+- [x] `Session::restore(snapshot)` — rewind to snapshot (truncates ops)
+- [x] `Session::fork()` -> new `Session` (clone entire session)
+- [x] `Snapshot` struct: `pc: usize`, `ops_len: usize`, `stack: Stack`, `steps: usize`
+- [x] Tests: snapshot fidelity, restore rewinds, fork isolation, MCTS pattern (5 tests)
+
+#### 3. Value JSON Serialization
+- [x] `value_to_json(v: &Value) -> serde_json::Value` in `src/session.rs`
+- [x] `stack_to_json(s: &Stack) -> serde_json::Value` — array of values
+- [x] Round-trip correctness for: Null, Bool, Int, Float, Text, List, Map, Error
+- [x] Quote → `{"__quote": "<ops_debug>"}` (not round-trippable, observation only)
+- [x] Handle → `{"__handle": "kind:id"}` (observation only)
+- [x] Tests: round-trip all types (18 tests)
+
+#### 4. Serve Mode — Session Protocol
+- [x] Add `--serve` flag to `src/bin/kore.rs`
+- [x] JSON protocol over stdin/stdout (one JSON object per line)
+- [x] Commands: `eval`, `session`, `push`, `step`, `step_n`, `run`
+- [x] Commands: `compile_op`, `snap`, `restore`, `fork`, `drop`, `drop_snap`, `list`
+- [x] Integration tested: eval, MCTS pattern, push+fork
+
+#### 5. Integration
+- [x] All existing tests still pass (508 total: 294 lib + 214 integration)
+- [x] `cargo build` clean
+- [x] `cargo clippy` clean (no new warnings)
+- [ ] Commit on `phase1-simulation` branch
+
+---
+
+## 1. Session — Stateful Execution Engine
+
+The core new struct. Wraps the existing functional executor into a stateful
+object that external search algorithms can drive.
+
+### File: `src/session.rs` (NEW)
+
+```rust
+pub enum SessionStatus {
+    /// Ready to execute more ops
+    Running,
+    /// Reached end of ops (pc == ops.len())
+    Halted,
+    /// Hit a runtime error
+    Error(String),
+}
+
+pub struct Session {
+    /// The program (owned, appendable) 
+    ops: Vec<Op>,
+    /// Program counter
+    pc: usize,
+    /// Current stack state
+    stack: Stack,
+    /// Execution context (dict + caps + resources)
+    ctx: Context,
+    /// Current status
+    status: SessionStatus,
+    /// Step counter (total ops executed)
+    steps: usize,
+    /// Max steps before forced halt (0 = unlimited)
+    max_steps: usize,
+}
+```
+
+### Key methods
+
+```rust
+impl Session {
+    /// Execute exactly one op. Returns the op that was executed.
+    pub async fn step(&mut self) -> SessionStatus { ... }
+    
+    /// Execute up to n ops. Returns number actually executed.
+    pub async fn step_n(&mut self, n: usize) -> (usize, SessionStatus) { ... }
+
+    /// Execute until halt or error.
+    pub async fn run(&mut self) -> SessionStatus { ... }
+
+    /// Append ops (for incremental program building).
+    /// If status was Halted, goes back to Running.
+    pub fn append_ops(&mut self, ops: Vec<Op>) { ... }
+
+    /// Snapshot current state.
+    pub fn snapshot(&self) -> Snapshot { ... }
+    
+    /// Restore to a snapshot.
+    pub fn restore(&mut self, snap: &Snapshot) { ... }
+    
+    /// Fork: create an independent clone.
+    pub fn fork(&self) -> Session { ... }
+    
+    /// Observe the stack.
+    pub fn stack(&self) -> &Stack { ... }
+}
+```
+
+### Why this works with the existing executor
+
+`execute_op()` in `executor.rs` already handles single ops:
+```rust
+async fn execute_op(op: &Op, stack: Stack, ctx: Context) -> Result<(Stack, Context)>
+```
+
+But it's currently private and takes owned `Stack` + `Context`. For `Session::step()`,
+we call it directly. We need to make `execute_op` pub(crate) or expose it.
+
+**Change to `src/executor.rs`:** Make `execute_op` `pub` (1 line change).
+
+### Snapshot struct
+
+```rust
+pub struct Snapshot {
+    pc: usize,
+    stack: Stack,      // Clone of stack (includes locals)
+    steps: usize,
+}
+```
+
+Note: We do NOT snapshot the Context (dict/caps/resources). The dictionary is
+shared via `Arc<RwLock>` and tools defined during execution persist across
+snapshots. This matches MCTS semantics: the "game rules" (tools) don't change
+between moves, only the "board state" (stack + pc) does.
+
+Memory is also NOT snapshotted — it's session-level state behind `Arc<RwLock>`.
+If the training use case needs memory isolation, use `fork()` instead.
+
+---
+
+## 2. Value JSON Serialization
+
+For the Python controller to observe stack state and push initial values.
+
+### Mapping
+
+| Kore Value | JSON | Round-trip? |
+|-----------|------|-------------|
+| `Null` | `null` | ✅ |
+| `Bool(b)` | `true`/`false` | ✅ |
+| `Int(n)` | `n` | ✅ (if fits i64) |
+| `Float(f)` | `f` | ✅ |
+| `Text(s)` | `"s"` | ✅ |
+| `List([...])` | `[...]` | ✅ |
+| `Map({...})` | `{"__map": {...}}` | ✅ |
+| `Error(e)` | `{"__error": {"code": "...", "message": "..."}}` | ✅ |
+| `Quote(ops)` | `{"__quote": "[ op1 op2 ... ]"}` | ❌ (observation) |
+| `Handle(h)` | `{"__handle": "kind:id"}` | ❌ (observation) |
+| `Ext(e)` | `{"__ext": {"kind": N, "data": ...}}` | ❌ (observation) |
+
+**Why `__map` prefix?** A plain JSON object `{}` is ambiguous — it could be a
+Map value or a tagged type like Error. The `__` prefix signals "this is a typed
+Kore value." Lists and primitives need no prefix since they're unambiguous.
+
+### Implementation
+
+Uses `serde_json::Value` (already in Cargo.toml). Hand-written conversion for
+full control over the format. ~100 lines for `to_json` + `from_json`.
+
+---
+
+## 3. Serve Mode — Session Protocol
+
+Extend the CLI binary with `--serve` mode. JSON over stdin/stdout, one
+message per line (JSON Lines / NDJSON).
+
+### Commands
+
+```
+→ {"cmd":"eval", "source":"3 5 add"}
+← {"ok":true, "stack":[8], "steps":3}
+
+→ {"cmd":"session", "id":"s1", "source":"", "max_steps":100000}
+← {"ok":true, "id":"s1"}
+
+→ {"cmd":"push", "id":"s1", "values":[[3,1,2]]}
+← {"ok":true, "id":"s1", "stack":[[3,1,2]], "depth":1}
+
+→ {"cmd":"compile_op", "id":"s1", "source":"dup"}
+← {"ok":true, "id":"s1", "ops_added":1}
+
+→ {"cmd":"step", "id":"s1"}
+← {"ok":true, "id":"s1", "stack":[[3,1,2],[3,1,2]], "steps":1, "status":"running"}
+
+→ {"cmd":"step_n", "id":"s1", "n":10}
+← {"ok":true, "id":"s1", "stack":[...], "steps":10, "status":"running"}
+
+→ {"cmd":"run", "id":"s1"}
+← {"ok":true, "id":"s1", "stack":[...], "steps":42, "status":"halted"}
+
+→ {"cmd":"snap", "id":"s1", "name":"checkpoint1"}
+← {"ok":true, "id":"s1", "name":"checkpoint1"}
+
+→ {"cmd":"restore", "id":"s1", "name":"checkpoint1"}
+← {"ok":true, "id":"s1", "stack":[...], "status":"running"}
+
+→ {"cmd":"fork", "id":"s1", "new_id":"s2"}
+← {"ok":true, "id":"s2"}
+
+→ {"cmd":"drop", "id":"s1"}
+← {"ok":true}
+```
+
+### Serve State
+
+```rust
+struct ServeState {
+    sessions: HashMap<String, Session>,
+    snapshots: HashMap<(String, String), Snapshot>,  // (session_id, snap_name)
+    ctx_template: Context,  // shared dict with builtins pre-loaded
+}
+```
+
+### Backward Compatibility
+
+Bare source strings (not JSON) still work as shorthand for `eval`:
+```
+→ 3 5 add
+← {"ok":true, "stack":[8], "steps":3}
+```
+
+---
+
+## Files Changed Summary
+
+| File | Change | Risk |
+|------|--------|------|
+| `src/session.rs` | **New** — Session, Snapshot, SessionStatus, JSON helpers | **Low** — additive |
+| `src/executor.rs` | Make `execute_op` pub | **Trivial** |
+| `src/lib.rs` | Add `pub mod session` + re-exports | **Trivial** |
+| `src/bin/kore.rs` | Add `--serve` mode | **Medium** — new binary mode |
+| `Cargo.toml` | No changes (serde_json already present) | **None** |
+
+**Files NOT changed:** stack.rs, value.rs, op.rs, context.rs, tool.rs,
+core/*, cap/*, analyzer.rs, effects.rs. Zero semantic changes.
+
+---
+
+## Postulate Compliance
+
+| Change | P1 (Tool) | P2 (Stack → Stack) | P3 (Compose = Concat) |
+|--------|-----------|--------------------|-----------------------|
+| Session | Host-side, not a Tool | Tools still S→S | step(A);step(B) = run(A·B) |
+| Snapshot | Host-side observation | No tool changes | snap(A)+run(B) = run(A·B) |
+| JSON | Serialization only | No tool changes | No semantic change |
+| Serve | Protocol wrapper | Delegates to executor | compile_op = append |
+
+All changes are infrastructure. Kore's execution semantics are untouched.
