@@ -1,6 +1,6 @@
 # Kore Language Specification for LLMs
 
-> **Version**: 2.0 | **Date**: 2026-02-03 | **Status**: Production Ready
+> **Version**: 2.1 | **Date**: 2026-02-15 | **Status**: Production Ready
 > 
 > This document is the authoritative machine-readable specification for generating Kore code.
 
@@ -121,12 +121,6 @@ condition [ then-branch ] [ else-branch ] if
 | `depth` | `( -- n)` | Push stack depth |
 | `dip` | `(a q -- ... a)` | Execute quote under top |
 
-**Composed** (not primitives):
-| Tool | Definition | Description |
-|------|------------|-------------|
-| `nip` | `swap drop` | Remove second |
-| `tuck` | `swap over` | Copy top below second |
-
 **Linearity constraints:**
 - `dup`: Rejects linear/affine values
 - `drop`: Rejects linear values
@@ -143,23 +137,18 @@ condition [ then-branch ] [ else-branch ] if
 | `mod` | `(a b -- rem)` | Modulo (a % b) |
 | `neg` | `(a -- -a)` | Negation |
 
-**Note**: `abs` can be composed: `dup 0 lt [ neg ] when`
+**Note**: `abs` can be composed: `dup 0 lt [ neg ] [ ] if`
 
-### 4.3 Comparison (2 primitives + 4 composed)
+### 4.3 Comparison (6 primitives)
 
-**Primitives:**
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `eq` | `(a b -- bool)` | Equal |
+| `neq` | `(a b -- bool)` | Not equal |
 | `lt` | `(a b -- bool)` | Less than |
-
-**Composed** (from primitives):
-| Tool | Definition | Description |
-|------|------------|-------------|
-| `neq` | `eq not` | Not equal |
-| `gt` | `swap lt` | Greater than |
-| `lte` | `gt not` | Less or equal |
-| `gte` | `lt not` | Greater or equal |
+| `gt` | `(a b -- bool)` | Greater than |
+| `le` | `(a b -- bool)` | Less or equal |
+| `ge` | `(a b -- bool)` | Greater or equal |
 
 ### 4.4 Logic (3 tools)
 
@@ -188,12 +177,14 @@ condition [ then-branch ] [ else-branch ] if
 | `to-text` | `(a -- text)` | Convert to text |
 | `to-bool` | `(a -- bool)` | Convert to bool |
 
-### 4.6 List Operations (9 primitives)
+### 4.6 List Operations (10 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `list` | `(n a₁..aₙ -- list)` | Create list from N items |
 | `unlist` | `(list -- a₁..aₙ)` | Explode list onto stack |
+| `emptylist` | `( -- list)` | Create empty list |
+| `list-empty` | `( -- list)` | Alias for `emptylist` |
 | `list-len` | `(list -- n)` | Get length |
 | `list-get` | `(list n -- item)` | Get item at index (clones, not for linear) |
 | `list-set` | `(list n val -- list')` | Set item at index |
@@ -206,19 +197,19 @@ condition [ then-branch ] [ else-branch ] if
 
 **Note**: `list-first` = `0 list-get`, `list-last` = `dup list-len 1 sub list-get`
 
-### 4.7 Map Operations (6 primitives)
+### 4.7 Map Operations (8 primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `map-new` | `( -- map)` | Create empty map |
+| `map-empty` | `( -- map)` | Alias for `map-new` |
 | `map-get` | `(map key -- val)` | Get value |
 | `map-set` | `(map key val -- map')` | Set key-value |
 | `map-del` | `(map key -- map')` | Delete key |
 | `map-has` | `(map key -- bool)` | Check key exists |
 | `map-keys` | `(map -- list)` | Get all keys |
 | `map-vals` | `(map -- list)` | Get all values |
-
-**Note**: `map-take` for linear values planned but use `map-get` + `map-del` for now
+| `map-take` | `(map key -- map' val)` | Move value out (linear-safe) |
 
 ### 4.8 String Operations (13 primitives)
 
@@ -238,30 +229,44 @@ condition [ then-branch ] [ else-branch ] if
 | `char-code` | `(char -- n)` | Character to code point |
 | `code-char` | `(n -- char)` | Code point to character |
 
-**Note**: `str-upper`, `str-lower` planned but not yet implemented
+**Note**: `str-upper`, `str-lower` not yet implemented. Can be composed from `char-code`/`code-char`.
 
-### 4.9 Control Flow (8 primitives)
+### 4.9 Control Flow (4 core primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `call` | `(q -- ...)` | Execute quote |
-| `if` | `(cond then else -- ...)` | Conditional |
-| `times` | `(n q -- ...)` | Repeat N times |
-| `while` | `(cond-q body-q -- )` | While loop |
-| `loop` | `(q -- )` | Infinite loop (until break) |
-| `try` | `(q -- result)` | Try, catch errors |
-| `fail` | `(msg -- )` | Raise error |
-| `spawn` | `(q caps -- handle)` | Create sandboxed context |
+| `if` | `(cond then else -- ...)` | Conditional branch |
+| `loop` | `(body exit -- ...)` | Execute body, then exit; if exit leaves true, stop; else repeat |
+| `spawn` | `(q caps ratio -- result)` | Execute in sandboxed context |
 
-**Composed**: `when` = `[ ] if`, `unless` = `swap [ ] if`, `unwrap` = `dup is-error [ fail ] when`
-
-### 4.10 Definition Tools (3 primitives)
+### 4.9b Error Handling (3 core primitives)
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
-| `def` | `(val name -- )` | Define word |
-| `words` | `( -- list)` | List all defined words |
-| `meta` | `(name -- map)` | Get tool metadata |
+| `try` | `(q -- result)` | Execute quote, catch errors |
+| `fail` | `(msg -- )` | Raise error |
+| `is-error` | `(val -- bool)` | Check if error (also in Types) |
+
+### 4.9c Capability Control Flow (2 tools)
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `times` | `(n q -- ...)` | Repeat N times |
+| `while` | `(cond-q body-q -- )` | While loop |
+
+**Note**: `when`, `unless`, `unwrap` are not built-in. Compose them:
+- `when` = `swap [ ] swap if` or just use `if` with `[ ]` as else-branch
+- `unwrap` = `dup is-error [ fail ] [ ] if`
+
+### 4.10 Definition & Introspection Tools (4 primitives)
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `def` | `(val name -- )` | Define word (also accepts `(name val -- )`) |
+| `words` | `( -- list)` | List all registered tool names (sorted) |
+| `describe` | `(name -- sig)` | Get tool stack effect signature string |
+| `defined?` | `(name -- bool)` | Check if a tool exists |
 
 ### 4.11 Combinators (4 tools)
 
@@ -410,23 +415,31 @@ condition [ then-branch ] [ else-branch ] if
 | `trace-step` | `(name trace -- trace')` | Add step |
 | `trace-fingerprint` | `(trace -- hash)` | Get trace hash |
 
-### 4.20 Linear Type Tools (7 tools)
-
-| Tool | Stack Effect | Description |
-|------|--------------|-------------|
-| `linear-new` | `(val -- linear)` | Wrap as linear (must use exactly once) |
-| `linear-unwrap` | `(linear -- val)` | Consume linear value |
-| `affine-new` | `(val -- affine)` | Wrap as affine (use at most once) |
-| `affine-unwrap` | `(affine -- val)` | Consume affine value |
-| `is-linear` | `(val -- bool)` | Check if linear type |
-| `is-affine` | `(val -- bool)` | Check if affine type |
-| `linearity` | `(val -- sym)` | Get linearity: `none`, `affine`, or `linear` |
-
-### 4.21 Tensor Type Predicate
+### 4.20 Additional Type Predicates
 
 | Tool | Stack Effect | Description |
 |------|--------------|-------------|
 | `is-tensor` | `(val -- bool)` | Check if tensor type |
+| `is-linear` | `(val -- bool)` | Check if linear type |
+| `is-affine` | `(val -- bool)` | Check if affine type |
+
+### 4.21 Compose Tool (1 primitive)
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `compose` | `(q1 q2 -- q3)` | Concatenate two quotes into one |
+
+**Key for composable programming:** Every tool `T` has a quoted form `[T]`. Programs can be built atom-by-atom:
+```kore
+[dup] [mul] compose call    ; same as: dup mul
+[2] [3] compose [add] compose call  ; same as: 2 3 add
+```
+
+### 4.22 Process Tools
+
+| Tool | Stack Effect | Description |
+|------|--------------|-------------|
+| `version` | `( -- text)` | Get Kore version string |
 
 ---
 
@@ -488,8 +501,9 @@ over drop = ε
 ### 6.4 Equivalences
 
 ```
-over nip = dup
-swap nip = drop
+swap swap = ε
+neg neg = ε
+not not = ε
 ```
 
 ---
@@ -499,20 +513,22 @@ swap nip = drop
 ### 7.1 Factorial
 
 ```kore
-: factorial ( n -- n! )
+; factorial ( n -- n! )
+[
   1 swap                          ; acc n
   [ dup 0 gt ] [                  ; while n > 0
     dup rot mul swap              ; acc*n n
     1 sub                         ; acc' n-1
   ] while
   drop                            ; result
-;
+] "factorial" def
 ```
 
 ### 7.2 Fibonacci
 
 ```kore
-: fib ( n -- fib(n) )
+; fib ( n -- fib(n) )
+[
   0 1 rot                         ; a b n
   [ dup 0 gt ] [
     1 sub                         ; a b n-1
@@ -521,16 +537,15 @@ swap nip = drop
     rot                           ; a a+b n-1
   ] while
   drop drop                       ; result
-;
+] "fib" def
 ```
 
 ### 7.3 Map with Linear Values
 
 ```kore
 ; Safe extraction from list containing linear values
-: extract-first ( list -- list' item )
-  0 list-take                     ; moves, doesn't copy
-;
+; extract-first ( list -- list' item )
+[ 0 list-take ] "extract-first" def  ; moves, doesn't copy
 ```
 
 ### 7.4 Static Analysis
@@ -555,15 +570,14 @@ try
 dup is-error [
   ; handle error
   drop "default"
-] when
+] [ ] if
 ```
 
 ### 8.2 Unwrap with Default
 
 ```kore
-: unwrap-or ( result default -- value )
-  swap dup is-error [ drop ] [ nip ] if
-;
+[ swap dup is-error [ drop ] [ swap drop ] if ] "unwrap-or" def
+```
 ```
 
 ---
@@ -663,15 +677,15 @@ and  ; => true
 
 ```kore
 ; Before defining, verify the code does what we expect
-: verified-square ( n -- n² )
-  ; First, test our implementation
+; verified-square ( n -- n² )
+[
   [ dup mul ] 
   dup effect-infer "effect" map-get
   dup "consumes" map-get 1 eq
   swap "produces" map-get 1 eq
   and
   [ call ] [ drop "effect mismatch" fail ] if
-;
+] "verified-square" def
 
 ; Or inline test
 5 verified-square 25 eq [ "test passed" ] [ "test failed" fail ] if
@@ -757,4 +771,4 @@ cap-join  ; combined caps
 
 ---
 
-*This specification is designed for LLM consumption. All tools are verified through 456+ automated tests.*
+*This specification is designed for LLM consumption. All tools are verified through 529+ automated tests.*

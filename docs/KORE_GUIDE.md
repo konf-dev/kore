@@ -93,6 +93,13 @@ To compose two tools, just write them next to each other. Running `a b c` means:
 2. Run `b` on the result
 3. Run `c` on that result
 
+You can also compose quoted programs at runtime with `compose`:
+
+```kore
+[dup] [mul] compose call   ; equivalent to: dup mul → squares top of stack
+5 [dup] [mul] compose call ; 25
+```
+
 This is the essence of stack-based programming: **programs are sentences**.
 
 ---
@@ -260,36 +267,16 @@ A function is just a quote that you name:
 [ dup square swap cube ] "test" def  ; works if cube is defined
 ```
 
-### The Traditional Syntax
-
-Kore supports a cleaner syntax for definitions:
-
-```kore
-: square ( n -- n² )
-  dup mul
-;
-
-: cube ( n -- n³ )
-  dup dup mul mul
-;
-
-5 square   ; 25
-3 cube     ; 27
-```
-
-The `( n -- n² )` is a **stack effect comment** - it documents what the function does to the stack.
-
 ### Recursive Functions
 
 Kore supports recursion naturally:
 
 ```kore
-: factorial ( n -- n! )
-  dup 0 eq
+[ dup 0 eq
   [ drop 1 ]           ; base case: 0! = 1
   [ dup 1 sub factorial mul ]  ; n * (n-1)!
   if
-;
+] "factorial" def
 
 5 factorial   ; 120
 ```
@@ -310,13 +297,13 @@ Example:
 5 3 gt [ "yes" ] [ "no" ] if   ; "yes"
 ```
 
-### Short-circuit: `when` and `unless`
+### Short-circuit Conditionals
+
+For single-branch conditionals, use `if` with an empty branch:
 
 ```kore
-true [ "executed" println ] when     ; prints "executed"
-false [ "executed" println ] when    ; does nothing
-
-false [ "executed" println ] unless  ; prints "executed"
+true [ "executed" println ] [ ] if    ; prints "executed"
+false [ "skip" println ] [ ] if       ; does nothing
 ```
 
 ### Loop N Times: `times`
@@ -354,13 +341,12 @@ Output:
 1
 ```
 
-### Infinite Loop: `loop`
+### Loop: `loop`
 
 ```kore
-[ 
-  ; do something
-  condition [ break ] when
-] loop
+; loop takes a body and an exit test
+; executes body, then exit; stops when exit returns true
+0 [ 1 add ] [ dup 5 ge ] loop   ; 5
 ```
 
 ---
@@ -377,8 +363,8 @@ Output:
 ; Access
 [1 2 3] 0 list-get     ; 1 (first element)
 [1 2 3] list-len       ; 3
-[1 2 3] list-first     ; 1
-[1 2 3] list-last      ; 3
+[1 2 3] 0 list-get      ; first element
+[1 2 3] list-len 1 sub list-get  ; last element (manual)
 
 ; Modify (creates new list)
 [1 2 3] 4 list-push    ; [1 2 3 4]
@@ -672,8 +658,6 @@ This means the security model is formally verifiable.
 | `swap` | `(a b -- b a)` | Swap |
 | `over` | `(a b -- a b a)` | Copy second |
 | `rot` | `(a b c -- b c a)` | Rotate |
-| `nip` | `(a b -- b)` | Remove second |
-| `tuck` | `(a b -- b a b)` | Copy top under second |
 | `depth` | `( -- n)` | Stack depth |
 | `dip` | `(a q -- a)` | Execute under top |
 
@@ -687,7 +671,6 @@ This means the security model is formally verifiable.
 | `div` | `(a b -- a/b)` | Divide |
 | `mod` | `(a b -- a%b)` | Modulo |
 | `neg` | `(a -- -a)` | Negate |
-| `abs` | `(a -- |a|)` | Absolute value |
 
 ### Comparison
 
@@ -696,9 +679,9 @@ This means the security model is formally verifiable.
 | `eq` | `(a b -- bool)` | Equal |
 | `neq` | `(a b -- bool)` | Not equal |
 | `lt` | `(a b -- bool)` | Less than |
-| `lte` | `(a b -- bool)` | Less or equal |
+| `le` | `(a b -- bool)` | Less or equal |
 | `gt` | `(a b -- bool)` | Greater than |
-| `gte` | `(a b -- bool)` | Greater or equal |
+| `ge` | `(a b -- bool)` | Greater or equal |
 
 ### Logic
 
@@ -714,14 +697,11 @@ This means the security model is formally verifiable.
 |------|--------|-------------|
 | `call` | `(q -- ...)` | Execute quote |
 | `if` | `(c t e -- ...)` | Conditional |
-| `when` | `(c q -- )` | If true |
-| `unless` | `(c q -- )` | If false |
 | `times` | `(n q -- ...)` | Loop N times |
 | `while` | `(c b -- )` | While loop |
-| `loop` | `(q -- )` | Infinite loop |
+| `loop` | `(body exit -- ...)` | Execute body, then exit; stop if true |
 | `try` | `(q -- r)` | Try/catch |
 | `fail` | `(msg -- )` | Raise error |
-| `unwrap` | `(r -- v)` | Unwrap result |
 
 ### Analysis Tools
 
@@ -799,7 +779,7 @@ These aren't just abstractions - they're the **formal semantics** of Kore.
 
 ### Design Principles
 
-1. **Minimal**: 2 operations, 10 types, ~100 tools
+1. **Minimal**: 2 operations, 10 types, 105 core primitives + capability tools
 2. **Formal**: Every tool has a verified stack effect
 3. **Secure**: Capability-based, no ambient authority
 4. **Composable**: Tools are the only abstraction
@@ -811,13 +791,13 @@ These aren't just abstractions - they're the **formal semantics** of Kore.
 
 ### Stack
 ```
-dup drop swap over rot nip tuck depth dip
+dup drop swap over rot depth dip
 ```
 
 ### Math
 ```
-add sub mul div mod neg abs
-eq neq lt lte gt gte
+add sub mul div mod neg
+eq neq lt le gt ge
 and or not
 ```
 
@@ -829,26 +809,26 @@ type-of to-int to-float to-text to-bool
 
 ### Lists
 ```
-list unlist list-len list-get list-set list-push list-pop
-list-first list-last list-reverse list-concat list-slice list-take
+list unlist emptylist list-empty list-len list-get list-set list-push list-pop
+list-reverse list-concat list-slice list-take
 map filter fold each
 ```
 
 ### Maps
 ```
-map-new map-get map-set map-del map-has map-keys map-vals map-take
+map-new map-empty map-get map-set map-del map-has map-keys map-vals map-take
 ```
 
 ### Strings
 ```
 str-len str-get str-slice str-concat str-split str-join
-str-find str-replace str-starts str-ends str-upper str-lower str-trim
+str-find str-replace str-starts str-ends str-trim
 char-code code-char
 ```
 
 ### Control
 ```
-call if when unless times while loop try fail unwrap
+call if times while loop try fail
 ```
 
 ### Linear
@@ -865,7 +845,7 @@ io-effects pure? optimize simplify
 
 ### Definition
 ```
-def words meta meta! defined?
+def words describe defined?
 ```
 
 ---

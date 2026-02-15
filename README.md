@@ -169,24 +169,6 @@ t tensor-softmax                     ; Softmax: exp(x)/sum(exp(x))
 
 ---
 
-## Fibers: Pausable Computation
-
-Kore supports **fibers** (lightweight coroutines) for complex control flow:
-
-```kore
-; Create a paused computation
-[ 1 fiber-yield 2 fiber-yield 3 ] fiber-new
-
-; Resume to get values one at a time
-0 swap fiber-resume    ; → 1, fiber'
-0 swap fiber-resume    ; → 2, fiber''
-0 swap fiber-resume    ; → 3, fiber'''
-```
-
-**What this means:** Fibers let you write iterators, generators, and cooperative concurrency. The computation is **reified as a value**—you can pause it, resume it, or even fork it.
-
----
-
 ## Safety Guarantees Compared
 
 Different languages provide different safety guarantees. Here's how Kore compares:
@@ -528,7 +510,7 @@ Each extension is modeled as an **effect** with a monad or graded monad structur
 
 ## Core Primitives
 
-Kore has ~80 primitives organized by category. Here are the essentials:
+Kore has 105 core primitives + 55 capability tools organized by category. Here are the essentials:
 
 ### Stack Manipulation
 ```kore
@@ -552,18 +534,18 @@ and or not                  ; Logic
 
 ### Control Flow
 ```kore
-call    ; (quote -- ...)     Execute a quote
+call    ; (quote -- ...)         Execute a quote
 if      ; (bool then else -- ...) Conditional
-loop    ; (body -- ...)      Loop while true on stack
-times   ; (n body -- ...)    Repeat n times
+loop    ; (body exit -- ...)      Execute body, then exit; stop if true
+times   ; (n body -- ...)         Repeat n times
+while   ; (cond body -- ...)      While loop
 ```
 
 ### Error Handling
 ```kore
 try       ; (quote -- result)    Execute, capture errors
 fail      ; (msg -- )            Raise error
-is-error  ; (val -- bool)        Check if error
-unwrap    ; (val -- inner)       Extract or propagate error
+is-error  ; (val -- bool)         Check if error
 ```
 
 ### Data Structures
@@ -575,9 +557,12 @@ str-len str-concat str-split str-find
 
 ### Definition & Introspection
 ```kore
-def      ; (val name -- )   Define a tool
-words    ; ( -- list)       List all tools
-meta     ; (name -- map)    Get tool metadata
+def       ; (val name -- )   Define a tool
+words     ; ( -- list)       List all tools
+defined?  ; (name -- bool)   Check if tool exists
+describe  ; (name -- text)   Get tool description
+meta      ; (name -- map)    Get tool metadata
+version   ; ( -- text)       Runtime version
 ```
 
 ---
@@ -699,11 +684,11 @@ src/
 ├── executor.rs   # Main execution loop
 ├── value.rs      # The 10 types
 ├── stack.rs      # Stack operations
+├── session.rs    # Session engine (step, snapshot, fork)
 └── cap/          # Capability tools (fs, net, exec)
 
-stdlib/
-├── prelude.kore  # Standard library in Kore
-└── math.kore     # Math utilities
+tests/            # 529 tests covering all tools & formal proofs
+benchmarks/       # Performance benchmarks
 ```
 
 ---
@@ -714,11 +699,20 @@ stdlib/
 # Build
 cargo build --release
 
-# Run a file
-./target/release/kore run program.kore
+# Run inline code
+./target/release/kore -e '3 4 add println'
 
-# REPL
-./target/release/kore repl
+# Run from file
+./target/release/kore program.kore
+
+# Interactive REPL
+./target/release/kore
+
+# Static analysis (check before running)
+./target/release/kore --check program.kore
+
+# Start as JSON-lines server (for AI training)
+./target/release/kore --serve
 
 # Run tests
 cargo test
@@ -739,7 +733,7 @@ cargo test
 | **Effects** | Static analysis | None | None | None |
 | **Traces** | Immutable log | None | None | None |
 | **Termination** | Bounded | Not guaranteed | Not guaranteed | Not guaranteed |
-| **Tensors** | Built-in (21 ops) | External crate | NumPy/PyTorch | tf.js |
+| **Tensors** | Built-in (32 ops) | External crate | NumPy/PyTorch | tf.js |
 | **Linearity** | Affine/Linear | Move semantics | None | None |
 | **Target** | Machine-generated | Human-written | Human-written | Human-written |
 
