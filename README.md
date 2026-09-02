@@ -1,5 +1,6 @@
 # Kore
-
+ **Heads-up:** This is a vibe-coded Proof of Concept (PoC)
+ 
 A stack-based programming language with a bytecode compiler, interpreter, Cranelift JIT, and GPU (SPIR-V) backend. Written in Rust. ~23,000 lines, 524 tests.
 
 ## Why Kore exists
