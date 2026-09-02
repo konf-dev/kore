@@ -15,7 +15,7 @@ Kore takes a different approach. Its type system (the "proof checker") staticall
 - **Deterministic, pure semantics.** Same program → same result, always. No imports, no side effects, no environment dependencies. Evaluation is clean.
 - **Capability-gated security.** Programs declare what they need (I/O, filesystem, exec). The proof checker verifies these at compile time and the runtime enforces them. Pure programs — no capabilities — are safe by construction.
 
-We tested this by fine-tuning DeepSeek-R1-14B to generate Kore programs. Result: **99.6% accuracy on 478 tasks** across 16 capability levels, with a **93.1%** success rate on held-out demo tasks phrased differently from training. See [experiments/llm-codegen/](experiments/llm-codegen/) for the full pipeline and results.
+We tested this by fine-tuning DeepSeek-R1-14B to generate Kore programs on held-out demo tasks phrased differently from training. See [experiments/llm-codegen/](experiments/llm-codegen/) for the full pipeline and results.
 
 ## The capability lattice
 
